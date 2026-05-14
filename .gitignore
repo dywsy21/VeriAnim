@@ -3,7 +3,6 @@ remoteassets/
 *log
 results/
 *.bat
-*init*
 ll3m/
 blender4.4_pdfs/
 .env
