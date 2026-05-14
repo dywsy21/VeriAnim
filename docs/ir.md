@@ -237,7 +237,9 @@ shots from one angle.
 - `required_view_ids`: screenshot ids needed by the verifier.
 - `questions`: specific questions to ask the model.
 - `pass_criteria`: conditions for visual pass.
-- `max_rounds`: maximum visual-refinement rounds.
+- `max_rounds`: maximum visual-refinement rounds. Default implementation
+  uses 6 so the visual verifier can remain a blocking gate through several
+  repair attempts.
 
 Vision verifier output should become `ValidationReport` with issue targets
 matching object or relation ids.
@@ -295,7 +297,8 @@ matching object or relation ids.
 - `require_preview_video`: whether to render a low-resolution preview video.
 - `questions`: temporal questions for the model.
 - `pass_criteria`: conditions for pass.
-- `max_rounds`: maximum video-refinement rounds.
+- `max_rounds`: maximum video-refinement rounds. Default implementation
+  uses 6 so temporal/video verification can drive repeated animation repairs.
 
 The video verifier should receive both visual artifacts and deterministic
 metadata:

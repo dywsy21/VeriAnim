@@ -78,6 +78,8 @@ class HarnessConfig:
     vision: AgentModelConfig
     video: AgentModelConfig
     max_refinement_rounds: int
+    max_visual_refinement_rounds: int
+    max_video_refinement_rounds: int
     rag_docs: tuple[Path, ...]
     runs_dir: Path
     blender_host: str
@@ -104,6 +106,8 @@ class HarnessConfig:
             vision=_agent_config("vision", "openai/gpt-4.1", 0.0),
             video=_agent_config("video", "dashscope/qwen-omni-turbo", 0.0),
             max_refinement_rounds=_env_int("LL3M_MAX_REFINEMENT_ROUNDS", 2),
+            max_visual_refinement_rounds=_env_int("LL3M_MAX_VISUAL_REFINEMENT_ROUNDS", 6),
+            max_video_refinement_rounds=_env_int("LL3M_MAX_VIDEO_REFINEMENT_ROUNDS", 6),
             rag_docs=rag_docs,
             runs_dir=Path(_env("LL3M_RUNS_DIR", "runs")),
             blender_host=_env("LL3M_BLENDER_HOST", "localhost"),

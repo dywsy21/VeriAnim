@@ -25,6 +25,8 @@ class PlannerAgent:
             "You are the planner for a Blender 4.5.4 code-generation harness. "
             "Return only a JSON object matching the GenerationIR schema. "
             "Use stable machine ids. Include screenshot views for visual validation. "
+            "Plan at least three complementary screenshot views: an overall three-quarter view, a relation/contact close-up, and a side or top view that exposes support/contact. "
+            "Add visual pass criteria that require no floating, detached, or misaligned parts unless explicitly requested. "
             "When animation is requested, include AnimationSpec and video verifier settings. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id."
         )
@@ -155,7 +157,9 @@ class RefinerAgent:
         report_json = json.dumps([report.to_dict() if hasattr(report, "to_dict") else _report_dict(report) for report in reports], indent=2)
         system = (
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
-            "Keep correct existing structure. Return only the full corrected Python script."
+            "Keep correct existing structure. Treat visual verifier failures as blocking. "
+            "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
+            "Return only the full corrected Python script."
         )
         user = f"""
 GenerationIR:
@@ -231,9 +235,14 @@ class VisionVerifierAgent:
 
         system = (
             "You are a visual verifier for Blender-generated scenes. "
+            "You are the final gate: do not pass a scene with visible physical implausibility, floating parts, detached connectors, impossible support/contact, missing objects, or badly misleading camera views. "
             "Return only JSON with keys: passed, summary, issues. "
             "Each issue must include code, message, severity, optional target_id, relation_id, frame, suggested_fix, evidence."
         )
+        screenshot_manifest = [
+            {"index": index + 1, "path": str(path), "name": path.name}
+            for index, path in enumerate(screenshot_paths)
+        ]
         user = f"""
 Original prompt:
 {ir.prompt.text}
@@ -241,11 +250,21 @@ Original prompt:
 SceneSpec excerpt:
 {json.dumps(ir.to_dict().get("scene", {}), indent=2)[:12000]}
 
+Screenshot order:
+{json.dumps(screenshot_manifest, indent=2)}
+
 Deterministic report:
 {report_to_json(deterministic_report)}
 
 Evaluate the screenshots for semantic correctness, missing objects, wrong spatial relationships,
 bad camera angle, occlusion, poor lighting, and visible geometry defects.
+
+Critical checks:
+- Every multi-part object must look physically connected and intentionally assembled.
+- Objects that should rest on, attach to, point at, or illuminate another object must have believable contact/alignment.
+- Tabletop props, lamp heads/arms, handles, stems, legs, and other connectors must not float, detach, or penetrate incorrectly.
+- If the screenshot set is insufficient to judge a required relation, fail with code INSUFFICIENT_VIEW_COVERAGE and suggest additional views.
+- Set passed=true only when all required objects, relations, composition, and visible geometry are acceptable.
 """
         data = self.llm.json_multimodal(system, user, screenshot_paths, max_tokens=4000)
         return _report_from_model(data, VerificationMode.VISION)
@@ -274,7 +293,8 @@ class VideoVerifierAgent:
         system = (
             "You are a temporal verifier for Blender animations. "
             "Return only JSON with keys: passed, summary, issues. "
-            "Judge action order, motion path, smoothness, object interactions, and camera visibility."
+            "Judge action order, motion path, smoothness, object interactions, physical plausibility, and camera visibility. "
+            "Do not pass animations where contact, attachment, or object continuity breaks between frames."
         )
         user = f"""
 Original prompt:
@@ -345,7 +365,7 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
       "require_preview_video": true,
       "questions": [],
       "pass_criteria": [],
-      "max_rounds": 2
+      "max_rounds": 6
     }
   },""" if include_animation else ""
     return f"""{{
@@ -441,6 +461,22 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
             "target_object_ids": ["stable_object_id"],
             "relation_ids": [],
             "required": true
+          }},
+          {{
+            "id": "contact_closeup",
+            "view_type": "relation_close_up",
+            "description": "close view for required contact, support, and attachment relations",
+            "target_object_ids": ["stable_object_id"],
+            "relation_ids": ["relation_id"],
+            "required": true
+          }},
+          {{
+            "id": "side_support",
+            "view_type": "right",
+            "description": "side view that makes vertical support and floating parts visible",
+            "target_object_ids": ["stable_object_id"],
+            "relation_ids": ["relation_id"],
+            "required": true
           }}
         ],
         "min_required_views": 3
@@ -448,10 +484,15 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
       "visual": {{
         "enabled": true,
         "model_hint": null,
-        "required_view_ids": ["three_quarter"],
+        "required_view_ids": ["three_quarter", "contact_closeup", "side_support"],
         "questions": [],
-        "pass_criteria": [],
-        "max_rounds": 2
+        "pass_criteria": [
+          "All required objects are visible.",
+          "Required spatial relations are visually correct.",
+          "No object or required part is floating, detached, misaligned, or visibly intersecting unless requested.",
+          "Camera angles are sufficient for judging contact and support."
+        ],
+        "max_rounds": 6
       }},
       "video": {{
         "enabled": false,
@@ -460,7 +501,7 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "require_preview_video": true,
         "questions": [],
         "pass_criteria": [],
-        "max_rounds": 2
+        "max_rounds": 6
       }}
     }},
     "coordinate_system": "Blender default: Z up, right-handed",
@@ -494,9 +535,20 @@ def _report_from_model(data: dict[str, Any], mode: VerificationMode) -> Validati
                 evidence=item.get("evidence") or {},
             )
         )
+    passed = bool(data.get("passed", data.get("pass", not issues)))
+    if passed and any(issue.severity in {Severity.MAJOR, Severity.CRITICAL} for issue in issues):
+        passed = False
+    if not passed and not issues:
+        issues.append(
+            ValidationIssue(
+                code="MODEL_REPORTED_FAILURE",
+                message=str(data.get("summary") or "Verifier reported failure without structured issues."),
+                severity=Severity.MAJOR,
+            )
+        )
     return ValidationReport(
         mode=mode,
-        passed=bool(data.get("passed", data.get("pass", not issues))),
+        passed=passed,
         issues=issues,
         summary=data.get("summary"),
     )

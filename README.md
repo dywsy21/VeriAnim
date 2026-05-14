@@ -5,6 +5,9 @@ on top of the original LL3M client. New functionality includes:
 
 - A local multi-agent harness with planner, coder, refiner, visual verifier, and
   video verifier roles.
+- Verifier-gated refinement loops: scene generation keeps refining until every
+  enabled deterministic and visual verifier passes, and animation generation can
+  be gated by sampled-frame/video verification.
 - A structured scene/animation IR for object decomposition, spatial relations,
   screenshot plans, and animation events.
 - Blender 4.5.4 LTS oriented API/RAG notes and an expanded Blender addon with

@@ -355,7 +355,7 @@ class VisualVerifierSpec:
     required_view_ids: list[str] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
     pass_criteria: list[str] = field(default_factory=list)
-    max_rounds: int = 2
+    max_rounds: int = 6
 
 
 @dataclass(slots=True)
@@ -366,7 +366,7 @@ class VideoVerifierSpec:
     require_preview_video: bool = True
     questions: list[str] = field(default_factory=list)
     pass_criteria: list[str] = field(default_factory=list)
-    max_rounds: int = 2
+    max_rounds: int = 6
 
 
 @dataclass(slots=True)

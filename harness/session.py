@@ -119,8 +119,10 @@ class InteractiveHarnessSession:
 
         reports: list[ValidationReport] = []
         execution_error: str | None = None
+        max_rounds = self._max_refinement_rounds()
+        self._emit("validate", f"Verifier-gated loop enabled: up to {max_rounds + 1} validation passes")
 
-        for round_index in range(self.config.max_refinement_rounds + 1):
+        for round_index in range(max_rounds + 1):
             label = f"{reason}_round_{round_index}"
             self._emit("execute", f"Executing Blender script: {label}")
             execution = self.blender.execute_code(self.code)
@@ -144,12 +146,13 @@ class InteractiveHarnessSession:
                 self.store.write_text("code/final_scene.py", self.code)
                 return
 
-            if round_index >= self.config.max_refinement_rounds:
-                self._emit("warn", "Max refinement rounds reached")
+            if round_index >= max_rounds:
+                self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
                 self.store.write_text("code/final_scene.py", self.code)
                 return
 
-            self._emit("refiner", "Refining script from validation feedback")
+            failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
+            self._emit("refiner", f"Refining script from failed verifier feedback: {failed_modes}")
             self.code = self.refiner.refine(
                 ir=self.ir,
                 code=self.code,
@@ -157,6 +160,17 @@ class InteractiveHarnessSession:
                 execution_error=execution_error,
             )
             self.store.write_text(f"code/{label}_refined.py", self.code)
+
+    def _max_refinement_rounds(self) -> int:
+        if not self.ir:
+            return self.config.max_refinement_rounds
+        max_rounds = self.config.max_refinement_rounds
+        visual = self.ir.scene.verifier.visual
+        if not self.skip_vision and visual.enabled:
+            max_rounds = max(max_rounds, visual.max_rounds, self.config.max_visual_refinement_rounds)
+        if self.ir.animation and not self.skip_video and self.ir.animation.verifier.enabled:
+            max_rounds = max(max_rounds, self.ir.animation.verifier.max_rounds, self.config.max_video_refinement_rounds)
+        return max_rounds
 
     def _run_validation_pass(self, label: str) -> list[ValidationReport]:
         assert self.store is not None

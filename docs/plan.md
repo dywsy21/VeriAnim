@@ -211,7 +211,16 @@ Recommended loop:
 4. Run vision verifier.
 5. Merge reports into a single repair brief.
 6. Ask the refiner for localized code changes.
-7. Repeat until pass or max iterations.
+7. Repeat until every enabled verifier passes. A configurable safety cap
+   prevents infinite runs, but the normal stop condition is verifier approval,
+   not a fixed number of attempts.
+
+The visual verifier is a blocking gate, not advisory text. It should fail
+visible physical implausibility such as floating tabletop objects, detached
+lamp heads or arms, impossible contact/support, severe intersection, missing
+objects, poor camera coverage, or semantic mismatch. When the screenshot set is
+insufficient, it should return `INSUFFICIENT_VIEW_COVERAGE` and ask for the
+needed view instead of passing the scene.
 
 The repair brief should include:
 
@@ -333,7 +342,8 @@ Recommended loop:
 5. Run temporal vision/video verifier.
 6. Merge deterministic and temporal critiques.
 7. Ask the refiner for localized animation-code changes.
-8. Repeat until pass or max iterations.
+8. Repeat until deterministic and temporal/video verifiers both pass, subject
+   to the configured safety cap.
 
 ## Screenshot and Video Sampling Strategy
 

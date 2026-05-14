@@ -88,6 +88,10 @@ endpoint.
 4. `VisionVerifierAgent`
    - Sends labeled screenshots to a multimodal model through LiteLLM.
    - Produces `ValidationReport`.
+   - Acts as a blocking gate in the refinement loop. If it reports visual
+     issues such as floating parts, detached connectors, missing contact, poor
+     camera coverage, or semantic mismatch, the script is refined and the scene
+     is rendered again.
 
 5. `VideoVerifierAgent`
    - Sends ordered sampled frames plus video metadata to a temporal/multimodal
@@ -97,6 +101,17 @@ endpoint.
 6. `RefinerAgent`
    - Repairs the Blender Python script from execution errors and validation
      reports.
+
+The harness repeats execute, deterministic validation, screenshot rendering,
+visual/video verification, and code refinement until every enabled verifier
+passes. The loop has safety caps to avoid infinite runs:
+
+- `LL3M_MAX_REFINEMENT_ROUNDS` for the baseline deterministic loop.
+- `LL3M_MAX_VISUAL_REFINEMENT_ROUNDS` for visual-verifier-gated scene repair.
+- `LL3M_MAX_VIDEO_REFINEMENT_ROUNDS` for video-verifier-gated animation repair.
+
+The IR can also set `scene.verifier.visual.max_rounds` and
+`animation.verifier.max_rounds`; the harness uses the largest applicable cap.
 
 ## Outputs
 

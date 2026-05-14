@@ -235,15 +235,7 @@ def _json(ir: GenerationIR) -> str:
 
 
 def _view_dicts(ir: GenerationIR) -> list[dict[str, Any]]:
-    views = ir.scene.verifier.screenshot_plan.views
-    if not views:
-        from .ir import CameraViewType, ScreenshotViewSpec
-
-        views = [
-            ScreenshotViewSpec(id="front", view_type=CameraViewType.FRONT, description="Front view"),
-            ScreenshotViewSpec(id="side", view_type=CameraViewType.RIGHT, description="Side view"),
-            ScreenshotViewSpec(id="three_quarter", view_type=CameraViewType.THREE_QUARTER, description="Three-quarter view"),
-        ]
+    views = _normalized_screenshot_views(ir)
     return [
         {
             "id": view.id,
@@ -258,6 +250,80 @@ def _view_dicts(ir: GenerationIR) -> list[dict[str, Any]]:
         }
         for view in views
     ]
+
+
+def _normalized_screenshot_views(ir: GenerationIR):
+    from .ir import CameraViewType, ScreenshotViewSpec
+
+    plan = ir.scene.verifier.screenshot_plan
+    views = list(plan.views)
+    existing_ids = {view.id for view in views}
+    primary_targets = [obj.id for obj in ir.scene.objects if obj.importance.value == "required"] or [
+        obj.id for obj in ir.scene.objects[:3]
+    ]
+    relation_ids = [relation.id for relation in ir.scene.relations if relation.required]
+    defaults = [
+        ScreenshotViewSpec(
+            id="three_quarter",
+            view_type=CameraViewType.THREE_QUARTER,
+            description="Overall inspection view",
+            target_object_ids=primary_targets,
+            relation_ids=relation_ids,
+        ),
+        ScreenshotViewSpec(
+            id="relation_closeup",
+            view_type=CameraViewType.RELATION_CLOSE_UP,
+            description="Close view for required support, contact, and attachment relations",
+            target_object_ids=[],
+            relation_ids=relation_ids,
+        ),
+        ScreenshotViewSpec(
+            id="side_support",
+            view_type=CameraViewType.RIGHT,
+            description="Side view for support, contact, and floating part checks",
+            target_object_ids=primary_targets,
+            relation_ids=relation_ids,
+        ),
+        ScreenshotViewSpec(
+            id="top_layout",
+            view_type=CameraViewType.TOP,
+            description="Top view for layout and intersection checks",
+            target_object_ids=primary_targets,
+            relation_ids=relation_ids,
+        ),
+        ScreenshotViewSpec(
+            id="front_support",
+            view_type=CameraViewType.FRONT,
+            description="Front view for object proportions and horizontal alignment",
+            target_object_ids=primary_targets,
+            relation_ids=relation_ids,
+        ),
+        ScreenshotViewSpec(
+            id="left_support",
+            view_type=CameraViewType.LEFT,
+            description="Opposite side view for occlusion and attachment checks",
+            target_object_ids=primary_targets,
+            relation_ids=relation_ids,
+        ),
+    ]
+    for default in defaults:
+        if len(views) >= max(1, plan.min_required_views):
+            break
+        if default.id not in existing_ids:
+            views.append(default)
+            existing_ids.add(default.id)
+    relation_targets = {
+        relation.id: [relation.subject_id, relation.object_id]
+        for relation in ir.scene.relations
+    }
+    for view in views:
+        if view.target_object_ids:
+            continue
+        targets: list[str] = []
+        for relation_id in view.relation_ids:
+            targets.extend(relation_targets.get(relation_id, []))
+        view.target_object_ids.extend(dict.fromkeys(targets or primary_targets))
+    return views
 
 
 def _scene_validation_script(ir: GenerationIR) -> str:
@@ -380,15 +446,7 @@ print("{REPORT_MARKER}" + json.dumps(report))
 
 
 def _screenshot_script(ir: GenerationIR, output_dir: Path, width: int, height: int) -> str:
-    views = ir.scene.verifier.screenshot_plan.views
-    if not views:
-        from .ir import CameraViewType, ScreenshotViewSpec
-
-        views = [
-            ScreenshotViewSpec(id="front", view_type=CameraViewType.FRONT, description="Front view"),
-            ScreenshotViewSpec(id="side", view_type=CameraViewType.RIGHT, description="Side view"),
-            ScreenshotViewSpec(id="three_quarter", view_type=CameraViewType.THREE_QUARTER, description="Three-quarter view"),
-        ]
+    views = _normalized_screenshot_views(ir)
     view_dicts = [
         {
             "id": view.id,
@@ -488,6 +546,9 @@ def look_at(camera, target):
     camera.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
 def camera_offset(view_type, radius):
+    if view_type == "relation_close_up":
+        radius = max(radius * 0.55, 1.5)
+        return Vector((radius * 0.75, -radius * 0.75, radius * 0.45))
     if view_type == "front":
         return Vector((0, -radius, radius * 0.35))
     if view_type == "back":
