@@ -7,6 +7,17 @@ Use it with:
 python -m harness.runner --text "a cup on a wooden table in a small kitchen"
 ```
 
+Or use the interactive TUI:
+
+```bash
+python -m harness.tui
+```
+
+In the TUI, the first message creates a new scene. Later messages are treated as
+multi-turn change requests against the current Blender scene and script, for
+example "make the chair taller" or "add a small lamp on the table". Blender is
+updated after each turn when the generated script executes successfully.
+
 For animation:
 
 ```bash

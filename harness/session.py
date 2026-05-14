@@ -1,0 +1,218 @@
+"""Reusable interactive harness session for CLI and TUI frontends."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from .agents import CoderAgent, PlannerAgent, RefinerAgent, VideoVerifierAgent, VisionVerifierAgent
+from .artifacts import ArtifactStore
+from .blender_runtime import BlenderRuntime
+from .config import HarnessConfig
+from .ir import GenerationIR, ValidationIssue, ValidationReport, VerificationMode, report_to_dict
+from .rag import LocalRAG
+
+
+@dataclass(slots=True)
+class HarnessEvent:
+    kind: str
+    message: str
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+EventCallback = Callable[[HarnessEvent], None]
+
+
+class InteractiveHarnessSession:
+    """Stateful local harness session with multi-turn user changes."""
+
+    def __init__(
+        self,
+        config: HarnessConfig,
+        *,
+        include_animation: bool = False,
+        skip_vision: bool = False,
+        skip_video: bool = False,
+        callback: EventCallback | None = None,
+    ):
+        self.config = config
+        self.include_animation = include_animation
+        self.skip_vision = skip_vision
+        self.skip_video = skip_video
+        self.callback = callback
+        self.rag = LocalRAG(config.rag_docs)
+        self.planner = PlannerAgent(config, self.rag)
+        self.coder = CoderAgent(config, self.rag)
+        self.refiner = RefinerAgent(config, self.rag)
+        self.vision = VisionVerifierAgent(config)
+        self.video = VideoVerifierAgent(config)
+        self.blender = BlenderRuntime(config)
+        self.store: ArtifactStore | None = None
+        self.ir: GenerationIR | None = None
+        self.code: str | None = None
+        self.turn_index = 0
+
+    @property
+    def has_scene(self) -> bool:
+        return self.ir is not None and self.code is not None
+
+    def start(self, prompt: str) -> Path:
+        self.store = ArtifactStore.create(self.config.runs_dir)
+        self.turn_index = 0
+        self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
+
+        self._emit("planner", "Planning structured IR")
+        self.ir = self.planner.plan(prompt, include_animation=self.include_animation)
+        self.store.write_json("ir.json", self.ir.to_dict())
+        self._emit("planner", f"Planned {len(self.ir.scene.objects)} objects")
+
+        self._emit("coder", "Generating Blender script")
+        self.code = self.coder.generate(self.ir)
+        self.store.write_text("code/generated_scene.py", self.code)
+
+        self._execute_validate_refine(reason="initial")
+        return self.store.root
+
+    def start_from_ir(self, ir: GenerationIR) -> Path:
+        self.store = ArtifactStore.create(self.config.runs_dir)
+        self.turn_index = 0
+        self.ir = ir
+        self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
+        self.store.write_json("ir.json", self.ir.to_dict())
+        self._emit("coder", "Generating Blender script from provided IR")
+        self.code = self.coder.generate(self.ir)
+        self.store.write_text("code/generated_scene.py", self.code)
+        self._execute_validate_refine(reason="initial")
+        return self.store.root
+
+    def apply_user_request(self, request: str) -> Path:
+        if not self.has_scene or not self.store or not self.ir or not self.code:
+            return self.start(request)
+
+        self.turn_index += 1
+        self._emit("user", request)
+
+        self._emit("planner", "Revising IR from user request")
+        self.ir = self.planner.revise(self.ir, request, include_animation=self.include_animation)
+        self.store.write_json(f"turns/turn_{self.turn_index:03d}_ir.json", self.ir.to_dict())
+
+        self._emit("scene", "Reading current Blender scene graph")
+        scene_graph = self.blender.get_scene_graph()
+        self.store.write_json(f"turns/turn_{self.turn_index:03d}_scene_graph.json", scene_graph)
+
+        self._emit("refiner", "Applying user request to current script")
+        self.code = self.refiner.apply_user_request(
+            ir=self.ir,
+            code=self.code,
+            user_request=request,
+            scene_graph=scene_graph,
+        )
+        self.store.write_text(f"code/user_turn_{self.turn_index:03d}.py", self.code)
+
+        self._execute_validate_refine(reason=f"user_turn_{self.turn_index:03d}")
+        return self.store.root
+
+    def _execute_validate_refine(self, *, reason: str) -> None:
+        if not self.store or not self.ir or self.code is None:
+            raise RuntimeError("Session has not been initialized.")
+
+        reports: list[ValidationReport] = []
+        execution_error: str | None = None
+
+        for round_index in range(self.config.max_refinement_rounds + 1):
+            label = f"{reason}_round_{round_index}"
+            self._emit("execute", f"Executing Blender script: {label}")
+            execution = self.blender.execute_code(self.code)
+            self.store.write_text(f"logs/{label}_execution.txt", execution.stdout)
+            if not execution.ok:
+                execution_error = execution.message or execution.stdout
+                self._emit("error", "Blender execution failed", error=execution_error)
+                reports = [
+                    ValidationReport.failed(
+                        VerificationMode.DETERMINISTIC,
+                        [ValidationIssue(code="BLENDER_EXEC_FAILED", message=execution_error)],
+                    )
+                ]
+            else:
+                execution_error = None
+                self._emit("execute", "Blender scene updated")
+                reports = self._run_validation_pass(label)
+
+            if all(report.passed for report in reports):
+                self._emit("pass", "All enabled validation stages passed")
+                self.store.write_text("code/final_scene.py", self.code)
+                return
+
+            if round_index >= self.config.max_refinement_rounds:
+                self._emit("warn", "Max refinement rounds reached")
+                self.store.write_text("code/final_scene.py", self.code)
+                return
+
+            self._emit("refiner", "Refining script from validation feedback")
+            self.code = self.refiner.refine(
+                ir=self.ir,
+                code=self.code,
+                reports=reports,
+                execution_error=execution_error,
+            )
+            self.store.write_text(f"code/{label}_refined.py", self.code)
+
+    def _run_validation_pass(self, label: str) -> list[ValidationReport]:
+        assert self.store is not None
+        assert self.ir is not None
+        reports: list[ValidationReport] = []
+
+        self._emit("validate", "Running deterministic scene validation")
+        scene_report = self.blender.validate_scene(self.ir)
+        reports.append(scene_report)
+        self.store.write_json(f"reports/{label}_scene_deterministic.json", report_to_dict(scene_report))
+        self._emit_report(scene_report)
+
+        self._emit("render", "Rendering screenshot plan")
+        screenshots = self.blender.render_screenshots(self.ir, self.store.root / "screenshots" / label)
+        self._emit("render", f"Rendered {len(screenshots)} screenshots", paths=[str(path) for path in screenshots])
+
+        if screenshots and not self.skip_vision and self.ir.scene.verifier.visual.enabled:
+            self._emit("vision", "Running visual model verification")
+            vision_report = self.vision.verify(self.ir, screenshots, scene_report)
+            reports.append(vision_report)
+            self.store.write_json(f"reports/{label}_scene_vision.json", report_to_dict(vision_report))
+            self._emit_report(vision_report)
+
+        if self.ir.animation:
+            self._emit("validate", "Running deterministic animation validation")
+            anim_report, transform_trace = self.blender.validate_animation(self.ir)
+            reports.append(anim_report)
+            self.store.write_json(f"reports/{label}_animation_deterministic.json", report_to_dict(anim_report))
+            self.store.write_json(f"reports/{label}_animation_trace.json", transform_trace)
+            self._emit_report(anim_report)
+
+            if not self.skip_video and self.ir.animation.verifier.enabled:
+                self._emit("render", "Rendering animation sampled frames")
+                sampled_frames, preview_video = self.blender.render_animation_samples(
+                    self.ir, self.store.root / "animation" / label
+                )
+                self._emit("video", f"Running video verifier on {len(sampled_frames)} frames")
+                video_report = self.video.verify(self.ir, sampled_frames, preview_video, anim_report, transform_trace)
+                reports.append(video_report)
+                self.store.write_json(f"reports/{label}_animation_video.json", report_to_dict(video_report))
+                self._emit_report(video_report)
+
+        return reports
+
+    def _emit_report(self, report: ValidationReport) -> None:
+        status = "passed" if report.passed else "failed"
+        self._emit("report", f"{report.mode.value} verification {status}: {report.summary or ''}", report=report_to_dict(report))
+        for issue in report.issues:
+            self._emit(
+                "issue",
+                f"{issue.severity.value}: {issue.code} - {issue.message}",
+                target_id=issue.target_id,
+                relation_id=issue.relation_id,
+                suggested_fix=issue.suggested_fix,
+            )
+
+    def _emit(self, kind: str, message: str, **data: Any) -> None:
+        if self.callback:
+            self.callback(HarnessEvent(kind=kind, message=message, data=data))

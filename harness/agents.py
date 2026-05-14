@@ -45,6 +45,35 @@ Use Blender's Z-up coordinate system and meters.
             raise ValueError(f"Planner produced invalid IR:\n{report_to_json(report)}")
         return ir
 
+    def revise(self, ir: GenerationIR, user_request: str, *, include_animation: bool | None = None) -> GenerationIR:
+        context = self.rag.format_context("IR revision SceneSpec AnimationSpec user refinement", limit=5)
+        system = (
+            "You revise an existing GenerationIR for a Blender 4.5.4 harness. "
+            "Return only the complete revised GenerationIR JSON. Preserve stable ids where possible. "
+            "Add new ids only for new objects, relations, cameras, screenshots, or animation events."
+        )
+        user = f"""
+Current GenerationIR:
+{ir.to_json()}
+
+User change request:
+{user_request}
+
+Animation requested override:
+{include_animation}
+
+Relevant IR documentation:
+{context}
+
+Return the full revised GenerationIR JSON.
+"""
+        data = self.llm.json_text(system, user)
+        revised = from_dict(GenerationIR, data)
+        report = revised.validate()
+        if not report.passed:
+            raise ValueError(f"Planner revised IR is invalid:\n{report_to_json(report)}")
+        return revised
+
 
 class CoderAgent:
     def __init__(self, config: HarnessConfig, rag: LocalRAG):
@@ -107,6 +136,41 @@ Execution error:
 
 Validation reports:
 {report_json}
+
+Relevant Blender 4.5.4 notes:
+{context}
+
+Current script:
+```python
+{code}
+```
+"""
+        return extract_code_block(self.llm.complete_text(system, user, max_tokens=12000))
+
+    def apply_user_request(
+        self,
+        *,
+        ir: GenerationIR,
+        code: str,
+        user_request: str,
+        scene_graph: dict[str, Any] | None = None,
+    ) -> str:
+        context = self.rag.format_context(user_request + " Blender 4.5 bpy scene update", limit=8)
+        system = (
+            "You are an interactive Blender 4.5.4 code refiner. "
+            "Update the existing full Python script to satisfy the user's new request. "
+            "Preserve working code and object ids where possible. "
+            "Return only the full corrected Python script."
+        )
+        user = f"""
+Revised GenerationIR:
+{ir.to_json()}
+
+User change request:
+{user_request}
+
+Current Blender scene graph:
+{json.dumps(scene_graph or {}, indent=2, default=str)[:16000]}
 
 Relevant Blender 4.5.4 notes:
 {context}

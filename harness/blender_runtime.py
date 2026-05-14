@@ -43,6 +43,17 @@ class BlenderRuntime:
         ok, message = _infer_ok(result, stdout)
         return BlenderRunResult(ok=ok, message=message, stdout=stdout, raw=result)
 
+    def get_scene_graph(self) -> dict[str, Any]:
+        result = BlenderClient.get_scene_graph(
+            include_hidden=True,
+            evaluated=True,
+            host=self.config.blender_host,
+            port=self.config.blender_port,
+        )
+        if _command_ok(result):
+            return _command_result(result)
+        return {}
+
     def validate_scene(self, ir: GenerationIR) -> ValidationReport:
         structured = BlenderClient.run_validation(
             ir.to_dict(),

@@ -2,3 +2,4 @@ requests==2.32.3
 PyYAML>=6.0
 python-dotenv>=1.0.1
 litellm>=1.65.0
+textual>=0.89.1

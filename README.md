@@ -1,3 +1,26 @@
+# LL3M Animation Harness Extension
+
+This fork adds a local agent harness for Blender scene and animation generation
+on top of the original LL3M client. New functionality includes:
+
+- A local multi-agent harness with planner, coder, refiner, visual verifier, and
+  video verifier roles.
+- A structured scene/animation IR for object decomposition, spatial relations,
+  screenshot plans, and animation events.
+- Blender 4.5.4 LTS oriented API/RAG notes and an expanded Blender addon with
+  structured scene inspection, validation, screenshot rendering, and animation
+  sampling commands.
+- An interactive TUI:
+
+```bash
+python -m harness.tui
+```
+
+The original LL3M README below targeted Blender 4.4 and a discontinued cloud
+server. The new local harness currently targets **Blender 4.5.4 LTS**. Reload or
+reinstall `blender/addon.py` in Blender, start the LL3M server panel, configure
+`.env`, then run either `python -m harness.runner ...` or the TUI above.
+
 # LL3M
 
 > **Notice:** The model used in the paper, [Claude Sonnet 3.7](https://platform.claude.com/docs/en/about-claude/model-deprecations#2025-10-28-claude-sonnet-3-7-model), has been retired. As a result, we have discontinued the LL3M server.
