@@ -99,8 +99,8 @@ relation_type, subject_id, and object_id. Every relation/camera/view/animation
 reference must point to an ObjectSpec id, never a part id. Every object must
 include id and description.
 """
-            data = self.llm.json_text(system, request)
             try:
+                data = self.llm.json_text(system, request)
                 ir = from_dict(GenerationIR, data)
                 _normalize_part_references(ir)
                 _normalize_ambiguous_beside_relations(ir)
