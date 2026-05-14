@@ -161,6 +161,18 @@ parts, detached connectors, missing objects, insufficient view coverage, bad
 lighting, or semantic mismatch, causes the harness to refine code and rerun the
 entire execute-validate-render-verify pass.
 
+When screenshots exist, `RefinerAgent` receives those failed screenshots as
+multimodal context in addition to the JSON reports. This is important for
+layout repair: text reports often describe a symptom, while the image tells the
+coder which direction to move an object, whether a contact point is visibly
+wrong, and whether a verifier complaint is caused by camera occlusion.
+
+The planner also normalizes ambiguous spatial language. For example, if the
+user says an object is "beside" or "next to" another object, the harness does
+not force a left/right relation unless the prompt explicitly says left or right.
+It treats that relationship as symmetric `near` plus any existing
+`not_intersecting` constraints.
+
 ## Outputs
 
 Each run creates:

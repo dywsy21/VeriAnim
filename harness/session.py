@@ -52,6 +52,7 @@ class InteractiveHarnessSession:
         self.ir: GenerationIR | None = None
         self.code: str | None = None
         self.turn_index = 0
+        self._latest_screenshots: list[Path] = []
 
     @property
     def has_scene(self) -> bool:
@@ -158,6 +159,7 @@ class InteractiveHarnessSession:
                 code=self.code,
                 reports=reports,
                 execution_error=execution_error,
+                screenshot_paths=self._latest_screenshots,
             )
             self.store.write_text(f"code/{label}_refined.py", self.code)
 
@@ -185,6 +187,7 @@ class InteractiveHarnessSession:
 
         self._emit("render", "Rendering screenshot plan")
         screenshots = self.blender.render_screenshots(self.ir, self.store.root / "screenshots" / label)
+        self._latest_screenshots = screenshots
         self._emit("render", f"Rendered {len(screenshots)} screenshots", paths=[str(path) for path in screenshots])
 
         if screenshots and not self.skip_vision and self.ir.scene.verifier.visual.enabled:

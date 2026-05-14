@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import HarnessConfig
-from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
+from .ir import GenerationIR, RelationType, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
 from .llm import LLMClient, extract_code_block
 from .rag import LocalRAG
 from .serde import from_dict
@@ -103,6 +103,7 @@ include id and description.
             try:
                 ir = from_dict(GenerationIR, data)
                 _normalize_part_references(ir)
+                _normalize_ambiguous_beside_relations(ir)
                 report = ir.validate()
                 if report.passed:
                     return ir
@@ -160,6 +161,7 @@ class RefinerAgent:
         code: str,
         reports: list[ValidationReport],
         execution_error: str | None = None,
+        screenshot_paths: list[Path] | None = None,
     ) -> str:
         context = self.rag.format_context(_issue_query(reports, execution_error), limit=8)
         report_json = json.dumps([report.to_dict() if hasattr(report, "to_dict") else _report_dict(report) for report in reports], indent=2)
@@ -188,6 +190,15 @@ Current script:
 {code}
 ```
 """
+        if screenshot_paths:
+            user += f"""
+
+Attached images are the latest failed validation screenshots in verifier order.
+Use them to fix actual visual layout and contact problems, not just the text report.
+"""
+            return extract_code_block(
+                self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=12000)
+            )
         return extract_code_block(self.llm.complete_text(system, user, max_tokens=12000))
 
     def apply_user_request(
@@ -273,6 +284,8 @@ Critical checks:
 - Objects that should rest on, attach to, point at, or illuminate another object must have believable contact/alignment.
 - Tabletop props, lamp heads/arms, handles, stems, legs, and other connectors must not float, detach, or penetrate incorrectly.
 - If the screenshot set is insufficient to judge a required relation, fail with code INSUFFICIENT_VIEW_COVERAGE and suggest additional views.
+- Do not reject a symmetric relation like "beside" merely because an object is on the opposite left/right side, unless the SceneSpec explicitly requires left or right.
+- Do not report potential intersection from a single occluded side view if other views and deterministic validation do not support intersection; request an additional view or mark it minor.
 - Set passed=true only when all required objects, relations, composition, and visible geometry are acceptable.
 """
         data = self.llm.json_multimodal(system, user, screenshot_paths, max_tokens=4000)
@@ -392,6 +405,34 @@ def _normalize_part_references(ir: GenerationIR) -> None:
 
 def _map_ids(values: list[str], mapping: dict[str, str]) -> list[str]:
     return list(dict.fromkeys(mapping.get(value, value) for value in values))
+
+
+def _normalize_ambiguous_beside_relations(ir: GenerationIR) -> None:
+    """Avoid turning natural-language 'beside' into a forced left/right constraint."""
+
+    prompt_text = ir.prompt.text.lower()
+    if any(token in prompt_text for token in ("left of", "right of", "to the left", "to the right")):
+        return
+    for relation in ir.scene.relations:
+        if relation.relation_type not in {RelationType.LEFT_OF, RelationType.RIGHT_OF}:
+            continue
+        text = " ".join(
+            value or ""
+            for value in (
+                relation.description,
+                relation.id,
+                prompt_text,
+            )
+        ).lower()
+        if not any(token in text for token in ("beside", "next to", "near", "adjacent")):
+            continue
+        relation.relation_type = RelationType.NEAR
+        relation.description = (
+            relation.description or "Objects should be beside each other."
+        ) + " Interpreted as symmetric beside/near, not a forced left/right direction."
+        relation.min_distance = relation.min_distance if relation.min_distance is not None else 0.2
+        relation.max_distance = relation.max_distance if relation.max_distance is not None else 3.0
+        relation.axis = None
 
 
 def _load_ir_reference() -> str:
