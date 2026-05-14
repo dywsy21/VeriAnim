@@ -62,6 +62,11 @@ Each agent can also use its own endpoint and key:
 - `LL3M_VISION_API_BASE`, `LL3M_VISION_API_KEY`, `LL3M_VISION_API_VERSION`, `LL3M_VISION_PROVIDER`
 - `LL3M_VIDEO_API_BASE`, `LL3M_VIDEO_API_KEY`, `LL3M_VIDEO_API_VERSION`, `LL3M_VIDEO_PROVIDER`
 
+LLM calls use `LL3M_LLM_TIMEOUT_SECONDS` as a global timeout. Override a single
+agent with `LL3M_PLANNER_TIMEOUT_SECONDS`, `LL3M_CODER_TIMEOUT_SECONDS`,
+`LL3M_REFINER_TIMEOUT_SECONDS`, `LL3M_VISION_TIMEOUT_SECONDS`, or
+`LL3M_VIDEO_TIMEOUT_SECONDS`.
+
 Leave these empty when the global provider environment variables are sufficient.
 Set them when, for example, coder uses OpenAI, vision uses an OpenRouter VLM, and
 video uses a DashScope/Qwen Omni endpoint.
@@ -112,6 +117,49 @@ passes. The loop has safety caps to avoid infinite runs:
 
 The IR can also set `scene.verifier.visual.max_rounds` and
 `animation.verifier.max_rounds`; the harness uses the largest applicable cap.
+
+## Scene-Aware Screenshot Verification
+
+Visual verification is implemented as scene-aware inspection, not as a single
+beauty render. The planner writes a screenshot plan into
+`scene.verifier.screenshot_plan`; each view can name target object ids,
+relation ids, view type, camera id, and crop intent. The runtime then normalizes
+that plan before rendering:
+
+- If the plan has too few views, `BlenderRuntime` adds canonical inspection
+  views such as three-quarter, relation close-up, side/support, and top/layout.
+- Target ids are resolved through `ll3m_id`, then expanded to all matching mesh
+  parts. This avoids framing only a parent Empty and missing the actual object
+  geometry.
+- Relation-focused views inherit the subject/object ids of the relation when
+  the planner did not provide explicit targets.
+- Small scenes use a tighter camera radius so tabletop objects are large enough
+  for the verifier to inspect contacts, attachments, and floating parts.
+
+Screenshot rendering now uses an injected inspection script first, then falls
+back to the addon command only if needed. This keeps verification behavior
+current even when Blender is running an older loaded addon. The injected script
+temporarily standardizes render conditions for verifier legibility:
+
+- It uses an inspection render path with stable resolution and camera framing.
+- It clamps extreme world/light settings and restores the original scene
+  settings after screenshots are written.
+- It computes bounding boxes from all target mesh parts, not just object roots.
+- It labels every output path by view id, and the verifier receives a screenshot
+  manifest with path order and names.
+
+Before visual verification, deterministic validation also checks that expected
+materials exist and that material colors were actually applied. This catches a
+Blender 4.5.4 localization pitfall: generated code must find the Principled
+shader by `node.type == "BSDF_PRINCIPLED"` instead of localized display names
+such as `"Principled BSDF"`.
+
+`VisionVerifierAgent` receives the original prompt, the SceneSpec excerpt, the
+deterministic report, and the ordered screenshot manifest. Its JSON report is a
+blocking `ValidationReport`. Any major or critical issue, including floating
+parts, detached connectors, missing objects, insufficient view coverage, bad
+lighting, or semantic mismatch, causes the harness to refine code and rerun the
+entire execute-validate-render-verify pass.
 
 ## Outputs
 

@@ -105,6 +105,8 @@ class LLMClient:
             kwargs["custom_llm_provider"] = self.config.custom_llm_provider
         if max_tokens or self.config.max_tokens:
             kwargs["max_tokens"] = max_tokens or self.config.max_tokens
+        if self.config.timeout_seconds:
+            kwargs["timeout"] = self.config.timeout_seconds
         if response_format == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
 
