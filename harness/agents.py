@@ -101,6 +101,7 @@ include id and description.
 """
             try:
                 data = self.llm.json_text(system, request)
+                _sanitize_planner_data(data)
                 ir = from_dict(GenerationIR, data)
                 _normalize_part_references(ir)
                 _normalize_ambiguous_beside_relations(ir)
@@ -359,6 +360,42 @@ def _issue_query(reports: list[ValidationReport], execution_error: str | None) -
         for issue in report.issues:
             parts.extend([issue.code, issue.message, issue.suggested_fix or ""])
     return " ".join(parts) or "Blender 4.5 bpy gotchas"
+
+
+def _sanitize_planner_data(data: dict[str, Any]) -> None:
+    """Repair harmless planner enum drift before strict dataclass decoding."""
+
+    scene = data.get("scene") if isinstance(data, dict) else None
+    if not isinstance(scene, dict):
+        return
+    valid_categories = {
+        "generic",
+        "furniture",
+        "prop",
+        "character",
+        "vehicle",
+        "architecture",
+        "terrain",
+        "lighting",
+        "camera_rig",
+        "effect",
+    }
+    category_aliases = {
+        "stationery": "prop",
+        "decor": "decoration",
+        "decoration": "generic",
+        "plant": "prop",
+        "book": "prop",
+        "tableware": "prop",
+    }
+    valid_roles = {"primary", "secondary", "background", "support", "decoration", "camera_target", "collider"}
+    for obj in scene.get("objects", []) or []:
+        if not isinstance(obj, dict):
+            continue
+        category = str(obj.get("category", "generic")).lower()
+        obj["category"] = category_aliases.get(category, category if category in valid_categories else "generic")
+        role = str(obj.get("role", "secondary")).lower()
+        obj["role"] = role if role in valid_roles else "secondary"
 
 
 def _normalize_part_references(ir: GenerationIR) -> None:
