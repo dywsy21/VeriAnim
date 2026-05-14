@@ -104,6 +104,7 @@ include id and description.
                 ir = from_dict(GenerationIR, data)
                 _normalize_part_references(ir)
                 _normalize_ambiguous_beside_relations(ir)
+                _normalize_animation_verifier(ir)
                 report = ir.validate()
                 if report.passed:
                     return ir
@@ -127,6 +128,8 @@ class CoderAgent:
             "Use data API where possible, stable ll3m custom properties, modular factory functions, and explicit collections. "
             "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
             "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
+            "For animation, implement simple explicit keyframes from AnimationSpec events. "
+            "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
         user = f"""
@@ -143,7 +146,8 @@ Script requirements:
 - Keep object names stable and human-readable.
 - Create robust materials by setting mat.diffuse_color and locating shader nodes by node.type, not localized node names.
 - Set frame_start/frame_end/fps if animation exists.
-- Insert keyframes for AnimationSpec events when present.
+- Insert keyframes for AnimationSpec events when present. For translate/rotate/scale, mutate the object's location/rotation_euler/scale at start and end frames, insert keyframes, and ensure sampled frames visibly change.
+- If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
 """
         return extract_code_block(self.llm.complete_text(system, user, max_tokens=12000))
@@ -169,6 +173,7 @@ class RefinerAgent:
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
+            "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
             "Return only the full corrected Python script."
         )
@@ -193,8 +198,8 @@ Current script:
         if screenshot_paths:
             user += f"""
 
-Attached images are the latest failed validation screenshots in verifier order.
-Use them to fix actual visual layout and contact problems, not just the text report.
+Attached images are the latest failed validation screenshots and/or sampled animation frames in verifier order.
+Use them to fix actual visual layout, contact, motion direction, timing, and visibility problems, not just the text report.
 """
             return extract_code_block(
                 self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=12000)
@@ -316,8 +321,12 @@ class VideoVerifierAgent:
             "You are a temporal verifier for Blender animations. "
             "Return only JSON with keys: passed, summary, issues. "
             "Judge action order, motion path, smoothness, object interactions, physical plausibility, and camera visibility. "
-            "Do not pass animations where contact, attachment, or object continuity breaks between frames."
+            "Do not pass animations where required motion is absent, reversed, hidden, too subtle to see, or where contact, attachment, or object continuity breaks between frames."
         )
+        frame_manifest = [
+            {"index": index + 1, "path": str(path), "name": path.name}
+            for index, path in enumerate(sampled_frame_paths)
+        ]
         user = f"""
 Original prompt:
 {ir.prompt.text}
@@ -328,6 +337,9 @@ AnimationSpec:
 Preview video path for metadata only:
 {preview_video_path or "None"}
 
+Sampled frame order:
+{json.dumps(frame_manifest, indent=2)}
+
 Transform trace:
 {json.dumps(transform_trace or {}, indent=2)[:12000]}
 
@@ -335,6 +347,7 @@ Deterministic animation report:
 {report_to_json(deterministic_report)}
 
 The attached images are ordered sampled frames. Verify whether the requested animation is visually and temporally correct.
+If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
 """
         data = self.llm.json_multimodal(system, user, sampled_frame_paths, max_tokens=4000)
         return _report_from_model(data, VerificationMode.VIDEO)
@@ -433,6 +446,27 @@ def _normalize_ambiguous_beside_relations(ir: GenerationIR) -> None:
         relation.min_distance = relation.min_distance if relation.min_distance is not None else 0.2
         relation.max_distance = relation.max_distance if relation.max_distance is not None else 3.0
         relation.axis = None
+
+
+def _normalize_animation_verifier(ir: GenerationIR) -> None:
+    if not ir.animation:
+        return
+    verifier = ir.animation.verifier
+    verifier.enabled = True
+    duration = max(1, int(ir.animation.duration_frames))
+    frames = {1, duration, max(1, duration // 2)}
+    for event in [*ir.animation.events, *ir.animation.camera_events]:
+        frames.add(max(1, int(event.start_frame)))
+        frames.add(max(1, min(duration, int((event.start_frame + event.end_frame) / 2))))
+        frames.add(max(1, min(duration, int(event.end_frame))))
+    verifier.sampled_frames = sorted(frames)
+    verifier.require_preview_video = False
+    if not verifier.pass_criteria:
+        verifier.pass_criteria = [
+            "Sampled frames show visible temporal change for every required animation event.",
+            "Animated objects remain visible and preserve required scene relationships unless the event intentionally changes them.",
+            "Motion direction, timing, and final state match the AnimationSpec.",
+        ]
 
 
 def _load_ir_reference() -> str:

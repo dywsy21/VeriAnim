@@ -173,6 +173,33 @@ not force a left/right relation unless the prompt explicitly says left or right.
 It treats that relationship as symmetric `near` plus any existing
 `not_intersecting` constraints.
 
+## Animation Verification
+
+Animation generation uses the same verifier-gated loop as static scenes, with
+extra temporal checks:
+
+- The planner emits `AnimationSpec` events with object ids, frame ranges,
+  actions, optional start/end transforms, and sampled frame requirements.
+- The harness normalizes animation verifier settings so every animation run has
+  start, midpoint, end, and event-boundary frames.
+- `CoderAgent` is instructed to create simple explicit keyframes first:
+  `location`, `rotation_euler`, or `scale` at event start/end frames, then set
+  interpolation on generated F-Curves.
+- Deterministic animation validation samples object transforms at event
+  boundaries, checks that required F-Curves exist, verifies that motion is not
+  static, and compares final transforms against explicit `end_transform` values
+  when present.
+- Sampled animation screenshots are rendered with a fixed camera computed from
+  the union bounding box across all sampled frames. This is important: if the
+  camera re-centers on the moving object every frame, the visual verifier cannot
+  see the motion.
+- `VideoVerifierAgent` receives the ordered sampled frames, the animation spec,
+  and the deterministic transform trace. It fails absent, reversed, hidden, or
+  physically implausible motion.
+- If animation verification fails, the sampled frames are included in the
+  multimodal refiner prompt so the coding model can see the temporal error it
+  needs to repair.
+
 ## Outputs
 
 Each run creates:

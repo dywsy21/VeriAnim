@@ -96,6 +96,10 @@ class BlenderRuntime:
     def validate_animation(self, ir: GenerationIR) -> tuple[ValidationReport, dict[str, Any]]:
         if not ir.animation:
             return ValidationReport.ok(VerificationMode.DETERMINISTIC, "No animation requested."), {}
+        result = self.execute_code(_animation_validation_script(ir))
+        if result.ok:
+            payload = _parse_marker_json(result.stdout, ANIMATION_MARKER, default={"report": {}, "trace": {}})
+            return _report_from_payload(payload.get("report", {}), VerificationMode.DETERMINISTIC), payload.get("trace", {})
         structured = BlenderClient.run_validation(
             ir.to_dict(),
             include_scene=False,
@@ -106,8 +110,7 @@ class BlenderRuntime:
         if _command_ok(structured):
             payload = _command_result(structured)
             return _report_from_payload(payload, VerificationMode.DETERMINISTIC), payload.get("trace", {})
-        result = self.execute_code(_animation_validation_script(ir))
-        if not result.ok:
+        else:
             return (
                 ValidationReport.failed(
                     VerificationMode.DETERMINISTIC,
@@ -115,8 +118,6 @@ class BlenderRuntime:
                 ),
                 {},
             )
-        payload = _parse_marker_json(result.stdout, ANIMATION_MARKER, default={"report": {}, "trace": {}})
-        return _report_from_payload(payload.get("report", {}), VerificationMode.DETERMINISTIC), payload.get("trace", {})
 
     def render_animation_samples(self, ir: GenerationIR, output_dir: Path) -> tuple[list[Path], Path | None]:
         if not ir.animation:
@@ -127,6 +128,13 @@ class BlenderRuntime:
         if not frames:
             duration = ir.animation.duration_frames
             frames = sorted(set([1, max(1, duration // 2), duration]))
+        script = _animation_render_script(ir, frames, output_dir, self.config.render_width, self.config.render_height)
+        result = self.execute_code(script, expects_render=True)
+        if result.ok:
+            payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": [], "video": None})
+            paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
+            if paths:
+                return paths, None
         structured = BlenderClient.render_animation_preview(
             str(output_dir),
             frames=frames,
@@ -141,14 +149,7 @@ class BlenderRuntime:
             return [Path(path) for path in payload.get("paths", []) if Path(path).exists()], (
                 Path(payload["video"]) if payload.get("video") and Path(payload["video"]).exists() else None
             )
-        script = _animation_render_script(ir, frames, output_dir, self.config.render_width, self.config.render_height)
-        result = self.execute_code(script, expects_render=True)
-        if not result.ok:
-            return [], None
-        payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": [], "video": None})
-        return [Path(path) for path in payload.get("paths", []) if Path(path).exists()], (
-            Path(payload["video"]) if payload.get("video") and Path(payload["video"]).exists() else None
-        )
+        return [], None
 
 
 def _stdout(result: dict[str, Any] | Any) -> str:
@@ -341,9 +342,34 @@ def issue(code, message, severity="major", target_id=None, relation_id=None, evi
     issues.append({{"code": code, "message": message, "severity": severity, "target_id": target_id, "relation_id": relation_id, "evidence": evidence or {{}}}})
 
 def find_obj(ll3m_id):
+    matches = []
+    exact = bpy.data.objects.get(str(ll3m_id))
+    if exact:
+        matches.append(exact)
     for obj in bpy.data.objects:
-        if obj.get("ll3m_id") == ll3m_id or obj.name == ll3m_id or obj.name.startswith(ll3m_id):
+        if obj not in matches and (obj.get("ll3m_id") == ll3m_id or obj.name.startswith(str(ll3m_id))):
+            matches.append(obj)
+    for obj in matches:
+        if obj.animation_data and obj.animation_data.action:
             return obj
+    return matches[0] if matches else None
+
+def has_fcurve(obj, path_prefix):
+    action = obj.animation_data.action if obj.animation_data else None
+    if not action:
+        return False
+    return any(fc.data_path.startswith(path_prefix) for fc in action.fcurves)
+
+def distance(a, b):
+    return sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)) ** 0.5
+
+def expected_path(action):
+    if action == "translate":
+        return "location"
+    if action == "rotate":
+        return "rotation_euler"
+    if action == "scale":
+        return "scale"
     return None
 
 def find_objects(ll3m_id):
@@ -528,13 +554,42 @@ for event in events:
         if not obj:
             issue("MISSING_ANIMATED_OBJECT", f"Animated object '{{sid}}' was not found.", "critical", sid)
             continue
+        action = event.get("action")
+        path = expected_path(action)
+        if action in ("camera_move", "camera_orbit"):
+            path = "location"
         if event.get("action") not in ("camera_move", "camera_orbit") and not obj.animation_data:
             issue("MISSING_ANIMATION_DATA", f"Animated object '{{sid}}' has no animation_data.", "major", sid)
+        if path and not has_fcurve(obj, path):
+            issue("MISSING_ANIMATION_FCURVE", f"Animated object '{{sid}}' has no '{{path}}' F-Curve for event '{{event.get('id')}}'.", "major", sid)
         frames = sorted(set([int(event.get("start_frame", 1)), int((event.get("start_frame", 1) + event.get("end_frame", 1)) / 2), int(event.get("end_frame", 1))]))
         trace[sid] = []
         for frame in frames:
             bpy.context.scene.frame_set(frame)
             trace[sid].append({{"frame": frame, "location": list(obj.matrix_world.translation), "rotation": list(obj.rotation_euler), "scale": list(obj.scale)}})
+        if path and len(trace[sid]) >= 2:
+            start_sample = trace[sid][0]
+            end_sample = trace[sid][-1]
+            key = "rotation" if path == "rotation_euler" else path
+            if distance(start_sample[key], end_sample[key]) < 0.01:
+                issue("ANIMATION_NO_VISIBLE_CHANGE", f"Event '{{event.get('id')}}' does not visibly change '{{sid}}' {{path}} between sampled frames.", "major", sid, int(event.get("end_frame", 1)), {{"start": start_sample[key], "end": end_sample[key], "path": path}})
+
+        end_transform = event.get("end_transform") or {{}}
+        if path == "location" and end_transform.get("location") and trace[sid]:
+            actual = trace[sid][-1]["location"]
+            expected = end_transform["location"]
+            if distance(actual, expected) > 0.25:
+                issue("ANIMATION_END_LOCATION_MISMATCH", f"Event '{{event.get('id')}}' end location does not match AnimationSpec.", "major", sid, int(event.get("end_frame", 1)), {{"actual": actual, "expected": expected}})
+        if path == "scale" and end_transform.get("scale") and trace[sid]:
+            actual = trace[sid][-1]["scale"]
+            expected = end_transform["scale"]
+            if distance(actual, expected) > 0.25:
+                issue("ANIMATION_END_SCALE_MISMATCH", f"Event '{{event.get('id')}}' end scale does not match AnimationSpec.", "major", sid, int(event.get("end_frame", 1)), {{"actual": actual, "expected": expected}})
+        if path == "rotation_euler" and end_transform.get("rotation_euler") and trace[sid]:
+            actual = trace[sid][-1]["rotation"]
+            expected = end_transform["rotation_euler"]
+            if distance(actual, expected) > 0.25:
+                issue("ANIMATION_END_ROTATION_MISMATCH", f"Event '{{event.get('id')}}' end rotation does not match AnimationSpec.", "major", sid, int(event.get("end_frame", 1)), {{"actual": actual, "expected": expected}})
 
 report = {{"passed": not issues, "issues": issues, "summary": "Animation deterministic validation passed." if not issues else "Animation deterministic validation found issues."}}
 print("{ANIMATION_MARKER}" + json.dumps({{"report": report, "trace": trace}}))
@@ -542,11 +597,109 @@ print("{ANIMATION_MARKER}" + json.dumps({{"report": report, "trace": trace}}))
 
 
 def _animation_render_script(ir: GenerationIR, frames: list[int], output_dir: Path, width: int, height: int) -> str:
-    views = [
-        {"id": f"frame_{frame:04d}", "view_type": "three_quarter", "target_object_ids": [], "relation_ids": [], "frame": frame}
-        for frame in frames
-    ]
-    return _render_views_script(views, output_dir, width, height, frame_default=1)
+    target_ids = [obj.id for obj in ir.scene.objects]
+    return f"""
+import json, math, os
+import bpy
+from mathutils import Vector
+
+FRAMES = json.loads({json.dumps(frames)!r})
+TARGET_IDS = json.loads({json.dumps(target_ids)!r})
+OUT_DIR = {str(output_dir).replace(chr(92), "/")!r}
+WIDTH = {int(width)}
+HEIGHT = {int(height)}
+os.makedirs(OUT_DIR, exist_ok=True)
+
+def find_objects(ll3m_id):
+    matches = []
+    exact = bpy.data.objects.get(str(ll3m_id))
+    if exact:
+        matches.append(exact)
+    for obj in bpy.data.objects:
+        if obj not in matches and obj.get("ll3m_id") == ll3m_id:
+            matches.append(obj)
+    for obj in bpy.data.objects:
+        if obj not in matches and obj.name.startswith(str(ll3m_id)):
+            matches.append(obj)
+    return matches
+
+def target_objects():
+    objs = []
+    for item in TARGET_IDS:
+        objs.extend(find_objects(item))
+    objs = [obj for obj in dict.fromkeys(objs) if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
+    if not objs:
+        objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and not obj.name.startswith("ll3m_render_camera")]
+    return objs
+
+def bbox_points(objs):
+    points = []
+    for obj in objs:
+        if getattr(obj, "bound_box", None):
+            points.extend([obj.matrix_world @ Vector(corner) for corner in obj.bound_box])
+    return points
+
+def look_at(camera, target):
+    direction = target - camera.location
+    camera.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
+scene = bpy.context.scene
+scene.render.resolution_x = WIDTH
+scene.render.resolution_y = HEIGHT
+scene.render.resolution_percentage = 100
+original_engine = scene.render.engine
+engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
+if "BLENDER_WORKBENCH" in engines:
+    scene.render.engine = "BLENDER_WORKBENCH"
+elif "BLENDER_EEVEE_NEXT" in engines:
+    scene.render.engine = "BLENDER_EEVEE_NEXT"
+elif "BLENDER_EEVEE" in engines:
+    scene.render.engine = "BLENDER_EEVEE"
+
+try:
+    scene.view_settings.view_transform = "Standard"
+    scene.view_settings.look = "Medium High Contrast"
+    scene.view_settings.exposure = -1.0
+    scene.view_settings.gamma = 1.0
+except Exception:
+    pass
+
+all_points = []
+objs = target_objects()
+for frame in FRAMES:
+    scene.frame_set(int(frame))
+    all_points.extend(bbox_points(objs))
+if not all_points:
+    all_points = [Vector((0, 0, 0))]
+mn = Vector((min(p.x for p in all_points), min(p.y for p in all_points), min(p.z for p in all_points)))
+mx = Vector((max(p.x for p in all_points), max(p.y for p in all_points), max(p.z for p in all_points)))
+center = (mn + mx) * 0.5
+radius = max((mx - mn).length * 1.35, 2.0)
+
+cam_data = bpy.data.cameras.new("ll3m_animation_sample_camera_data")
+cam = bpy.data.objects.new("ll3m_animation_sample_camera", cam_data)
+bpy.context.scene.collection.objects.link(cam)
+cam.location = center + Vector((radius * 0.85, -radius * 0.85, radius * 0.55))
+look_at(cam, center)
+cam_data.lens = 35
+scene.camera = cam
+
+paths = []
+try:
+    for frame in FRAMES:
+        scene.frame_set(int(frame))
+        path = os.path.join(OUT_DIR, f"frame_{{int(frame):04d}}.png").replace("\\\\", "/")
+        scene.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        paths.append(path)
+finally:
+    try:
+        scene.render.engine = original_engine
+    except Exception:
+        pass
+
+print("{SCREENSHOT_MARKER}" + json.dumps({{"paths": paths, "video": None}}))
+"""
 
 
 def _render_views_script(view_dicts: list[dict[str, Any]], output_dir: Path, width: int, height: int, frame_default: int | None) -> str:
