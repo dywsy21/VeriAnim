@@ -76,6 +76,21 @@ class BlenderClient:
             return {"status": "error", "message": str(e)}
 
     @staticmethod
+    def _send(type_name: str, params: dict | None = None, host=HOST, port=PORT):
+        client = BlenderClient(host, port)
+        try:
+            client.connect()
+            command = {"type": type_name}
+            if params is not None:
+                command["params"] = params
+            return client.send_command(command)
+        except Exception as e:
+            print(f"Exception in {type_name}: {e}")
+            return {"status": "error", "message": str(e)}
+        finally:
+            client.close()
+
+    @staticmethod
     def get_scene_info(host=HOST, port=PORT):
         """
         Retrieve basic information about the current Blender scene.
@@ -115,6 +130,92 @@ class BlenderClient:
             return {"status": "error", "message": str(e)}
         finally:
             client.close()
+
+    @staticmethod
+    def get_scene_graph(include_hidden: bool = False, evaluated: bool = False, host=HOST, port=PORT):
+        return BlenderClient._send(
+            "get_scene_graph",
+            {"include_hidden": bool(include_hidden), "evaluated": bool(evaluated)},
+            host,
+            port,
+        )
+
+    @staticmethod
+    def get_object_bbox(name_or_id: str, evaluated: bool = True, host=HOST, port=PORT):
+        return BlenderClient._send(
+            "get_object_bbox",
+            {"id": name_or_id, "evaluated": bool(evaluated)},
+            host,
+            port,
+        )
+
+    @staticmethod
+    def get_material_info(name: str | None = None, host=HOST, port=PORT):
+        params = {"name": name} if name else {}
+        return BlenderClient._send("get_material_info", params, host, port)
+
+    @staticmethod
+    def get_camera_view_report(camera: str | None = None, target_ids: list[str] | None = None, host=HOST, port=PORT):
+        return BlenderClient._send(
+            "get_camera_view_report",
+            {"camera": camera, "target_ids": target_ids or []},
+            host,
+            port,
+        )
+
+    @staticmethod
+    def get_animation_info(object_ids: list[str] | None = None, host=HOST, port=PORT):
+        return BlenderClient._send("get_animation_info", {"object_ids": object_ids or []}, host, port)
+
+    @staticmethod
+    def sample_object_transforms(object_ids: list[str] | None = None, frames: list[int] | None = None, host=HOST, port=PORT):
+        return BlenderClient._send(
+            "sample_object_transforms",
+            {"object_ids": object_ids or [], "frames": frames or []},
+            host,
+            port,
+        )
+
+    @staticmethod
+    def run_validation(ir: dict, include_scene: bool = True, include_animation: bool | None = None, host=HOST, port=PORT):
+        params = {"ir": ir, "include_scene": bool(include_scene)}
+        if include_animation is not None:
+            params["include_animation"] = bool(include_animation)
+        return BlenderClient._send("run_validation", params, host, port)
+
+    @staticmethod
+    def render_view_plan(views: list[dict], output_dir: str, width: int = 1280, height: int = 720, host=HOST, port=PORT):
+        return BlenderClient._send(
+            "render_view_plan",
+            {"views": views, "output_dir": output_dir, "width": int(width), "height": int(height)},
+            host,
+            port,
+        )
+
+    @staticmethod
+    def render_animation_preview(
+        output_dir: str,
+        frames: list[int] | None = None,
+        width: int = 1280,
+        height: int = 720,
+        render_video: bool = False,
+        target_object_ids: list[str] | None = None,
+        host=HOST,
+        port=PORT,
+    ):
+        return BlenderClient._send(
+            "render_animation_preview",
+            {
+                "output_dir": output_dir,
+                "frames": frames or [],
+                "width": int(width),
+                "height": int(height),
+                "render_video": bool(render_video),
+                "target_object_ids": target_object_ids or [],
+            },
+            host,
+            port,
+        )
 
     @staticmethod
     def save_scene_copy(filepath: str, pack: bool = True, host=HOST, port=PORT):
