@@ -134,6 +134,21 @@ For richer materials:
 - Set `mat.use_nodes = True`.
 - Work through `mat.node_tree`.
 - Use the Principled BSDF node for common surface appearance.
+- Blender UI and node display names can be localized. Do not retrieve shader
+  nodes with `nodes.get("Principled BSDF")`; find them by `node.type ==
+  "BSDF_PRINCIPLED"` and set `mat.diffuse_color` as well as shader inputs.
+
+Robust localized-node-safe pattern:
+
+```python
+mat.diffuse_color = base_color
+principled = next(
+    (node for node in mat.node_tree.nodes if node.type == "BSDF_PRINCIPLED"),
+    None,
+)
+if principled and "Base Color" in principled.inputs:
+    principled.inputs["Base Color"].default_value = base_color
+```
 
 Keep material generation conservative at first. Visual verification can ask for
 improvements such as "more metallic", "less glossy", or "wood grain needed".
@@ -342,4 +357,3 @@ Animation exists but does not move:
 - Symptom: object has keyframes but sampled transforms stay constant.
 - Fix: verify F-Curves data paths, frame range, and interpolation; sample with
   `scene.frame_set(frame)` before reading transforms.
-

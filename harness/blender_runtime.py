@@ -70,6 +70,13 @@ class BlenderRuntime:
     def render_screenshots(self, ir: GenerationIR, output_dir: Path) -> list[Path]:
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
+        script = _screenshot_script(ir, output_dir, self.config.render_width, self.config.render_height)
+        result = self.execute_code(script, expects_render=True)
+        if result.ok:
+            payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": []})
+            paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
+            if paths:
+                return paths
         views = _view_dicts(ir)
         structured = BlenderClient.render_view_plan(
             views,
@@ -84,12 +91,7 @@ class BlenderRuntime:
             paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
             if paths:
                 return paths
-        script = _screenshot_script(ir, output_dir, self.config.render_width, self.config.render_height)
-        result = self.execute_code(script, expects_render=True)
-        if not result.ok:
-            return []
-        payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": []})
-        return [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
+        return []
 
     def validate_animation(self, ir: GenerationIR) -> tuple[ValidationReport, dict[str, Any]]:
         if not ir.animation:
@@ -388,6 +390,42 @@ def center(mm):
     return (mm[0] + mm[1]) * 0.5
 
 objects = {{}}
+material_specs = {{item.get("id"): item for item in IR["scene"].get("materials", []) if item.get("id")}}
+
+def find_material(material_id):
+    mat = bpy.data.materials.get(str(material_id))
+    if mat:
+        return mat
+    for candidate in bpy.data.materials:
+        if candidate.get("ll3m_id") == material_id:
+            return candidate
+    return None
+
+def color_distance(a, b):
+    return math.sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)))
+
+def material_candidate_colors(mat):
+    colors = [mat.diffuse_color]
+    if mat.use_nodes and mat.node_tree:
+        for node in mat.node_tree.nodes:
+            if getattr(node, "type", None) == "BSDF_PRINCIPLED" and "Base Color" in node.inputs:
+                colors.append(node.inputs["Base Color"].default_value)
+    return colors
+
+for material_id, spec in material_specs.items():
+    mat = find_material(material_id)
+    if not mat:
+        issue("MISSING_MATERIAL_SPEC", f"Material '{{material_id}}' was not created.", "major")
+        continue
+    expected = spec.get("base_color")
+    if expected and all(color_distance(color, expected) > 0.35 for color in material_candidate_colors(mat)):
+        issue(
+            "MATERIAL_COLOR_MISMATCH",
+            f"Material '{{material_id}}' diffuse color does not match IR base_color. This often means shader nodes were found by localized display name instead of node.type.",
+            "major",
+            evidence={{"actual": [list(color) for color in material_candidate_colors(mat)], "expected": expected}},
+        )
+
 for spec in IR["scene"].get("objects", []):
     matches = find_objects(spec["id"])
     if not matches:
@@ -530,6 +568,19 @@ def find_obj(ll3m_id):
             return obj
     return None
 
+def find_objects(ll3m_id):
+    matches = []
+    exact = bpy.data.objects.get(str(ll3m_id))
+    if exact:
+        matches.append(exact)
+    for obj in bpy.data.objects:
+        if obj not in matches and obj.get("ll3m_id") == ll3m_id:
+            matches.append(obj)
+    for obj in bpy.data.objects:
+        if obj not in matches and obj.name.startswith(str(ll3m_id)):
+            matches.append(obj)
+    return matches
+
 def bbox_for_objects(objs):
     points = []
     for obj in objs:
@@ -565,39 +616,115 @@ scene = bpy.context.scene
 scene.render.resolution_x = WIDTH
 scene.render.resolution_y = HEIGHT
 scene.render.resolution_percentage = 100
+original_engine = scene.render.engine
 engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-if "BLENDER_EEVEE_NEXT" in engines:
+if "BLENDER_WORKBENCH" in engines:
+    scene.render.engine = "BLENDER_WORKBENCH"
+elif "BLENDER_EEVEE_NEXT" in engines:
     scene.render.engine = "BLENDER_EEVEE_NEXT"
 elif "BLENDER_EEVEE" in engines:
     scene.render.engine = "BLENDER_EEVEE"
 
-all_objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "EMPTY"}} and not obj.name.startswith("ll3m_render_camera")]
+original_view_settings = {{
+    "view_transform": getattr(scene.view_settings, "view_transform", None),
+    "look": getattr(scene.view_settings, "look", None),
+    "exposure": getattr(scene.view_settings, "exposure", None),
+    "gamma": getattr(scene.view_settings, "gamma", None),
+}}
+original_light_energy = {{obj.name: obj.data.energy for obj in bpy.data.objects if obj.type == "LIGHT" and hasattr(obj.data, "energy")}}
+original_world_strength = None
+world = scene.world
+if world and world.use_nodes:
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        original_world_strength = bg.inputs[1].default_value
+
+def apply_inspection_render_settings():
+    # Verification screenshots must be legible even when generated code creates
+    # poor lights/exposure. Keep this temporary and restore after rendering.
+    try:
+        scene.view_settings.view_transform = "Standard"
+        scene.view_settings.look = "Medium High Contrast"
+        scene.view_settings.exposure = -1.5
+        scene.view_settings.gamma = 1.0
+    except Exception:
+        pass
+    try:
+        scene.display.shading.light = "STUDIO"
+        scene.display.shading.color_type = "MATERIAL"
+        scene.display.shading.show_shadows = True
+        scene.display.shading.show_cavity = True
+    except Exception:
+        pass
+    if world and world.use_nodes:
+        bg = world.node_tree.nodes.get("Background")
+        if bg:
+            bg.inputs[1].default_value = min(float(bg.inputs[1].default_value), 0.2)
+    for obj in bpy.data.objects:
+        if obj.type != "LIGHT" or not hasattr(obj.data, "energy"):
+            continue
+        if obj.data.type == "AREA":
+            obj.data.energy = min(float(obj.data.energy), 120.0)
+        elif obj.data.type == "POINT":
+            obj.data.energy = min(float(obj.data.energy), 250.0)
+        elif obj.data.type == "SUN":
+            obj.data.energy = min(float(obj.data.energy), 2.0)
+        else:
+            obj.data.energy = min(float(obj.data.energy), 500.0)
+
+def restore_render_settings():
+    try:
+        scene.render.engine = original_engine
+    except Exception:
+        pass
+    for attr, value in original_view_settings.items():
+        if value is not None:
+            try:
+                setattr(scene.view_settings, attr, value)
+            except Exception:
+                pass
+    for obj in bpy.data.objects:
+        if obj.name in original_light_energy and hasattr(obj.data, "energy"):
+            obj.data.energy = original_light_energy[obj.name]
+    if original_world_strength is not None and world and world.use_nodes:
+        bg = world.node_tree.nodes.get("Background")
+        if bg:
+            bg.inputs[1].default_value = original_world_strength
+
+apply_inspection_render_settings()
+
+all_objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and not obj.name.startswith("ll3m_render_camera")]
 paths = []
 
-for view in VIEWS:
-    frame = view.get("frame")
-    if frame is None:
-        frame = FRAME_DEFAULT
-    if frame is not None:
-        scene.frame_set(int(frame))
-    targets = [find_obj(item) for item in view.get("target_object_ids", [])]
-    targets = [obj for obj in targets if obj]
-    if not targets:
-        targets = all_objs
-    mn, mx = bbox_for_objects(targets)
-    center = (mn + mx) * 0.5
-    radius = max((mx - mn).length * 1.4, 3.0)
-    cam_data = bpy.data.cameras.new("ll3m_render_camera_" + view["id"] + "_data")
-    cam = bpy.data.objects.new("ll3m_render_camera_" + view["id"], cam_data)
-    bpy.context.scene.collection.objects.link(cam)
-    cam.location = center + camera_offset(view.get("view_type", "three_quarter"), radius)
-    look_at(cam, center)
-    cam_data.lens = 35
-    scene.camera = cam
-    path = os.path.join(OUT_DIR, view["id"] + ".png").replace("\\\\", "/")
-    scene.render.filepath = path
-    bpy.ops.render.render(write_still=True)
-    paths.append(path)
+try:
+    for view in VIEWS:
+        frame = view.get("frame")
+        if frame is None:
+            frame = FRAME_DEFAULT
+        if frame is not None:
+            scene.frame_set(int(frame))
+        targets = []
+        for item in view.get("target_object_ids", []):
+            targets.extend(find_objects(item))
+        targets = [obj for obj in dict.fromkeys(targets) if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
+        if not targets:
+            targets = all_objs
+        mn, mx = bbox_for_objects(targets)
+        center = (mn + mx) * 0.5
+        radius = max((mx - mn).length * 1.25, 1.15)
+        cam_data = bpy.data.cameras.new("ll3m_render_camera_" + view["id"] + "_data")
+        cam = bpy.data.objects.new("ll3m_render_camera_" + view["id"], cam_data)
+        bpy.context.scene.collection.objects.link(cam)
+        cam.location = center + camera_offset(view.get("view_type", "three_quarter"), radius)
+        look_at(cam, center)
+        cam_data.lens = 35
+        scene.camera = cam
+        path = os.path.join(OUT_DIR, view["id"] + ".png").replace("\\\\", "/")
+        scene.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        paths.append(path)
+finally:
+    restore_render_settings()
 
 print("{SCREENSHOT_MARKER}" + json.dumps({{"paths": paths, "video": None}}))
 """

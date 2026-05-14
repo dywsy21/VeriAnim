@@ -28,7 +28,8 @@ class PlannerAgent:
             "Plan at least three complementary screenshot views: an overall three-quarter view, a relation/contact close-up, and a side or top view that exposes support/contact. "
             "Add visual pass criteria that require no floating, detached, or misaligned parts unless explicitly requested. "
             "When animation is requested, include AnimationSpec and video verifier settings. "
-            "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id."
+            "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
+            "Relations, cameras, screenshot targets, and animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids."
         )
         user = f"""
 User prompt:
@@ -57,7 +58,8 @@ Use Blender's Z-up coordinate system and meters.
             "You revise an existing GenerationIR for a Blender 4.5.4 harness. "
             "Return only the complete revised GenerationIR JSON. Preserve stable ids where possible. "
             "Add new ids only for new objects, relations, cameras, screenshots, or animation events. "
-            "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id."
+            "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
+            "Relations, cameras, screenshot targets, and animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids."
         )
         user = f"""
 Current GenerationIR:
@@ -93,11 +95,14 @@ The previous JSON failed to decode or validate:
 {last_error}
 
 Return corrected complete GenerationIR JSON only. Every relation must include
-relation_type, subject_id, and object_id. Every object must include id and description.
+relation_type, subject_id, and object_id. Every relation/camera/view/animation
+reference must point to an ObjectSpec id, never a part id. Every object must
+include id and description.
 """
             data = self.llm.json_text(system, request)
             try:
                 ir = from_dict(GenerationIR, data)
+                _normalize_part_references(ir)
                 report = ir.validate()
                 if report.passed:
                     return ir
@@ -119,6 +124,8 @@ class CoderAgent:
             "You are a senior Blender 4.5.4 Python coder. "
             "Generate one complete Python script that creates the requested scene and optional animation. "
             "Use data API where possible, stable ll3m custom properties, modular factory functions, and explicit collections. "
+            "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
+            "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
         user = f"""
@@ -133,6 +140,7 @@ Script requirements:
 - Create all objects, materials, cameras, lights, and environment from the IR.
 - Assign custom properties: ll3m_id, ll3m_role, ll3m_part where appropriate.
 - Keep object names stable and human-readable.
+- Create robust materials by setting mat.diffuse_color and locating shader nodes by node.type, not localized node names.
 - Set frame_start/frame_end/fps if animation exists.
 - Insert keyframes for AnimationSpec events when present.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
@@ -159,6 +167,7 @@ class RefinerAgent:
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
+            "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
             "Return only the full corrected Python script."
         )
         user = f"""
@@ -324,6 +333,65 @@ def _issue_query(reports: list[ValidationReport], execution_error: str | None) -
         for issue in report.issues:
             parts.extend([issue.code, issue.message, issue.suggested_fix or ""])
     return " ".join(parts) or "Blender 4.5 bpy gotchas"
+
+
+def _normalize_part_references(ir: GenerationIR) -> None:
+    """Map planner-emitted part ids back to object ids where the IR expects objects."""
+
+    object_ids = {obj.id for obj in ir.scene.objects}
+    part_to_object: dict[str, str] = {}
+    object_by_id = {obj.id: obj for obj in ir.scene.objects}
+    for obj in ir.scene.objects:
+        for part in obj.parts:
+            if part.id and part.id not in object_ids:
+                part_to_object[part.id] = obj.id
+
+    if not part_to_object:
+        return
+
+    normalized_relations = []
+    removed_relation_ids: set[str] = set()
+    for relation in ir.scene.relations:
+        original_subject = relation.subject_id
+        original_object = relation.object_id
+        relation.subject_id = part_to_object.get(relation.subject_id, relation.subject_id)
+        relation.object_id = part_to_object.get(relation.object_id, relation.object_id)
+        if relation.subject_id == relation.object_id and relation.subject_id in object_by_id:
+            obj = object_by_id[relation.subject_id]
+            detail = relation.description or f"{original_subject} {relation.relation_type.value} {original_object}"
+            feature = f"Internal part relationship must be visible and physically plausible: {detail}."
+            if feature not in obj.required_features:
+                obj.required_features.append(feature)
+            if feature not in obj.visual_check_prompts:
+                obj.visual_check_prompts.append(feature)
+            removed_relation_ids.add(relation.id)
+            continue
+        normalized_relations.append(relation)
+    ir.scene.relations = normalized_relations
+    valid_relation_ids = {relation.id for relation in ir.scene.relations}
+
+    for camera in ir.scene.cameras:
+        camera.target_object_ids = _map_ids(camera.target_object_ids, part_to_object)
+
+    for view in ir.scene.verifier.screenshot_plan.views:
+        view.target_object_ids = _map_ids(view.target_object_ids, part_to_object)
+        view.relation_ids = [
+            relation_id
+            for relation_id in view.relation_ids
+            if relation_id in valid_relation_ids and relation_id not in removed_relation_ids
+        ]
+
+    visual = ir.scene.verifier.visual
+    visual.required_view_ids = list(dict.fromkeys(visual.required_view_ids))
+
+    if ir.animation:
+        for event in [*ir.animation.events, *ir.animation.camera_events]:
+            event.subject_ids = _map_ids(event.subject_ids, part_to_object)
+            event.target_ids = _map_ids(event.target_ids, part_to_object)
+
+
+def _map_ids(values: list[str], mapping: dict[str, str]) -> list[str]:
+    return list(dict.fromkeys(mapping.get(value, value) for value in values))
 
 
 def _load_ir_reference() -> str:
