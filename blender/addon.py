@@ -193,6 +193,21 @@ class LL3MAgentServer:
                 return obj
         return None
 
+    def _find_objects(self, name_or_id):
+        if not name_or_id:
+            return []
+        matches = []
+        exact = bpy.data.objects.get(name_or_id)
+        if exact:
+            matches.append(exact)
+        for obj in bpy.data.objects:
+            if obj not in matches and obj.get("ll3m_id") == name_or_id:
+                matches.append(obj)
+        for obj in bpy.data.objects:
+            if obj not in matches and obj.name.startswith(str(name_or_id)):
+                matches.append(obj)
+        return matches
+
     def _object_identity(self, obj):
         return {
             "name": obj.name,
@@ -213,6 +228,28 @@ class LL3MAgentServer:
         if not getattr(target, "bound_box", None):
             return None
         corners = [target.matrix_world @ Vector(corner) for corner in target.bound_box]
+        if not corners:
+            return None
+        min_v = Vector((min(v.x for v in corners), min(v.y for v in corners), min(v.z for v in corners)))
+        max_v = Vector((max(v.x for v in corners), max(v.y for v in corners), max(v.z for v in corners)))
+        center = (min_v + max_v) * 0.5
+        size = max_v - min_v
+        return {
+            "corners": [list(v) for v in corners],
+            "min": list(min_v),
+            "max": list(max_v),
+            "center": list(center),
+            "size": list(size),
+        }
+
+    def _aggregate_bbox(self, objects, evaluated=False):
+        corners = []
+        for obj in objects:
+            if obj.type not in {"MESH", "CURVE", "SURFACE", "FONT", "META"}:
+                continue
+            bbox = self._world_bbox(obj, evaluated=evaluated)
+            if bbox:
+                corners.extend(Vector(corner) for corner in bbox["corners"])
         if not corners:
             return None
         min_v = Vector((min(v.x for v in corners), min(v.y for v in corners), min(v.z for v in corners)))
@@ -290,13 +327,14 @@ class LL3MAgentServer:
         }
 
     def get_object_bbox(self, params):
-        obj = self._find_object(params.get("name") or params.get("id"))
-        if not obj:
+        name_or_id = params.get("name") or params.get("id")
+        objects = self._find_objects(name_or_id)
+        if not objects:
             return {"found": False, "message": "Object not found"}
         return {
             "found": True,
-            "object": self._object_identity(obj),
-            "bbox": self._world_bbox(obj, evaluated=bool(params.get("evaluated", False))),
+            "objects": [self._object_identity(obj) for obj in objects],
+            "bbox": self._aggregate_bbox(objects, evaluated=bool(params.get("evaluated", False))),
         }
 
     def _material_summary(self, mat):
@@ -431,17 +469,18 @@ class LL3MAgentServer:
         objects = {}
         for spec in scene_spec.get("objects", []):
             object_id = spec.get("id")
-            obj = self._find_object(object_id)
-            if not obj and include_scene:
+            matches = self._find_objects(object_id)
+            if not matches and include_scene:
                 issue("MISSING_OBJECT", f"Object '{object_id}' was not created.", "critical", target_id=object_id)
                 continue
-            if not obj:
+            if not matches:
                 continue
-            objects[object_id] = obj
-            if include_scene and obj.type == "MESH":
-                if len(obj.data.vertices) == 0:
-                    issue("EMPTY_MESH", f"Object '{object_id}' has no vertices.", "critical", target_id=object_id)
-                if spec.get("material_ids") and not obj.data.materials:
+            objects[object_id] = matches
+            mesh_parts = [obj for obj in matches if obj.type == "MESH"]
+            if include_scene:
+                if mesh_parts and all(len(obj.data.vertices) == 0 for obj in mesh_parts):
+                    issue("EMPTY_MESH", f"Object '{object_id}' has no mesh vertices.", "critical", target_id=object_id)
+                if spec.get("material_ids") and mesh_parts and not any(obj.data.materials for obj in mesh_parts):
                     issue("MISSING_MATERIAL", f"Object '{object_id}' has no material assigned.", "major", target_id=object_id)
 
         if include_scene:
@@ -471,8 +510,8 @@ class LL3MAgentServer:
         obj = objects.get(object_id)
         if not subj or not obj:
             return
-        sb = self._world_bbox(subj, evaluated=True)
-        ob = self._world_bbox(obj, evaluated=True)
+        sb = self._aggregate_bbox(subj, evaluated=True)
+        ob = self._aggregate_bbox(obj, evaluated=True)
         if not sb or not ob:
             issue("MISSING_BBOX", "Could not compute relation bounding boxes.", target_id=subject_id, relation_id=relation_id)
             return

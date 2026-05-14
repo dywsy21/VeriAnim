@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import HarnessConfig
-from .ir import GenerationIR, ValidationIssue, ValidationReport, VerificationMode, report_to_json
+from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
 from .llm import LLMClient, extract_code_block
 from .rag import LocalRAG
 from .serde import from_dict
@@ -20,11 +20,13 @@ class PlannerAgent:
 
     def plan(self, prompt: str, *, include_animation: bool = False) -> GenerationIR:
         context = self.rag.format_context("IR SceneSpec AnimationSpec ScreenshotPlan VideoVerifierSpec", limit=5)
+        ir_reference = _load_ir_reference()
         system = (
             "You are the planner for a Blender 4.5.4 code-generation harness. "
             "Return only a JSON object matching the GenerationIR schema. "
             "Use stable machine ids. Include screenshot views for visual validation. "
-            "When animation is requested, include AnimationSpec and video verifier settings."
+            "When animation is requested, include AnimationSpec and video verifier settings. "
+            "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id."
         )
         user = f"""
 User prompt:
@@ -32,25 +34,28 @@ User prompt:
 
 Animation requested: {include_animation}
 
+Complete IR definition:
+{ir_reference}
+
+Strict JSON skeleton:
+{_planner_json_skeleton(include_animation)}
+
 Relevant IR documentation:
 {context}
 
 Return a JSON object with keys: prompt, scene, optional animation, version, notes.
 Use Blender's Z-up coordinate system and meters.
 """
-        data = self.llm.json_text(system, user)
-        ir = from_dict(GenerationIR, data)
-        report = ir.validate()
-        if not report.passed:
-            raise ValueError(f"Planner produced invalid IR:\n{report_to_json(report)}")
-        return ir
+        return self._generate_valid_ir(system, user)
 
     def revise(self, ir: GenerationIR, user_request: str, *, include_animation: bool | None = None) -> GenerationIR:
         context = self.rag.format_context("IR revision SceneSpec AnimationSpec user refinement", limit=5)
+        ir_reference = _load_ir_reference()
         system = (
             "You revise an existing GenerationIR for a Blender 4.5.4 harness. "
             "Return only the complete revised GenerationIR JSON. Preserve stable ids where possible. "
-            "Add new ids only for new objects, relations, cameras, screenshots, or animation events."
+            "Add new ids only for new objects, relations, cameras, screenshots, or animation events. "
+            "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id."
         )
         user = f"""
 Current GenerationIR:
@@ -62,17 +67,42 @@ User change request:
 Animation requested override:
 {include_animation}
 
+Complete IR definition:
+{ir_reference}
+
+Strict JSON skeleton:
+{_planner_json_skeleton(include_animation if include_animation is not None else bool(ir.animation))}
+
 Relevant IR documentation:
 {context}
 
 Return the full revised GenerationIR JSON.
 """
-        data = self.llm.json_text(system, user)
-        revised = from_dict(GenerationIR, data)
-        report = revised.validate()
-        if not report.passed:
-            raise ValueError(f"Planner revised IR is invalid:\n{report_to_json(report)}")
-        return revised
+        return self._generate_valid_ir(system, user)
+
+    def _generate_valid_ir(self, system: str, user: str) -> GenerationIR:
+        last_error = ""
+        for attempt in range(2):
+            request = user
+            if attempt:
+                request += f"""
+
+The previous JSON failed to decode or validate:
+{last_error}
+
+Return corrected complete GenerationIR JSON only. Every relation must include
+relation_type, subject_id, and object_id. Every object must include id and description.
+"""
+            data = self.llm.json_text(system, request)
+            try:
+                ir = from_dict(GenerationIR, data)
+                report = ir.validate()
+                if report.passed:
+                    return ir
+                last_error = report_to_json(report)
+            except Exception as exc:
+                last_error = str(exc)
+        raise ValueError(f"Planner produced invalid IR after retry:\n{last_error}")
 
 
 class CoderAgent:
@@ -276,6 +306,173 @@ def _issue_query(reports: list[ValidationReport], execution_error: str | None) -
     return " ".join(parts) or "Blender 4.5 bpy gotchas"
 
 
+def _load_ir_reference() -> str:
+    path = Path("docs/ir.md")
+    if not path.exists():
+        return "IR reference file docs/ir.md is unavailable. Use harness.ir dataclass field names."
+    text = path.read_text(encoding="utf-8")
+    # Keep the whole practical definition. This is more reliable than retrieval
+    # for planner correctness and still small enough for the configured models.
+    return text[:24000]
+
+
+def _planner_json_skeleton(include_animation: bool | None) -> str:
+    animation_block = """
+  "animation": {
+    "duration_frames": 120,
+    "fps": 24,
+    "events": [
+      {
+        "id": "event_id",
+        "action": "translate",
+        "subject_ids": ["object_id"],
+        "start_frame": 1,
+        "end_frame": 120,
+        "description": "what happens",
+        "target_ids": [],
+        "interpolation": "ease_in_out",
+        "required": true,
+        "expected_visual_result": "what the video verifier should see",
+        "constraints": []
+      }
+    ],
+    "camera_events": [],
+    "loop": false,
+    "verifier": {
+      "enabled": true,
+      "model_hint": "qwen3.5-omni",
+      "sampled_frames": [1, 60, 120],
+      "require_preview_video": true,
+      "questions": [],
+      "pass_criteria": [],
+      "max_rounds": 2
+    }
+  },""" if include_animation else ""
+    return f"""{{
+  "prompt": {{
+    "text": "original user prompt",
+    "negative_text": null,
+    "image_paths": [],
+    "user_constraints": []
+  }},
+  "scene": {{
+    "objects": [
+      {{
+        "id": "stable_object_id",
+        "description": "semantic description",
+        "label": "Human Label",
+        "category": "generic",
+        "role": "primary",
+        "importance": "required",
+        "parts": [
+          {{
+            "id": "part_id",
+            "description": "part description",
+            "required": true,
+            "material_id": "material_id",
+            "expected_count": 1
+          }}
+        ],
+        "required_features": [],
+        "optional_features": [],
+        "forbidden_features": [],
+        "material_ids": ["material_id"],
+        "visual_check_prompts": []
+      }}
+    ],
+    "relations": [
+      {{
+        "id": "relation_id",
+        "relation_type": "on_top_of",
+        "subject_id": "stable_object_id",
+        "object_id": "other_object_id",
+        "description": "semantic relation",
+        "required": true,
+        "tolerance": 0.05,
+        "visual_priority": "required"
+      }}
+    ],
+    "materials": [
+      {{
+        "id": "material_id",
+        "description": "material description",
+        "base_color": [0.5, 0.5, 0.5, 1.0],
+        "texture_hints": []
+      }}
+    ],
+    "environment": {{
+      "environment_type": "studio",
+      "description": "environment description",
+      "floor": "floor description",
+      "lights": [
+        {{
+          "id": "key_light",
+          "light_type": "area",
+          "description": "soft key light",
+          "location": [2.0, -3.0, 4.0],
+          "energy": 500,
+          "size": 4.0
+        }}
+      ],
+      "ambient_occlusion": true
+    }},
+    "cameras": [
+      {{
+        "id": "camera_main",
+        "view_type": "three_quarter",
+        "description": "main inspection view",
+        "target_object_ids": ["stable_object_id"],
+        "coverage": "all primary objects visible"
+      }}
+    ],
+    "style": {{
+      "description": "style description",
+      "detail_level": "medium",
+      "color_palette": []
+    }},
+    "verifier": {{
+      "deterministic_checks": [],
+      "screenshot_plan": {{
+        "views": [
+          {{
+            "id": "three_quarter",
+            "view_type": "three_quarter",
+            "description": "overall scene view",
+            "target_object_ids": ["stable_object_id"],
+            "relation_ids": [],
+            "required": true
+          }}
+        ],
+        "min_required_views": 3
+      }},
+      "visual": {{
+        "enabled": true,
+        "model_hint": null,
+        "required_view_ids": ["three_quarter"],
+        "questions": [],
+        "pass_criteria": [],
+        "max_rounds": 2
+      }},
+      "video": {{
+        "enabled": false,
+        "model_hint": "qwen3.5-omni",
+        "sampled_frames": [],
+        "require_preview_video": true,
+        "questions": [],
+        "pass_criteria": [],
+        "max_rounds": 2
+      }}
+    }},
+    "coordinate_system": "Blender default: Z up, right-handed",
+    "units": "meters"
+  }},
+{animation_block}
+  "version": "0.1",
+  "project_id": null,
+  "notes": "planner notes"
+}}"""
+
+
 def _report_dict(report: ValidationReport) -> dict[str, Any]:
     from .ir import report_to_dict
 
@@ -289,7 +486,7 @@ def _report_from_model(data: dict[str, Any], mode: VerificationMode) -> Validati
             ValidationIssue(
                 code=str(item.get("code") or "MODEL_REPORTED_ISSUE"),
                 message=str(item.get("message") or item.get("problem") or "Model reported an issue."),
-                severity=item.get("severity", "major"),
+                severity=_severity(item.get("severity", "major")),
                 target_id=item.get("target_id") or item.get("object"),
                 relation_id=item.get("relation_id"),
                 frame=item.get("frame"),
@@ -303,3 +500,12 @@ def _report_from_model(data: dict[str, Any], mode: VerificationMode) -> Validati
         issues=issues,
         summary=data.get("summary"),
     )
+
+
+def _severity(value: Any) -> Severity:
+    if isinstance(value, Severity):
+        return value
+    try:
+        return Severity(str(value))
+    except ValueError:
+        return Severity.MAJOR

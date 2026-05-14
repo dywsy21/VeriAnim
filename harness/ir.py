@@ -210,8 +210,8 @@ class TransformSpec:
 
 @dataclass(slots=True)
 class MaterialSpec:
-    id: str
-    description: str
+    id: str = "material"
+    description: str = "material"
     base_color: RGBA | None = None
     metallic: float | None = None
     roughness: float | None = None
@@ -221,8 +221,8 @@ class MaterialSpec:
 
 @dataclass(slots=True)
 class ObjectPartSpec:
-    id: str
-    description: str
+    id: str = "part"
+    description: str = "object part"
     required: bool = True
     material_id: str | None = None
     expected_count: int | None = None
@@ -274,8 +274,8 @@ class SpatialRelationSpec:
 
 @dataclass(slots=True)
 class LightSpec:
-    id: str
-    light_type: LightType
+    id: str = "light"
+    light_type: LightType = LightType.AREA
     description: str | None = None
     location: Vec3 | None = None
     rotation_euler: Vec3 | None = None
@@ -299,7 +299,7 @@ class EnvironmentSpec:
 
 @dataclass(slots=True)
 class CameraSpec:
-    id: str
+    id: str = "camera"
     view_type: CameraViewType = CameraViewType.THREE_QUARTER
     description: str | None = None
     location: Vec3 | None = None
@@ -321,9 +321,9 @@ class RenderSpec:
 
 @dataclass(slots=True)
 class ScreenshotViewSpec:
-    id: str
-    view_type: CameraViewType
-    description: str
+    id: str = "view"
+    view_type: CameraViewType = CameraViewType.THREE_QUARTER
+    description: str = "scene view"
     camera_id: str | None = None
     target_object_ids: list[str] = field(default_factory=list)
     relation_ids: list[str] = field(default_factory=list)
@@ -341,8 +341,8 @@ class ScreenshotPlan:
 
 @dataclass(slots=True)
 class DeterministicCheckSpec:
-    id: str
-    description: str
+    id: str = "check"
+    description: str = "deterministic check"
     target_ids: list[str] = field(default_factory=list)
     relation_ids: list[str] = field(default_factory=list)
     required: bool = True

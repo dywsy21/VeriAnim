@@ -10,7 +10,7 @@ from typing import Any
 from blender.client import BlenderClient
 
 from .config import HarnessConfig
-from .ir import GenerationIR, ValidationIssue, ValidationReport, VerificationMode
+from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, VerificationMode
 
 
 REPORT_MARKER = "LL3M_VALIDATION_REPORT:"
@@ -55,15 +55,9 @@ class BlenderRuntime:
         return {}
 
     def validate_scene(self, ir: GenerationIR) -> ValidationReport:
-        structured = BlenderClient.run_validation(
-            ir.to_dict(),
-            include_scene=True,
-            include_animation=False,
-            host=self.config.blender_host,
-            port=self.config.blender_port,
-        )
-        if _command_ok(structured):
-            return _report_from_payload(_command_result(structured), VerificationMode.DETERMINISTIC)
+        # Use an injected validation script so changes to validator logic take
+        # effect immediately even when Blender has an older addon instance
+        # already running.
         script = _scene_validation_script(ir)
         result = self.execute_code(script)
         if not result.ok:
@@ -74,6 +68,7 @@ class BlenderRuntime:
         return _parse_report(result.stdout, REPORT_MARKER)
 
     def render_screenshots(self, ir: GenerationIR, output_dir: Path) -> list[Path]:
+        output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         views = _view_dicts(ir)
         structured = BlenderClient.render_view_plan(
@@ -86,7 +81,9 @@ class BlenderRuntime:
         )
         if _command_ok(structured):
             payload = _command_result(structured)
-            return [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
+            paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
+            if paths:
+                return paths
         script = _screenshot_script(ir, output_dir, self.config.render_width, self.config.render_height)
         result = self.execute_code(script, expects_render=True)
         if not result.ok:
@@ -122,6 +119,7 @@ class BlenderRuntime:
     def render_animation_samples(self, ir: GenerationIR, output_dir: Path) -> tuple[list[Path], Path | None]:
         if not ir.animation:
             return [], None
+        output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         frames = ir.animation.verifier.sampled_frames
         if not frames:
@@ -167,6 +165,8 @@ def _stdout(result: dict[str, Any] | Any) -> str:
 def _infer_ok(result: dict[str, Any] | Any, stdout: str) -> tuple[bool, str | None]:
     if isinstance(result, dict) and str(result.get("status", "")).lower() == "error":
         return False, str(result.get("message") or stdout)
+    if REPORT_MARKER in stdout or ANIMATION_MARKER in stdout or SCREENSHOT_MARKER in stdout:
+        return True, None
     lowered = stdout.lower()
     if any(token in lowered for token in ("traceback", "exception", "error:", "failed")):
         return False, stdout
@@ -209,7 +209,7 @@ def _report_from_payload(payload: dict[str, Any], mode: VerificationMode) -> Val
         ValidationIssue(
             code=str(item.get("code", "VALIDATION_ISSUE")),
             message=str(item.get("message", "Validation issue.")),
-            severity=item.get("severity", "major"),
+            severity=_severity(item.get("severity", "major")),
             target_id=item.get("target_id"),
             relation_id=item.get("relation_id"),
             frame=item.get("frame"),
@@ -219,6 +219,15 @@ def _report_from_payload(payload: dict[str, Any], mode: VerificationMode) -> Val
         for item in payload.get("issues", []) or []
     ]
     return ValidationReport(mode=mode, passed=bool(payload.get("passed", not issues)), issues=issues, summary=payload.get("summary"))
+
+
+def _severity(value: Any) -> Severity:
+    if isinstance(value, Severity):
+        return value
+    try:
+        return Severity(str(value))
+    except ValueError:
+        return Severity.MAJOR
 
 
 def _json(ir: GenerationIR) -> str:
@@ -269,6 +278,19 @@ def find_obj(ll3m_id):
             return obj
     return None
 
+def find_objects(ll3m_id):
+    matches = []
+    exact = bpy.data.objects.get(ll3m_id)
+    if exact:
+        matches.append(exact)
+    for obj in bpy.data.objects:
+        if obj not in matches and obj.get("ll3m_id") == ll3m_id:
+            matches.append(obj)
+    for obj in bpy.data.objects:
+        if obj not in matches and obj.name.startswith(str(ll3m_id)):
+            matches.append(obj)
+    return matches
+
 def world_bbox(obj):
     if not obj or not getattr(obj, "bound_box", None):
         return []
@@ -283,21 +305,34 @@ def bbox_minmax(obj):
         Vector((max(v.x for v in corners), max(v.y for v in corners), max(v.z for v in corners))),
     )
 
+def aggregate_minmax(objs):
+    corners = []
+    for obj in objs:
+        if obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}:
+            continue
+        corners.extend(world_bbox(obj))
+    if not corners:
+        return None
+    return (
+        Vector((min(v.x for v in corners), min(v.y for v in corners), min(v.z for v in corners))),
+        Vector((max(v.x for v in corners), max(v.y for v in corners), max(v.z for v in corners))),
+    )
+
 def center(mm):
     return (mm[0] + mm[1]) * 0.5
 
 objects = {{}}
 for spec in IR["scene"].get("objects", []):
-    obj = find_obj(spec["id"])
-    if not obj:
+    matches = find_objects(spec["id"])
+    if not matches:
         issue("MISSING_OBJECT", f"Object '{{spec['id']}}' was not created.", "critical", spec["id"])
         continue
-    objects[spec["id"]] = obj
-    if obj.type == "MESH":
-        mesh = obj.data
-        if len(mesh.vertices) == 0:
-            issue("EMPTY_MESH", f"Object '{{spec['id']}}' has no vertices.", "critical", spec["id"])
-        if not mesh.materials and spec.get("material_ids"):
+    objects[spec["id"]] = matches
+    mesh_parts = [obj for obj in matches if obj.type == "MESH"]
+    if mesh_parts:
+        if all(len(obj.data.vertices) == 0 for obj in mesh_parts):
+            issue("EMPTY_MESH", f"Object '{{spec['id']}}' has no mesh vertices.", "critical", spec["id"])
+        if not any(obj.data.materials for obj in mesh_parts) and spec.get("material_ids"):
             issue("MISSING_MATERIAL", f"Object '{{spec['id']}}' has no material assigned.", "major", spec["id"])
 
 for relation in IR["scene"].get("relations", []):
@@ -307,8 +342,8 @@ for relation in IR["scene"].get("relations", []):
     obj = objects.get(oid)
     if not subj or not obj:
         continue
-    sb = bbox_minmax(subj)
-    ob = bbox_minmax(obj)
+    sb = aggregate_minmax(subj)
+    ob = aggregate_minmax(obj)
     if not sb or not ob:
         issue("MISSING_BBOX", "Could not compute relation bounding boxes.", "major", sid, relation["id"])
         continue
@@ -428,7 +463,7 @@ VIEWS = json.loads({json.dumps(view_dicts, ensure_ascii=False)!r})
 OUT_DIR = {str(output_dir).replace(chr(92), "/")!r}
 WIDTH = {int(width)}
 HEIGHT = {int(height)}
-FRAME_DEFAULT = {json.dumps(frame_default)}
+FRAME_DEFAULT = {repr(frame_default)}
 os.makedirs(OUT_DIR, exist_ok=True)
 
 def find_obj(ll3m_id):
