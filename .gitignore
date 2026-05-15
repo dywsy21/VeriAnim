@@ -10,3 +10,5 @@ logs/
 downloads/
 .venv
 runs
+.env.backup*
+qwen3-omni.md

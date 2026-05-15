@@ -211,7 +211,13 @@ class InteractiveHarnessSession:
                     self.ir, self.store.root / "animation" / label
                 )
                 self._latest_screenshots = [*self._latest_screenshots, *sampled_frames]
-                self._emit("render", f"Rendered {len(sampled_frames)} animation frames", paths=[str(path) for path in sampled_frames])
+                self._emit(
+                    "render",
+                    f"Rendered {len(sampled_frames)} animation frames"
+                    + (f" and GIF {preview_video}" if preview_video else ""),
+                    paths=[str(path) for path in sampled_frames],
+                    preview=str(preview_video) if preview_video else None,
+                )
                 self._emit("video", f"Running video verifier on {len(sampled_frames)} frames")
                 video_report = self.video.verify(self.ir, sampled_frames, preview_video, anim_report, transform_trace)
                 reports.append(video_report)

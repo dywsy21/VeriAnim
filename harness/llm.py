@@ -61,6 +61,55 @@ class LLMClient:
         text = self.complete_text(system, user, response_format="json_object", max_tokens=max_tokens)
         return extract_json_object(text)
 
+    def complete_video(
+        self,
+        system: str,
+        user: str,
+        video_path: Path,
+        image_paths: list[Path] | None = None,
+        *,
+        response_format: str | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        content: list[dict[str, Any]] = [{"type": "text", "text": user}]
+        content.append(
+            {
+                "type": "video_url",
+                "video_url": {"url": _video_data_url(video_path)},
+            }
+        )
+        for image_path in image_paths or []:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": _image_data_url(image_path)},
+                }
+            )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ]
+        return self._completion(messages, response_format=response_format, max_tokens=max_tokens)
+
+    def json_video(
+        self,
+        system: str,
+        user: str,
+        video_path: Path,
+        image_paths: list[Path] | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        text = self.complete_video(
+            system,
+            user,
+            video_path,
+            image_paths=image_paths,
+            response_format="json_object",
+            max_tokens=max_tokens,
+        )
+        return extract_json_object(text)
+
     def json_multimodal(
         self,
         system: str,
@@ -143,6 +192,9 @@ def extract_code_block(text: str) -> str:
     match = re.search(r"```(?:python)?\s*([\s\S]*?)```", text)
     if match:
         return match.group(1).strip()
+    match = re.search(r"```(?:python)?\s*([\s\S]*)", text)
+    if match:
+        return match.group(1).strip()
     return text.strip()
 
 
@@ -174,5 +226,12 @@ def _content_from_stream(stream: Any, agent_name: str) -> str:
 def _image_data_url(path: Path) -> str:
     data = path.read_bytes()
     mime = mimetypes.guess_type(path.name)[0] or "image/png"
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def _video_data_url(path: Path) -> str:
+    data = path.read_bytes()
+    mime = mimetypes.guess_type(path.name)[0] or "image/gif"
     encoded = base64.b64encode(data).decode("ascii")
     return f"data:{mime};base64,{encoded}"

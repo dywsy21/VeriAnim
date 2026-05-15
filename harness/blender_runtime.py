@@ -128,13 +128,27 @@ class BlenderRuntime:
         if not frames:
             duration = ir.animation.duration_frames
             frames = sorted(set([1, max(1, duration // 2), duration]))
-        script = _animation_render_script(ir, frames, output_dir, self.config.render_width, self.config.render_height)
+        gif_frames = list(range(1, max(1, int(ir.animation.duration_frames)) + 1))
+        script = _animation_render_script(
+            ir,
+            sample_frames=frames,
+            gif_frames=gif_frames,
+            output_dir=output_dir,
+            width=self.config.render_width,
+            height=self.config.render_height,
+        )
         result = self.execute_code(script, expects_render=True)
         if result.ok:
-            payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": [], "video": None})
+            payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": [], "gif_frames": [], "video": None})
             paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
+            gif_frame_paths = [Path(path) for path in payload.get("gif_frames", []) if Path(path).exists()]
+            gif_path = _write_animation_gif(
+                gif_frame_paths,
+                output_dir / "animation.gif",
+                fps=max(1, int(ir.animation.fps)),
+            )
             if paths:
-                return paths, None
+                return paths, gif_path
         structured = BlenderClient.render_animation_preview(
             str(output_dir),
             frames=frames,
@@ -222,6 +236,33 @@ def _report_from_payload(payload: dict[str, Any], mode: VerificationMode) -> Val
         for item in payload.get("issues", []) or []
     ]
     return ValidationReport(mode=mode, passed=bool(payload.get("passed", not issues)), issues=issues, summary=payload.get("summary"))
+
+
+def _write_animation_gif(frame_paths: list[Path], output_path: Path, *, fps: int) -> Path | None:
+    if not frame_paths:
+        return None
+    try:
+        from PIL import Image
+    except Exception as exc:
+        raise RuntimeError("Pillow is required to write animation GIFs. Install requirements.txt.") from exc
+
+    frames = []
+    for path in frame_paths:
+        with Image.open(path) as image:
+            frames.append(image.convert("P", palette=Image.Palette.ADAPTIVE))
+    if not frames:
+        return None
+    duration_ms = max(1, int(1000 / max(1, fps)))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    frames[0].save(
+        output_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=duration_ms,
+        loop=0,
+        optimize=False,
+    )
+    return output_path if output_path.exists() else None
 
 
 def _severity(value: Any) -> Severity:
@@ -401,11 +442,22 @@ def bbox_minmax(obj):
         Vector((max(v.x for v in corners), max(v.y for v in corners), max(v.z for v in corners))),
     )
 
-def aggregate_minmax(objs):
-    corners = []
-    for obj in objs:
-        if obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}:
+def collect_mesh_hierarchy(objs):
+    result = set()
+    queue = list(objs)
+    while queue:
+        obj = queue.pop()
+        if obj in result:
             continue
+        result.add(obj)
+        for child in obj.children:
+            queue.append(child)
+    return [o for o in result if o.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
+
+def aggregate_minmax(objs):
+    mesh_objs = collect_mesh_hierarchy(objs)
+    corners = []
+    for obj in mesh_objs:
         corners.extend(world_bbox(obj))
     if not corners:
         return None
@@ -598,19 +650,30 @@ print("{ANIMATION_MARKER}" + json.dumps({{"report": report, "trace": trace}}))
 """
 
 
-def _animation_render_script(ir: GenerationIR, frames: list[int], output_dir: Path, width: int, height: int) -> str:
+def _animation_render_script(
+    ir: GenerationIR,
+    *,
+    sample_frames: list[int],
+    gif_frames: list[int],
+    output_dir: Path,
+    width: int,
+    height: int,
+) -> str:
     target_ids = [obj.id for obj in ir.scene.objects]
     return f"""
 import json, math, os
 import bpy
 from mathutils import Vector
 
-FRAMES = json.loads({json.dumps(frames)!r})
+SAMPLE_FRAMES = json.loads({json.dumps(sample_frames)!r})
+GIF_FRAMES = json.loads({json.dumps(gif_frames)!r})
 TARGET_IDS = json.loads({json.dumps(target_ids)!r})
 OUT_DIR = {str(output_dir).replace(chr(92), "/")!r}
+GIF_DIR = os.path.join(OUT_DIR, "gif_frames").replace("\\\\", "/")
 WIDTH = {int(width)}
 HEIGHT = {int(height)}
 os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(GIF_DIR, exist_ok=True)
 
 def find_objects(ll3m_id):
     marker = str(ll3m_id)
@@ -673,7 +736,7 @@ except Exception:
 
 all_points = []
 objs = target_objects()
-for frame in FRAMES:
+for frame in sorted(set(SAMPLE_FRAMES + GIF_FRAMES)):
     scene.frame_set(int(frame))
     all_points.extend(bbox_points(objs))
 if not all_points:
@@ -692,20 +755,27 @@ cam_data.lens = 35
 scene.camera = cam
 
 paths = []
+gif_paths = []
 try:
-    for frame in FRAMES:
+    for frame in SAMPLE_FRAMES:
         scene.frame_set(int(frame))
         path = os.path.join(OUT_DIR, f"frame_{{int(frame):04d}}.png").replace("\\\\", "/")
         scene.render.filepath = path
         bpy.ops.render.render(write_still=True)
         paths.append(path)
+    for frame in GIF_FRAMES:
+        scene.frame_set(int(frame))
+        path = os.path.join(GIF_DIR, f"frame_{{int(frame):04d}}.png").replace("\\\\", "/")
+        scene.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        gif_paths.append(path)
 finally:
     try:
         scene.render.engine = original_engine
     except Exception:
         pass
 
-print("{SCREENSHOT_MARKER}" + json.dumps({{"paths": paths, "video": None}}))
+print("{SCREENSHOT_MARKER}" + json.dumps({{"paths": paths, "gif_frames": gif_paths, "video": os.path.join(OUT_DIR, "animation.gif").replace("\\\\", "/")}}))
 """
 
 

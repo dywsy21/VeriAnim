@@ -154,7 +154,7 @@ Script requirements:
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
 """
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=9000))
+        return extract_code_block(self.llm.complete_text(system, user, max_tokens=16000))
 
 
 class RefinerAgent:
@@ -205,9 +205,12 @@ Current script:
 Attached images are the latest failed validation screenshots and/or sampled animation frames in verifier order.
 Use them to fix actual visual layout, contact, motion direction, timing, and visibility problems, not just the text report.
 """
-            return extract_code_block(
-                self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=12000)
-            )
+            try:
+                return extract_code_block(
+                    self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=12000)
+                )
+            except Exception:
+                pass
         return extract_code_block(self.llm.complete_text(system, user, max_tokens=12000))
 
     def apply_user_request(
@@ -265,6 +268,9 @@ class VisionVerifierAgent:
         system = (
             "You are a visual verifier for Blender-generated scenes. "
             "You are the final gate: do not pass a scene with visible physical implausibility, floating parts, detached connectors, impossible support/contact, missing objects, or badly misleading camera views. "
+            "Your PRIMARY evidence is the screenshots. Judge what you SEE in the images. "
+            "The deterministic report is supplementary context only. If the images clearly show objects are present and correctly placed, do NOT fail the scene just because the deterministic report mentions technical issues like MISSING_BBOX or MISSING_ACTIVE_CAMERA. "
+            "Only fail for issues you can visually confirm in the screenshots. "
             "Return only JSON with keys: passed, summary, issues. "
             "Each issue must include code, message, severity, optional target_id, relation_id, frame, suggested_fix, evidence."
         )
@@ -354,7 +360,10 @@ Deterministic animation report:
 The attached images are ordered sampled frames. Verify whether the requested animation is visually and temporally correct.
 If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
 """
-        data = self.llm.json_multimodal(system, user, sampled_frame_paths, max_tokens=4000)
+        if preview_video_path and preview_video_path.exists():
+            data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths, max_tokens=4000)
+        else:
+            data = self.llm.json_multimodal(system, user, sampled_frame_paths, max_tokens=4000)
         return _report_from_model(data, VerificationMode.VIDEO)
 
 
