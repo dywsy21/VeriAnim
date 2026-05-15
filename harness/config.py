@@ -124,14 +124,16 @@ class HarnessConfig:
 
 def _agent_config(name: str, default_model: str, default_temperature: float) -> AgentModelConfig:
     prefix = f"LL3M_{name.upper()}"
+    global_api_base = _env_optional("LITELLM_API_BASE")
+    global_api_key = _env_optional("LITELLM_API_KEY")
     return AgentModelConfig(
         name=name,
         model=_env(f"{prefix}_MODEL", default_model),
         temperature=_env_float(f"{prefix}_TEMPERATURE", default_temperature),
         max_tokens=_env_int(f"{prefix}_MAX_TOKENS", 0) or None,
         timeout_seconds=_env_int(f"{prefix}_TIMEOUT_SECONDS", _env_int("LL3M_LLM_TIMEOUT_SECONDS", 90)),
-        api_base=_env_optional(f"{prefix}_API_BASE"),
-        api_key=_env_optional(f"{prefix}_API_KEY"),
+        api_base=_env_optional(f"{prefix}_API_BASE") or global_api_base,
+        api_key=_env_optional(f"{prefix}_API_KEY") or global_api_key,
         api_version=_env_optional(f"{prefix}_API_VERSION"),
         custom_llm_provider=_env_optional(f"{prefix}_PROVIDER"),
     )

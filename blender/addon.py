@@ -689,7 +689,7 @@ class LL3MAgentServer:
         return {**sampled, "video": video_path, "frames": frames}
 
     def execute_code(self, code):
-        namespace = {"bpy": bpy}
+        namespace = {"__name__": "__main__", "bpy": bpy}
         capture_buffer = io.StringIO()
         with redirect_stdout(capture_buffer):
             exec(code, namespace)

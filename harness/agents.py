@@ -130,7 +130,7 @@ class CoderAgent:
             "Use data API where possible, stable ll3m custom properties, modular factory functions, and explicit collections. "
             "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
             "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
-            "For Blender 4.5, prefer BLENDER_EEVEE_NEXT or WORKBENCH after checking available render engine enum values; do not hardcode removed BLENDER_EEVEE. "
+            "For Blender 4.5, prefer BLENDER_EEVEE_NEXT or WORKBENCH after checking available render engine enum values from scene.render.bl_rna.properties['engine']; never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
@@ -148,7 +148,7 @@ Script requirements:
 - Assign custom properties: ll3m_id, ll3m_role, ll3m_part where appropriate.
 - Keep object names stable and human-readable.
 - Create robust materials by setting mat.diffuse_color and locating shader nodes by node.type, not localized node names.
-- Set render engines defensively by checking available enum values; Blender 4.5 uses BLENDER_EEVEE_NEXT rather than legacy BLENDER_EEVEE.
+- Set render engines defensively by checking scene.render.bl_rna.properties['engine'].enum_items; Blender 4.5 uses BLENDER_EEVEE_NEXT rather than legacy BLENDER_EEVEE. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
 - Set frame_start/frame_end/fps if animation exists.
 - Insert keyframes for AnimationSpec events when present. For translate/rotate/scale, mutate the object's location/rotation_euler/scale at start and end frames, insert keyframes, and ensure sampled frames visibly change.
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
@@ -246,7 +246,7 @@ Current script:
 {code}
 ```
 """
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=32000))
+        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user, max_tokens=32000)))
 
 
 class VisionVerifierAgent:
@@ -921,6 +921,19 @@ def _report_dict(report: ValidationReport) -> dict[str, Any]:
     from .ir import report_to_dict
 
     return report_to_dict(report)
+
+
+def _sanitize_generated_blender_code(code: str) -> str:
+    """Patch common Blender API hallucinations before execution."""
+    replacements = {
+        "bpy.types.Scene.bl_rna.properties['render_engine'].enum_items": "bpy.context.scene.render.bl_rna.properties['engine'].enum_items",
+        'bpy.types.Scene.bl_rna.properties["render_engine"].enum_items': 'bpy.context.scene.render.bl_rna.properties["engine"].enum_items',
+        "bpy.types.Scene.bl_rna.properties['render_engine']": "bpy.context.scene.render.bl_rna.properties['engine']",
+        'bpy.types.Scene.bl_rna.properties["render_engine"]': 'bpy.context.scene.render.bl_rna.properties["engine"]',
+    }
+    for bad, good in replacements.items():
+        code = code.replace(bad, good)
+    return code
 
 
 def _report_from_model(data: dict[str, Any], mode: VerificationMode) -> ValidationReport:
