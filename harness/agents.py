@@ -154,7 +154,7 @@ Script requirements:
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
 """
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=16000))
+        return extract_code_block(self.llm.complete_text(system, user, max_tokens=32000))
 
 
 class RefinerAgent:
@@ -207,11 +207,11 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
 """
             try:
                 return extract_code_block(
-                    self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=12000)
+                    self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=32000)
                 )
             except Exception:
                 pass
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=12000))
+        return extract_code_block(self.llm.complete_text(system, user, max_tokens=32000))
 
     def apply_user_request(
         self,
@@ -246,7 +246,7 @@ Current script:
 {code}
 ```
 """
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=12000))
+        return extract_code_block(self.llm.complete_text(system, user, max_tokens=32000))
 
 
 class VisionVerifierAgent:

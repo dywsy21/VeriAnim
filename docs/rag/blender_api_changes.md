@@ -304,3 +304,42 @@ scene.render.resolution_y = 540
 scene.render.film_transparent = False
 # Do NOT set any scene.eevee.* properties unless verified
 ```
+
+## Node Name Localization (ALL VERSIONS)
+
+Blender translates node display names based on UI language. Code that looks up
+nodes by name will crash on non-English installations.
+
+WRONG (crashes on localized Blender):
+```python
+nodes["Principled BSDF"]       # KeyError
+nodes["World Output"]          # KeyError
+nodes["Material Output"]       # KeyError
+nodes.get("Background")        # returns None
+```
+
+CORRECT (works on all languages):
+```python
+# Find by node.type, which is always English
+principled = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
+world_out = next((n for n in nodes if n.type == "OUTPUT_WORLD"), None)
+mat_out = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None)
+bg = next((n for n in nodes if n.type == "BACKGROUND"), None)
+```
+
+Common node types:
+| Display Name (English) | node.type |
+|------------------------|-----------|
+| Principled BSDF | BSDF_PRINCIPLED |
+| Material Output | OUTPUT_MATERIAL |
+| World Output | OUTPUT_WORLD |
+| Background | BACKGROUND |
+| Mix Shader | MIX_SHADER |
+| Image Texture | TEX_IMAGE |
+| Noise Texture | TEX_NOISE |
+| Color Ramp | VALTORGB |
+| Mapping | MAPPING |
+| Texture Coordinate | TEX_COORD |
+| Emission | EMISSION |
+| Glass BSDF | BSDF_GLASS |
+| Glossy BSDF | BSDF_GLOSSY |

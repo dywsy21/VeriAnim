@@ -129,11 +129,12 @@ scene.camera = camera_obj
 Without this, the deterministic validator reports MISSING_ACTIVE_CAMERA and
 screenshot rendering fails.
 
-## 7. Material Creation (REQUIRED PATTERN)
+## 7. Material and Node Creation (REQUIRED PATTERN)
 
-Never find shader nodes by display name. Always use node.type:
+Never find ANY shader/world node by display name. Always use node.type:
 
 ```python
+# Material nodes
 mat = bpy.data.materials.new("material_name")
 mat.use_nodes = True
 mat.diffuse_color = (r, g, b, 1.0)  # viewport color
@@ -150,6 +151,51 @@ if principled:
     principled.inputs["Roughness"].default_value = 0.5
     principled.inputs["Metallic"].default_value = 0.0
 ```
+
+World background nodes — same rule:
+
+```python
+world = bpy.data.worlds.new("World")
+bpy.context.scene.world = world
+world.use_nodes = True
+nodes = world.node_tree.nodes
+links = world.node_tree.links
+
+# Find nodes by TYPE, never by name
+bg_node = None
+output_node = None
+for node in nodes:
+    if node.type == "BACKGROUND":
+        bg_node = node
+    elif node.type == "OUTPUT_WORLD":
+        output_node = node
+
+if bg_node:
+    bg_node.inputs["Color"].default_value = (0.05, 0.05, 0.08, 1.0)
+if bg_node and output_node:
+    links.new(bg_node.outputs["Background"], output_node.inputs["Surface"])
+```
+
+WRONG patterns that WILL CRASH on localized Blender:
+```python
+# WRONG - will crash with KeyError on non-English Blender:
+nodes["Principled BSDF"]
+nodes["World Output"]
+nodes["Background"]  # name lookup
+nodes.get("Material Output")
+```
+
+Node type reference for common nodes:
+- Principled BSDF: `node.type == "BSDF_PRINCIPLED"`
+- Material Output: `node.type == "OUTPUT_MATERIAL"`
+- World Output: `node.type == "OUTPUT_WORLD"`
+- Background: `node.type == "BACKGROUND"`
+- Mix Shader: `node.type == "MIX_SHADER"`
+- Image Texture: `node.type == "TEX_IMAGE"`
+- Noise Texture: `node.type == "TEX_NOISE"`
+- Color Ramp: `node.type == "VALTORGB"`
+- Mapping: `node.type == "MAPPING"`
+- Texture Coordinate: `node.type == "TEX_COORD"`
 
 ## 8. Animation Requirements
 
