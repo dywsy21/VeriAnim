@@ -111,19 +111,18 @@ class LLMClient:
             kwargs["response_format"] = {"type": "json_object"}
 
         try:
-            try:
-                response = completion(**kwargs)
-            except Exception:
-                if "response_format" not in kwargs:
-                    raise
+            return _content_from_response(completion(**kwargs), self.config.name)
+        except Exception as first_exc:
+            if "response_format" in kwargs:
                 kwargs.pop("response_format", None)
-                response = completion(**kwargs)
-            content = response.choices[0].message.content
-            if not isinstance(content, str) or not content.strip():
-                raise LLMError(f"{self.config.name} returned an empty response.")
-            return content.strip()
-        except Exception as exc:
-            raise LLMError(f"{self.config.name} LLM call failed: {exc}") from exc
+                try:
+                    return _content_from_response(completion(**kwargs), self.config.name)
+                except Exception:
+                    pass
+            try:
+                return _content_from_stream(completion(**kwargs, stream=True), self.config.name)
+            except Exception as stream_exc:
+                raise LLMError(f"{self.config.name} LLM call failed: {stream_exc}") from first_exc
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
@@ -145,6 +144,31 @@ def extract_code_block(text: str) -> str:
     if match:
         return match.group(1).strip()
     return text.strip()
+
+
+def _content_from_response(response: Any, agent_name: str) -> str:
+    content = response.choices[0].message.content
+    if not isinstance(content, str) or not content.strip():
+        raise LLMError(f"{agent_name} returned an empty response.")
+    return content.strip()
+
+
+def _content_from_stream(stream: Any, agent_name: str) -> str:
+    parts: list[str] = []
+    for chunk in stream:
+        choice = chunk.choices[0]
+        delta = getattr(choice, "delta", None)
+        content = None
+        if isinstance(delta, dict):
+            content = delta.get("content")
+        elif delta is not None:
+            content = getattr(delta, "content", None)
+        if content:
+            parts.append(content)
+    text = "".join(parts).strip()
+    if not text:
+        raise LLMError(f"{agent_name} returned an empty streaming response.")
+    return text
 
 
 def _image_data_url(path: Path) -> str:

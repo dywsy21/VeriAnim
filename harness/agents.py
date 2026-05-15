@@ -122,7 +122,8 @@ class CoderAgent:
 
     def generate(self, ir: GenerationIR) -> str:
         query = "Blender 4.5 bpy data API mesh from_pydata material camera light render keyframe_insert"
-        context = self.rag.format_context(query, limit=8)
+        context = self.rag.format_context(query, limit=4, max_chars=5000)
+        coder_ir = _compact_ir_for_coder(ir)
         system = (
             "You are a senior Blender 4.5.4 Python coder. "
             "Generate one complete Python script that creates the requested scene and optional animation. "
@@ -134,8 +135,8 @@ class CoderAgent:
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
         user = f"""
-GenerationIR JSON:
-{ir.to_json()}
+Compact GenerationIR JSON for code generation:
+{json.dumps(coder_ir, indent=2)}
 
 Blender 4.5.4 RAG context:
 {context}
@@ -151,7 +152,7 @@ Script requirements:
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
 """
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=12000))
+        return extract_code_block(self.llm.complete_text(system, user, max_tokens=9000))
 
 
 class RefinerAgent:
@@ -168,7 +169,7 @@ class RefinerAgent:
         execution_error: str | None = None,
         screenshot_paths: list[Path] | None = None,
     ) -> str:
-        context = self.rag.format_context(_issue_query(reports, execution_error), limit=8)
+        context = self.rag.format_context(_issue_query(reports, execution_error), limit=4, max_chars=5000)
         report_json = json.dumps([report.to_dict() if hasattr(report, "to_dict") else _report_dict(report) for report in reports], indent=2)
         system = (
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
@@ -179,8 +180,8 @@ class RefinerAgent:
             "Return only the full corrected Python script."
         )
         user = f"""
-GenerationIR:
-{ir.to_json()}
+Compact GenerationIR:
+{json.dumps(_compact_ir_for_coder(ir), indent=2)}
 
 Execution error:
 {execution_error or "None"}
@@ -215,7 +216,7 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
         user_request: str,
         scene_graph: dict[str, Any] | None = None,
     ) -> str:
-        context = self.rag.format_context(user_request + " Blender 4.5 bpy scene update", limit=8)
+        context = self.rag.format_context(user_request + " Blender 4.5 bpy scene update", limit=4, max_chars=5000)
         system = (
             "You are an interactive Blender 4.5.4 code refiner. "
             "Update the existing full Python script to satisfy the user's new request. "
@@ -223,8 +224,8 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
             "Return only the full corrected Python script."
         )
         user = f"""
-Revised GenerationIR:
-{ir.to_json()}
+Compact revised GenerationIR:
+{json.dumps(_compact_ir_for_coder(ir), indent=2)}
 
 User change request:
 {user_request}
@@ -352,6 +353,216 @@ If deterministic transform trace and images disagree, explain the mismatch and f
 """
         data = self.llm.json_multimodal(system, user, sampled_frame_paths, max_tokens=4000)
         return _report_from_model(data, VerificationMode.VIDEO)
+
+
+def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
+    """Keep code-generation prompts small without weakening validation IR."""
+
+    scene = ir.scene
+    data: dict[str, Any] = {
+        "prompt": {
+            "text": ir.prompt.text,
+            "negative_text": ir.prompt.negative_text,
+            "constraints": ir.prompt.user_constraints,
+        },
+        "scene": {
+            "objects": [
+                {
+                    "id": obj.id,
+                    "description": obj.description,
+                    "label": obj.label,
+                    "category": _value(obj.category),
+                    "role": _value(obj.role),
+                    "importance": _value(obj.importance),
+                    "parts": [
+                        {
+                            "id": part.id,
+                            "description": part.description,
+                            "required": part.required,
+                            "material_id": part.material_id,
+                            "expected_count": part.expected_count,
+                            "dimension": _dimension(part.dimension),
+                        }
+                        for part in obj.parts
+                    ],
+                    "required_features": obj.required_features,
+                    "forbidden_features": obj.forbidden_features,
+                    "dimensions": _dimension(obj.dimensions),
+                    "placement": {
+                        "transform": _transform(obj.placement.transform),
+                        "anchor": obj.placement.anchor,
+                        "parent_id": obj.placement.parent_id,
+                        "notes": obj.placement.notes,
+                    },
+                    "material_ids": obj.material_ids,
+                    "generation_notes": obj.generation_notes,
+                }
+                for obj in scene.objects
+            ],
+            "relations": [
+                {
+                    "id": relation.id,
+                    "relation_type": _value(relation.relation_type),
+                    "subject_id": relation.subject_id,
+                    "object_id": relation.object_id,
+                    "description": relation.description,
+                    "required": relation.required,
+                    "tolerance": relation.tolerance,
+                    "min_distance": relation.min_distance,
+                    "max_distance": relation.max_distance,
+                    "offset": relation.offset,
+                    "axis": relation.axis,
+                }
+                for relation in scene.relations
+            ],
+            "materials": [
+                {
+                    "id": material.id,
+                    "description": material.description,
+                    "base_color": material.base_color,
+                    "metallic": material.metallic,
+                    "roughness": material.roughness,
+                    "alpha": material.alpha,
+                    "texture_hints": material.texture_hints,
+                }
+                for material in scene.materials
+            ],
+            "environment": {
+                "environment_type": _value(scene.environment.environment_type),
+                "description": scene.environment.description,
+                "floor": scene.environment.floor,
+                "walls": scene.environment.walls,
+                "sky": scene.environment.sky,
+                "world_background": scene.environment.world_background,
+                "ambient_occlusion": scene.environment.ambient_occlusion,
+                "lights": [
+                    {
+                        "id": light.id,
+                        "light_type": _value(light.light_type),
+                        "description": light.description,
+                        "location": light.location,
+                        "rotation_euler": light.rotation_euler,
+                        "energy": light.energy,
+                        "color": light.color,
+                        "size": light.size,
+                    }
+                    for light in scene.environment.lights
+                ],
+            },
+            "cameras": [
+                {
+                    "id": camera.id,
+                    "view_type": _value(camera.view_type),
+                    "description": camera.description,
+                    "location": camera.location,
+                    "look_at": camera.look_at,
+                    "target_object_ids": camera.target_object_ids,
+                    "focal_length_mm": camera.focal_length_mm,
+                    "coverage": camera.coverage,
+                }
+                for camera in scene.cameras
+            ],
+            "style": {
+                "description": scene.style.description,
+                "detail_level": scene.style.detail_level,
+                "color_palette": scene.style.color_palette,
+                "material_style": scene.style.material_style,
+            },
+        },
+        "version": ir.version,
+        "notes": ir.notes,
+    }
+    if ir.animation:
+        data["animation"] = {
+            "duration_frames": ir.animation.duration_frames,
+            "fps": ir.animation.fps,
+            "loop": ir.animation.loop,
+            "events": [_compact_animation_event(event) for event in ir.animation.events],
+            "camera_events": [_compact_animation_event(event) for event in ir.animation.camera_events],
+            "render": {
+                "resolution": ir.animation.render.resolution,
+                "engine": _value(ir.animation.render.engine),
+            },
+            "verifier": {
+                "sampled_frames": ir.animation.verifier.sampled_frames,
+                "pass_criteria": ir.animation.verifier.pass_criteria,
+            },
+        }
+    return _drop_none(data)
+
+
+def _compact_animation_event(event: Any) -> dict[str, Any]:
+    return _drop_none(
+        {
+            "id": event.id,
+            "action": _value(event.action),
+            "subject_ids": event.subject_ids,
+            "target_ids": event.target_ids,
+            "start_frame": event.start_frame,
+            "end_frame": event.end_frame,
+            "description": event.description,
+            "start_transform": _transform(event.start_transform),
+            "end_transform": _transform(event.end_transform),
+            "path": {
+                "points": event.path.points,
+                "keyframes": [
+                    {
+                        "frame": keyframe.frame,
+                        "transform": _transform(keyframe.transform),
+                        "value": keyframe.value,
+                        "interpolation": _value(keyframe.interpolation),
+                        "description": keyframe.description,
+                    }
+                    for keyframe in event.path.keyframes
+                ],
+                "path_object_id": event.path.path_object_id,
+                "follow_orientation": event.path.follow_orientation,
+            }
+            if event.path
+            else None,
+            "interpolation": _value(event.interpolation),
+            "required": event.required,
+            "expected_visual_result": event.expected_visual_result,
+            "constraints": event.constraints,
+        }
+    )
+
+
+def _dimension(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return _drop_none(
+        {
+            "size": value.size,
+            "min_size": value.min_size,
+            "max_size": value.max_size,
+            "tolerance": value.tolerance,
+        }
+    )
+
+
+def _transform(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return _drop_none(
+        {
+            "location": value.location,
+            "rotation_euler": value.rotation_euler,
+            "scale": value.scale,
+        }
+    )
+
+
+def _drop_none(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _drop_none(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [_drop_none(item) for item in value]
+    return value
+
+
+def _value(value: Any) -> Any:
+    return getattr(value, "value", value)
 
 
 def _issue_query(reports: list[ValidationReport], execution_error: str | None) -> str:

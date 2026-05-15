@@ -750,7 +750,7 @@ def look_at(camera, target):
     camera.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
 def camera_offset(view_type, radius):
-    if view_type == "relation_close_up":
+    if view_type in {{"close_up", "relation_close_up"}}:
         radius = max(radius * 0.55, 1.5)
         return Vector((radius * 0.75, -radius * 0.75, radius * 0.45))
     if view_type == "front":
@@ -868,9 +868,10 @@ try:
         cam_data = bpy.data.cameras.new("ll3m_render_camera_" + view["id"] + "_data")
         cam = bpy.data.objects.new("ll3m_render_camera_" + view["id"], cam_data)
         bpy.context.scene.collection.objects.link(cam)
-        cam.location = center + camera_offset(view.get("view_type", "three_quarter"), radius)
+        view_type = view.get("view_type", "three_quarter")
+        cam.location = center + camera_offset(view_type, radius)
         look_at(cam, center)
-        cam_data.lens = 35
+        cam_data.lens = 70 if view_type in {{"close_up", "relation_close_up"}} else 35
         scene.camera = cam
         path = os.path.join(OUT_DIR, view["id"] + ".png").replace("\\\\", "/")
         scene.render.filepath = path
