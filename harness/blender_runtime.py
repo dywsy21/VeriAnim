@@ -373,15 +373,17 @@ def expected_path(action):
     return None
 
 def find_objects(ll3m_id):
+    marker = str(ll3m_id)
     matches = []
-    exact = bpy.data.objects.get(ll3m_id)
+    exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
     for obj in bpy.data.objects:
-        if obj not in matches and obj.get("ll3m_id") == ll3m_id:
+        obj_id = str(obj.get("ll3m_id", ""))
+        if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             matches.append(obj)
     for obj in bpy.data.objects:
-        if obj not in matches and obj.name.startswith(str(ll3m_id)):
+        if obj not in matches and obj.name.startswith(marker):
             matches.append(obj)
     return matches
 
@@ -611,15 +613,17 @@ HEIGHT = {int(height)}
 os.makedirs(OUT_DIR, exist_ok=True)
 
 def find_objects(ll3m_id):
+    marker = str(ll3m_id)
     matches = []
-    exact = bpy.data.objects.get(str(ll3m_id))
+    exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
     for obj in bpy.data.objects:
-        if obj not in matches and obj.get("ll3m_id") == ll3m_id:
+        obj_id = str(obj.get("ll3m_id", ""))
+        if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             matches.append(obj)
     for obj in bpy.data.objects:
-        if obj not in matches and obj.name.startswith(str(ll3m_id)):
+        if obj not in matches and obj.name.startswith(marker):
             matches.append(obj)
     return matches
 
@@ -628,6 +632,9 @@ def target_objects():
     for item in TARGET_IDS:
         objs.extend(find_objects(item))
     objs = [obj for obj in dict.fromkeys(objs) if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
+    foreground = [obj for obj in objs if obj.get("ll3m_role") != "background"]
+    if foreground:
+        objs = foreground
     if not objs:
         objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and not obj.name.startswith("ll3m_render_camera")]
     return objs
@@ -722,15 +729,17 @@ def find_obj(ll3m_id):
     return None
 
 def find_objects(ll3m_id):
+    marker = str(ll3m_id)
     matches = []
-    exact = bpy.data.objects.get(str(ll3m_id))
+    exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
     for obj in bpy.data.objects:
-        if obj not in matches and obj.get("ll3m_id") == ll3m_id:
+        obj_id = str(obj.get("ll3m_id", ""))
+        if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             matches.append(obj)
     for obj in bpy.data.objects:
-        if obj not in matches and obj.name.startswith(str(ll3m_id)):
+        if obj not in matches and obj.name.startswith(marker):
             matches.append(obj)
     return matches
 
@@ -860,6 +869,9 @@ try:
         for item in view.get("target_object_ids", []):
             targets.extend(find_objects(item))
         targets = [obj for obj in dict.fromkeys(targets) if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
+        foreground_targets = [obj for obj in targets if obj.get("ll3m_role") != "background"]
+        if foreground_targets:
+            targets = foreground_targets
         if not targets:
             targets = all_objs
         mn, mx = bbox_for_objects(targets)
