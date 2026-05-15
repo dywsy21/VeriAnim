@@ -232,6 +232,22 @@ The repair brief should include:
 
 ## Phase 2: Scene to Animation
 
+For anything beyond a trivial smoke test, animation should be built on top of a
+validated static scene instead of generated in one unbounded step. Direct
+animation generation is still useful for fast capability tests, but the stable
+production path is:
+
+1. Plan and generate the scene.
+2. Run deterministic plus screenshot-based vision verification until the scene
+   passes.
+3. Add `AnimationSpec` events against the validated object ids.
+4. Generate or refine only the animation code.
+5. Run deterministic animation checks plus temporal visual/video verification.
+
+This separation makes verifier feedback easier to act on. A failed table leg,
+floating prop, or bad camera angle is a scene problem; absent motion, reversed
+motion, hidden rotation, or broken contact over time is an animation problem.
+
 ### 1. Animation Planning
 
 Extend the planner to produce `AnimationSpec`:
@@ -363,6 +379,39 @@ For animations:
 - Sample at least start, middle, and end.
 - For interactions, sample just before, during, and just after the interaction.
 - Keep a per-frame object transform trace so video-model judgments can be cross-checked.
+- Use one fixed camera for sampled frames, computed from the union bounding box
+  across all sampled frames. Re-centering the camera per frame hides motion and
+  can create false passes.
+- Prefer visible surface markings or asymmetric features when rotation itself
+  must be verified. A perfectly smooth sphere can rotate correctly in the
+  transform trace while still looking like it is sliding.
+
+## Current Implementation Notes
+
+The local harness now implements the main architecture described above:
+
+- `harness.ir` defines the full scene/animation IR.
+- `PlannerAgent` receives the full IR definition and emits structured JSON.
+- `CoderAgent` and `RefinerAgent` use a compact code-generation IR to keep long
+  LLM calls stable while preserving the full validation IR.
+- `LLMClient` retries failed non-streaming calls with streaming, which is
+  necessary for long Blender scripts on some OpenAI-compatible gateways.
+- `BlenderRuntime` injects current validation/render scripts into Blender, so
+  harness fixes take effect without depending on an already-loaded addon copy.
+- Deterministic scene validation expands `ll3m_id` prefixes such as
+  `table_top` and `table_leg_1` when computing whole-object bounding boxes.
+- Screenshot verification treats `close_up` and `relation_close_up` as true
+  tight inspection views.
+- Static vision verification is a blocking gate for visible scene quality;
+  video verification is a blocking gate for temporal correctness.
+
+Validated examples:
+
+- `runs/run_20260515_124204` passed a seven-object static desk scene after
+  visual-loop refinement fixed floating objects, detached supports, missing
+  clock details, and material mismatch.
+- `runs/run_20260515_132436` passed a rolling-ball animation after the video
+  loop caught visually broken contact and hidden rotation.
 
 ## Proposed New Modules
 

@@ -75,6 +75,12 @@ The default video model hint is `dashscope/qwen-omni-turbo`. Replace it with the
 LiteLLM model name that matches your deployed Qwen Omni or other video-capable
 endpoint.
 
+Long Blender code generations can exceed the stable non-streaming response
+window of some OpenAI-compatible gateways. The LLM client therefore retries
+failed non-streaming calls with streaming automatically. `CoderAgent` and
+`RefinerAgent` also receive a compact code-generation IR instead of the full
+verification IR; the full IR is still written to disk and used by validators.
+
 ## Pipeline
 
 1. `PlannerAgent`
@@ -199,6 +205,40 @@ extra temporal checks:
 - If animation verification fails, the sampled frames are included in the
   multimodal refiner prompt so the coding model can see the temporal error it
   needs to repair.
+
+The static vision verifier and video verifier have separate responsibilities.
+For animation runs, the static verifier judges object presence, support/contact
+at sampled screenshot frames, camera coverage, and visible geometry defects. It
+should not fail a run solely because temporal smoothness or the full motion is
+not proven from still screenshots; those issues belong to the video verifier.
+
+Current best practice for nontrivial animation is two-stage generation:
+
+1. Generate and verifier-gate the static scene first.
+2. Add animation on top of that validated scene.
+3. Run deterministic animation validation plus video/multi-frame verification.
+4. Feed sampled frames and transform traces into the refiner until both static
+   and temporal verifiers pass.
+
+This avoids mixing object construction failures with animation failures. In the
+May 15, 2026 validation run, the video loop caught two issues that deterministic
+checks alone could not: a rolling ball that visually separated from the table,
+and a smooth featureless sphere whose rotation was mathematically present but
+not visually observable. The refiner fixed these by improving contact/table
+assembly and adding visible surface markings.
+
+## Validation Runs
+
+Recent successful end-to-end runs:
+
+- `runs/run_20260515_124204`: complex static study-desk scene with desk, lamp,
+  notebook, mug, plant, books, and clock. The loop repaired detached supports,
+  floating tabletop props, missing clock-face details, and material mismatch
+  before passing visual verification.
+- `runs/run_20260515_132436`: animated red ball rolling left-to-right across a
+  blue table. The loop passed deterministic scene checks, deterministic
+  animation checks, scene vision verification, and video verification after two
+  refinement rounds.
 
 ## Outputs
 
