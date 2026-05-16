@@ -616,6 +616,7 @@ def _animation_validation_script(ir: GenerationIR) -> str:
     return f"""
 import json
 import bpy
+from mathutils import Vector
 
 IR = json.loads({_json(ir)!r})
 issues = []
@@ -625,10 +626,151 @@ def issue(code, message, severity="major", target_id=None, frame=None, evidence=
     issues.append({{"code": code, "message": message, "severity": severity, "target_id": target_id, "frame": frame, "evidence": evidence or {{}}}})
 
 def find_obj(ll3m_id):
+    matches = find_objects(ll3m_id)
+    return matches[0] if matches else None
+
+def descendants(obj):
+    found = []
+    stack = list(getattr(obj, "children", []))
+    while stack:
+        child = stack.pop(0)
+        found.append(child)
+        stack.extend(list(getattr(child, "children", [])))
+    return found
+
+def find_objects(ll3m_id):
+    marker = str(ll3m_id)
+    matches = []
+    exact = bpy.data.objects.get(marker)
+    if exact:
+        matches.append(exact)
+        matches.extend(descendants(exact))
     for obj in bpy.data.objects:
-        if obj.get("ll3m_id") == ll3m_id or obj.name == ll3m_id or obj.name.startswith(ll3m_id):
+        obj_id = str(obj.get("ll3m_id", ""))
+        if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_") or obj.name.startswith(marker)):
+            matches.append(obj)
+            matches.extend([child for child in descendants(obj) if child not in matches])
+    return list(dict.fromkeys(matches))
+
+def has_fcurve(obj, path_prefix):
+    action = obj.animation_data.action if obj.animation_data else None
+    if not action:
+        return False
+    if any(getattr(fc, "data_path", "").startswith(path_prefix) for fc in getattr(action, "fcurves", [])):
+        return True
+    for layer in getattr(action, "layers", []) or []:
+        for strip in getattr(layer, "strips", []) or []:
+            for bag in getattr(strip, "channelbags", []) or []:
+                if any(getattr(fc, "data_path", "").startswith(path_prefix) for fc in getattr(bag, "fcurves", [])):
+                    return True
+    return False
+
+def any_has_fcurve(objs, path_prefix):
+    return any(has_fcurve(obj, path_prefix) for obj in objs)
+
+def representative_obj(objs, path_prefix):
+    for obj in objs:
+        if path_prefix and has_fcurve(obj, path_prefix):
             return obj
+    for obj in objs:
+        if obj.type in {{"MESH", "EMPTY", "CURVE", "SURFACE", "FONT", "META"}}:
+            return obj
+    return objs[0] if objs else None
+
+def value_for_path(obj, path_prefix):
+    if path_prefix == "rotation_euler":
+        return list(obj.rotation_euler)
+    if path_prefix == "scale":
+        return list(obj.scale)
+    return list(obj.matrix_world.translation)
+
+def moving_representative(objs, path_prefix, frames):
+    if not objs or not path_prefix or not frames:
+        return representative_obj(objs, path_prefix)
+    start_frame = int(frames[0])
+    end_frame = int(frames[-1])
+    best = None
+    best_delta = -1.0
+    for candidate in objs:
+        bpy.context.scene.frame_set(start_frame)
+        start_value = value_for_path(candidate, path_prefix)
+        bpy.context.scene.frame_set(end_frame)
+        end_value = value_for_path(candidate, path_prefix)
+        delta = distance(start_value, end_value)
+        if delta > best_delta:
+            best = candidate
+            best_delta = delta
+    if best and best_delta > 0.001:
+        return best
+    return representative_obj(objs, path_prefix)
+
+def distance(a, b):
+    return sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)) ** 0.5
+
+def expected_path(action):
+    if action in ("translate", "follow_path", "camera_move", "camera_orbit"):
+        return "location"
+    if action == "rotate":
+        return "rotation_euler"
+    if action == "scale":
+        return "scale"
     return None
+
+def world_bbox(obj):
+    if not obj or obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} or not getattr(obj, "bound_box", None):
+        return []
+    return [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+
+def aggregate_minmax(objs):
+    points = []
+    for obj in objs:
+        points.extend(world_bbox(obj))
+    if not points:
+        return None
+    return (
+        Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points))),
+        Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points))),
+    )
+
+def bbox_gap(a, b):
+    gaps = []
+    for index in range(3):
+        if a[1][index] < b[0][index]:
+            gaps.append(b[0][index] - a[1][index])
+        elif b[1][index] < a[0][index]:
+            gaps.append(a[0][index] - b[1][index])
+        else:
+            gaps.append(0.0)
+    return (gaps[0] ** 2 + gaps[1] ** 2 + gaps[2] ** 2) ** 0.5
+
+def gripper_subset(objs):
+    grippers = [
+        obj for obj in objs
+        if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}
+        and ("gripper" in str(obj.get("ll3m_part", "")).lower() or "gripper" in obj.name.lower())
+    ]
+    return grippers or [obj for obj in objs if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
+
+def interaction_targets(event):
+    if event.get("action") in ("appear", "disappear"):
+        return []
+    text = " ".join([
+        str(event.get("id", "")),
+        str(event.get("description", "")),
+        str(event.get("expected_visual_result", "")),
+        " ".join(event.get("constraints", []) or []),
+    ]).lower()
+    if any(token in text for token in ("light", "status", "signal")):
+        return []
+    if not any(token in text for token in ("grasp", "gripper", "lift", "carry", "pick", "place", "transfer")):
+        return []
+    targets = list(event.get("target_ids", []) or [])
+    if not targets and any(token in text for token in ("gripper", "lift", "carry", "pick", "place", "transfer")):
+        for obj_spec in IR.get("scene", {{}}).get("objects", []):
+            haystack = f"{{obj_spec.get('id', '')}} {{obj_spec.get('description', '')}} {{obj_spec.get('label', '')}}".lower()
+            if any(token in haystack for token in ("gripper", "robotic_arm", "robotic arm", "end effector", "end-effector")):
+                targets.append(obj_spec.get("id"))
+    return [target for target in targets if target]
 
 anim = IR.get("animation") or {{}}
 duration = int(anim.get("duration_frames") or 0)
@@ -638,19 +780,20 @@ if duration > 0 and bpy.context.scene.frame_end < duration:
 events = list(anim.get("events", [])) + list(anim.get("camera_events", []))
 for event in events:
     for sid in event.get("subject_ids", []):
-        obj = find_obj(sid)
-        if not obj:
+        objs = find_objects(sid)
+        if not objs:
             issue("MISSING_ANIMATED_OBJECT", f"Animated object '{{sid}}' was not found.", "critical", sid)
             continue
         action = event.get("action")
         path = expected_path(action)
         if action in ("camera_move", "camera_orbit"):
             path = "location"
-        if event.get("action") not in ("camera_move", "camera_orbit") and not obj.animation_data:
-            issue("MISSING_ANIMATION_DATA", f"Animated object '{{sid}}' has no animation_data.", "major", sid)
-        if path and not has_fcurve(obj, path):
+        if event.get("action") not in ("camera_move", "camera_orbit") and not any(getattr(item, "animation_data", None) for item in objs):
+            issue("MISSING_ANIMATION_DATA", f"Animated object '{{sid}}' and its child parts have no animation_data.", "major", sid)
+        if path and not any_has_fcurve(objs, path):
             issue("MISSING_ANIMATION_FCURVE", f"Animated object '{{sid}}' has no '{{path}}' F-Curve for event '{{event.get('id')}}'.", "major", sid)
         frames = sorted(set([int(event.get("start_frame", 1)), int((event.get("start_frame", 1) + event.get("end_frame", 1)) / 2), int(event.get("end_frame", 1))]))
+        obj = moving_representative(objs, path, frames)
         trace[sid] = []
         for frame in frames:
             bpy.context.scene.frame_set(frame)
@@ -678,6 +821,36 @@ for event in events:
             expected = end_transform["rotation_euler"]
             if distance(actual, expected) > 0.25:
                 issue("ANIMATION_END_ROTATION_MISMATCH", f"Event '{{event.get('id')}}' end rotation does not match AnimationSpec.", "major", sid, int(event.get("end_frame", 1)), {{"actual": actual, "expected": expected}})
+
+    targets = interaction_targets(event)
+    if targets:
+        frames = sorted(set([int(event.get("start_frame", 1)), int((event.get("start_frame", 1) + event.get("end_frame", 1)) / 2), int(event.get("end_frame", 1))]))
+        for sid in event.get("subject_ids", []):
+            subj_objs = find_objects(sid)
+            if not subj_objs:
+                continue
+            for target_id in targets:
+                target_objs = find_objects(target_id)
+                if "gripper" in str(event.get("description", "")).lower() or "gripper" in str(event.get("expected_visual_result", "")).lower():
+                    target_objs = gripper_subset(target_objs)
+                if not target_objs:
+                    continue
+                for frame in frames:
+                    bpy.context.scene.frame_set(frame)
+                    sb = aggregate_minmax(subj_objs)
+                    tb = aggregate_minmax(target_objs)
+                    if not sb or not tb:
+                        continue
+                    gap = bbox_gap(sb, tb)
+                    if gap > 0.18:
+                        issue(
+                            "ANIMATION_INTERACTION_GAP",
+                            f"Event '{{event.get('id')}}' requires '{{sid}}' to stay visually connected to '{{target_id}}', but their bounding boxes are separated.",
+                            "major",
+                            sid,
+                            frame,
+                            {{"target_id": target_id, "gap": gap}},
+                        )
 
 report = {{"passed": not issues, "issues": issues, "summary": "Animation deterministic validation passed." if not issues else "Animation deterministic validation found issues."}}
 print("{ANIMATION_MARKER}" + json.dumps({{"report": report, "trace": trace}}))

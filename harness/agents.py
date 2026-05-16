@@ -33,6 +33,7 @@ class PlannerAgent:
             "When animation is requested, include AnimationSpec and video verifier settings. "
             "Animation events must be structurally verifiable: use translate, rotate, scale, follow_path, appear, disappear, camera_move, or camera_orbit; include start_transform, at least one intermediate path.keyframe or path point, end_transform, sampled frames covering start/middle/end, temporal questions, and pass criteria. "
             "For signal or material color changes, do not use one vague color-change event. Model separate colored visible parts such as red_light and green_light, then use disappear/appear events with explicit path.keyframes value.visible or value.alpha. "
+            "For pick, grasp, carry, lift, or place animations, model the gripper/end-effector as its own ObjectSpec when possible, and put that object id in target_ids for the package lift/transfer events so contact continuity can be verified. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
@@ -66,6 +67,7 @@ Use Blender's Z-up coordinate system and meters.
             "Keep the revised IR concise and executable: at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
             "Animation events must stay structurally verifiable: include required start/end transforms, at least one intermediate keyframe or path point, sampled start/middle/end frames, temporal questions, and pass criteria. "
             "For signal or material color changes, use separate colored visible parts and explicit appear/disappear visibility keyframes. "
+            "For pick, grasp, carry, lift, or place animations, keep an explicit gripper/end-effector object id in target_ids for package motion events. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
@@ -196,6 +198,7 @@ class RefinerAgent:
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
             "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
+            "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames, or parent/constraint the package to the gripper for that segment, so screenshots show continuous contact. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
             "Return only the full corrected Python script."
@@ -795,6 +798,7 @@ def _normalize_ambiguous_beside_relations(ir: GenerationIR) -> None:
 def _normalize_animation_verifier(ir: GenerationIR) -> None:
     if not ir.animation:
         return
+    _normalize_animation_interaction_targets(ir)
     verifier = ir.animation.verifier
     verifier.enabled = True
     duration = max(1, int(ir.animation.duration_frames))
@@ -816,6 +820,46 @@ def _normalize_animation_verifier(ir: GenerationIR) -> None:
             "Animated objects remain visible and preserve required scene relationships unless the event intentionally changes them.",
             "Motion direction, timing, and final state match the AnimationSpec.",
         ]
+
+
+def _normalize_animation_interaction_targets(ir: GenerationIR) -> None:
+    if not ir.animation:
+        return
+    object_ids = {obj.id for obj in ir.scene.objects}
+    gripper_like = [
+        obj.id
+        for obj in ir.scene.objects
+        if any(token in f"{obj.id} {obj.description} {obj.label or ''}".lower() for token in ("gripper", "end effector", "end-effector"))
+    ]
+    arm_like = [
+        obj.id
+        for obj in ir.scene.objects
+        if any(token in f"{obj.id} {obj.description} {obj.label or ''}".lower() for token in ("robotic_arm", "robotic arm", "gripper", "end effector", "end-effector"))
+    ]
+    target_candidates = gripper_like or arm_like
+    if not target_candidates:
+        return
+    for event in ir.animation.events:
+        if event.action in {AnimationAction.APPEAR, AnimationAction.DISAPPEAR}:
+            continue
+        text = " ".join(
+            [
+                event.id,
+                event.description,
+                event.expected_visual_result or "",
+                " ".join(event.constraints),
+                " ".join(event.subject_ids),
+            ]
+        ).lower()
+        if any(token in text for token in ("light", "status", "signal")):
+            continue
+        if not any(token in text for token in ("grasp", "gripper", "lift", "carry", "pick", "place", "transfer")):
+            continue
+        if not any(token in text for token in ("package", "box", "parcel", "object")):
+            continue
+        for target_id in target_candidates:
+            if target_id in object_ids and target_id not in event.target_ids and target_id not in event.subject_ids:
+                event.target_ids.append(target_id)
 
 
 def _default_event_visual_result(event: Any) -> str:
