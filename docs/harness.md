@@ -203,6 +203,13 @@ extra temporal checks:
   boundaries, checks that required F-Curves exist, verifies that motion is not
   static, and compares final transforms against explicit `end_transform` values
   when present.
+- Pick-and-place style events are treated as interaction events, not just
+  independent object motion. The planner is asked to expose a gripper or
+  end-effector as an object id when possible and attach it through
+  `target_ids`; deterministic validation then checks bounding-box gaps between
+  the carried object and the gripper/arm at start, midpoint, and end frames.
+  This catches cases where a package moves along the intended path while the
+  gripper remains visibly detached.
 - Sampled animation screenshots are rendered with a fixed camera computed from
   the union bounding box across all sampled frames. This is important: if the
   camera re-centers on the moving object every frame, the visual verifier cannot
