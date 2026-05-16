@@ -20,16 +20,19 @@ class PlannerAgent:
         self.rag = rag
 
     def plan(self, prompt: str, *, include_animation: bool = False) -> GenerationIR:
-        context = self.rag.format_context("IR SceneSpec AnimationSpec ScreenshotPlan VideoVerifierSpec", limit=5)
+        context = self.rag.format_context("IR SceneSpec AnimationSpec ScreenshotPlan VideoVerifierSpec", limit=3, max_chars=7000)
         ir_reference = _load_ir_reference()
         system = (
             "You are the planner for a Blender 4.5.4 code-generation harness. "
             "Return only a JSON object matching the GenerationIR schema. "
             "Use stable machine ids. Include screenshot views for visual validation. "
+            "Keep the IR concise and executable: use at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
+            "Prefer compact descriptions and omit optional features that are not needed for verification. "
             "Plan at least three complementary screenshot views: an overall three-quarter view, a relation/contact close-up, and a side or top view that exposes support/contact. "
             "Add visual pass criteria that require no floating, detached, or misaligned parts unless explicitly requested. "
             "When animation is requested, include AnimationSpec and video verifier settings. "
             "Animation events must be structurally verifiable: use translate, rotate, scale, follow_path, appear, disappear, camera_move, or camera_orbit; include start_transform, at least one intermediate path.keyframe or path point, end_transform, sampled frames covering start/middle/end, temporal questions, and pass criteria. "
+            "For signal or material color changes, do not use one vague color-change event. Model separate colored visible parts such as red_light and green_light, then use disappear/appear events with explicit path.keyframes value.visible or value.alpha. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
@@ -54,13 +57,15 @@ Use Blender's Z-up coordinate system and meters.
         return self._generate_valid_ir(system, user)
 
     def revise(self, ir: GenerationIR, user_request: str, *, include_animation: bool | None = None) -> GenerationIR:
-        context = self.rag.format_context("IR revision SceneSpec AnimationSpec user refinement", limit=5)
+        context = self.rag.format_context("IR revision SceneSpec AnimationSpec user refinement", limit=3, max_chars=7000)
         ir_reference = _load_ir_reference()
         system = (
             "You revise an existing GenerationIR for a Blender 4.5.4 harness. "
             "Return only the complete revised GenerationIR JSON. Preserve stable ids where possible. "
             "Add new ids only for new objects, relations, cameras, screenshots, or animation events. "
+            "Keep the revised IR concise and executable: at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
             "Animation events must stay structurally verifiable: include required start/end transforms, at least one intermediate keyframe or path point, sampled start/middle/end frames, temporal questions, and pass criteria. "
+            "For signal or material color changes, use separate colored visible parts and explicit appear/disappear visibility keyframes. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
@@ -89,7 +94,7 @@ Return the full revised GenerationIR JSON.
 
     def _generate_valid_ir(self, system: str, user: str) -> GenerationIR:
         last_error = ""
-        for attempt in range(2):
+        for attempt in range(3):
             request = user
             if attempt:
                 request += f"""
@@ -97,17 +102,20 @@ Return the full revised GenerationIR JSON.
 The previous JSON failed to decode or validate:
 {last_error}
 
-Return corrected complete GenerationIR JSON only. Every relation must include
+Return corrected complete GenerationIR JSON only, and make it shorter than the
+previous attempt. Every relation must include
 relation_type, subject_id, and object_id. Every relation/camera/view/object
 animation reference must point to an ObjectSpec id, never a part id. Camera
 event subjects must point to CameraSpec ids. Every object must include id and
 description. Every required animation event must include expected_visual_result,
 start/middle/end states, sampled frames, temporal video questions, and pass
-criteria.
+criteria. Remove nonessential optional_features, visual_check_prompts, long
+notes, duplicate questions, and redundant pass criteria.
 """
             try:
                 data = self.llm.json_text(system, request)
                 _sanitize_planner_data(data)
+                _sanitize_animation_data(data)
                 ir = from_dict(GenerationIR, data)
                 _normalize_part_references(ir)
                 _normalize_ambiguous_beside_relations(ir)
@@ -164,7 +172,7 @@ Script requirements:
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
 """
-        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user, max_tokens=32000)))
+        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
 
 class RefinerAgent:
@@ -218,11 +226,11 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
 """
             try:
                 return _sanitize_generated_blender_code(
-                    extract_code_block(self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=32000))
+                    extract_code_block(self.llm.complete_multimodal(system, user, screenshot_paths))
                 )
             except Exception:
                 pass
-        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user, max_tokens=32000)))
+        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
     def apply_user_request(
         self,
@@ -257,7 +265,7 @@ Current script:
 {code}
 ```
 """
-        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user, max_tokens=32000)))
+        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
 
 class VisionVerifierAgent:
@@ -315,7 +323,7 @@ Critical checks:
 - Set passed=true only when all required objects, relations, composition, and visible geometry are acceptable.
 - If animation is present, judge only static geometry, object presence, per-frame contact/visibility shown in the screenshots, and camera coverage. Do not fail this scene verifier solely for temporal smoothness, full-frame motion continuity, or video-only questions; those are handled by the video verifier.
 """
-        data = self.llm.json_multimodal(system, user, screenshot_paths, max_tokens=4000)
+        data = self.llm.json_multimodal(system, user, screenshot_paths)
         return _report_from_model(data, VerificationMode.VISION)
 
 
@@ -372,9 +380,9 @@ The attached images are ordered sampled frames. Verify whether the requested ani
 If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
 """
         if preview_video_path and preview_video_path.exists():
-            data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths, max_tokens=4000)
+            data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
         else:
-            data = self.llm.json_multimodal(system, user, sampled_frame_paths, max_tokens=4000)
+            data = self.llm.json_multimodal(system, user, sampled_frame_paths)
         return _report_from_model(data, VerificationMode.VIDEO)
 
 
@@ -630,6 +638,71 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         obj["category"] = category_aliases.get(category, category if category in valid_categories else "generic")
         role = str(obj.get("role", "secondary")).lower()
         obj["role"] = role if role in valid_roles else "secondary"
+
+
+def _sanitize_animation_data(data: dict[str, Any]) -> None:
+    animation = data.get("animation") if isinstance(data, dict) else None
+    if not isinstance(animation, dict):
+        return
+    for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
+        if not isinstance(event, dict):
+            continue
+        path = event.get("path")
+        if isinstance(path, dict):
+            points = path.get("points")
+            if isinstance(points, list):
+                path["points"] = [_normalize_path_point(point) for point in points]
+            keyframes = path.get("keyframes")
+            if isinstance(keyframes, list):
+                for keyframe in keyframes:
+                    if not isinstance(keyframe, dict):
+                        continue
+                    transform = keyframe.get("transform")
+                    if isinstance(transform, dict) and "location" in transform:
+                        transform["location"] = _normalize_vec3(transform["location"])
+        for key in ("start_transform", "end_transform"):
+            transform = event.get(key)
+            if isinstance(transform, dict):
+                for field_name in ("location", "rotation_euler", "scale"):
+                    if field_name in transform:
+                        transform[field_name] = _normalize_vec3(transform[field_name])
+
+
+def _normalize_path_point(point: Any) -> list[float]:
+    if isinstance(point, dict):
+        for key in ("location", "point", "position", "coordinate", "coordinates", "value"):
+            if key in point:
+                return _normalize_vec3(point[key])
+        values = [point.get("x"), point.get("y"), point.get("z")]
+        if values[0] is not None and values[1] is not None:
+            return _normalize_vec3(values)
+    if isinstance(point, (list, tuple)) and len(point) == 2 and isinstance(point[1], (list, tuple, dict)):
+        return _normalize_vec3(point[1])
+    return _normalize_vec3(point)
+
+
+def _normalize_vec3(value: Any) -> list[float]:
+    if isinstance(value, dict):
+        if all(key in value for key in ("x", "y")):
+            raw = [value.get("x"), value.get("y"), value.get("z", 0.0)]
+        else:
+            raw = list(value.values())
+    elif isinstance(value, (list, tuple)):
+        raw = list(value)
+    else:
+        raw = [value, 0.0, 0.0]
+    if len(raw) == 2:
+        raw.append(0.0)
+    while len(raw) < 3:
+        raw.append(0.0)
+    return [_float_or_zero(item) for item in raw[:3]]
+
+
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _normalize_part_references(ir: GenerationIR) -> None:

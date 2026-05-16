@@ -67,6 +67,11 @@ agent with `LL3M_PLANNER_TIMEOUT_SECONDS`, `LL3M_CODER_TIMEOUT_SECONDS`,
 `LL3M_REFINER_TIMEOUT_SECONDS`, `LL3M_VISION_TIMEOUT_SECONDS`, or
 `LL3M_VIDEO_TIMEOUT_SECONDS`.
 
+Leave `LL3M_*_MAX_TOKENS` empty by default. The harness will not send a
+`max_tokens` cap unless that agent-specific value is set, which avoids
+accidentally clipping long Blender scripts or verifier JSON on providers with
+larger output windows.
+
 Leave these empty when the global provider environment variables are sufficient.
 Set them when, for example, coder uses OpenAI, vision uses an OpenRouter VLM, and
 video uses a DashScope/Qwen Omni endpoint.
@@ -120,6 +125,9 @@ passes. The loop has safety caps to avoid infinite runs:
 - `LL3M_MAX_REFINEMENT_ROUNDS` for the baseline deterministic loop.
 - `LL3M_MAX_VISUAL_REFINEMENT_ROUNDS` for visual-verifier-gated scene repair.
 - `LL3M_MAX_VIDEO_REFINEMENT_ROUNDS` for video-verifier-gated animation repair.
+- `LL3M_RENDER_GIF_EACH_ROUND` to render a complete GIF during every video
+  verification pass. Keep this `false` for sampled-frame verifiers; set it
+  `true` only when the configured video model directly reads GIF/video input.
 
 The IR can also set `scene.verifier.visual.max_rounds` and
 `animation.verifier.max_rounds`; the harness uses the largest applicable cap.
@@ -205,6 +213,10 @@ extra temporal checks:
 - If animation verification fails, the sampled frames are included in the
   multimodal refiner prompt so the coding model can see the temporal error it
   needs to repair.
+- Every passed animation run writes a complete final GIF to
+  `animation/final/animation.gif`. Validation rounds render only sampled frames
+  by default to avoid multiplying render time by the number of refinement
+  rounds.
 
 The static vision verifier and video verifier have separate responsibilities.
 For animation runs, the static verifier judges object presence, support/contact

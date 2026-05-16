@@ -119,7 +119,13 @@ class BlenderRuntime:
                 {},
             )
 
-    def render_animation_samples(self, ir: GenerationIR, output_dir: Path) -> tuple[list[Path], Path | None]:
+    def render_animation_samples(
+        self,
+        ir: GenerationIR,
+        output_dir: Path,
+        *,
+        render_gif: bool = False,
+    ) -> tuple[list[Path], Path | None]:
         if not ir.animation:
             return [], None
         output_dir = output_dir.resolve()
@@ -128,7 +134,7 @@ class BlenderRuntime:
         if not frames:
             duration = ir.animation.duration_frames
             frames = sorted(set([1, max(1, duration // 2), duration]))
-        gif_frames = list(range(1, max(1, int(ir.animation.duration_frames)) + 1))
+        gif_frames = list(range(1, max(1, int(ir.animation.duration_frames)) + 1)) if render_gif else []
         script = _animation_render_script(
             ir,
             sample_frames=frames,
@@ -142,10 +148,14 @@ class BlenderRuntime:
             payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": [], "gif_frames": [], "video": None})
             paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
             gif_frame_paths = [Path(path) for path in payload.get("gif_frames", []) if Path(path).exists()]
-            gif_path = _write_animation_gif(
-                gif_frame_paths,
-                output_dir / "animation.gif",
-                fps=max(1, int(ir.animation.fps)),
+            gif_path = (
+                _write_animation_gif(
+                    gif_frame_paths,
+                    output_dir / "animation.gif",
+                    fps=max(1, int(ir.animation.fps)),
+                )
+                if render_gif
+                else None
             )
             if paths:
                 return paths, gif_path

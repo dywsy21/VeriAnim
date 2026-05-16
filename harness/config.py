@@ -88,6 +88,7 @@ class HarnessConfig:
     headless_rendering: bool
     render_width: int
     render_height: int
+    render_gif_each_round: bool
     tui_initial_animation: bool
     tui_skip_vision: bool
     tui_skip_video: bool
@@ -116,6 +117,7 @@ class HarnessConfig:
             headless_rendering=_env_bool("LL3M_HEADLESS_RENDERING", False),
             render_width=_env_int("LL3M_RENDER_WIDTH", 1280),
             render_height=_env_int("LL3M_RENDER_HEIGHT", 720),
+            render_gif_each_round=_env_bool("LL3M_RENDER_GIF_EACH_ROUND", False),
             tui_initial_animation=_env_bool("LL3M_TUI_INITIAL_ANIMATION", False),
             tui_skip_vision=_env_bool("LL3M_TUI_SKIP_VISION", False),
             tui_skip_video=_env_bool("LL3M_TUI_SKIP_VIDEO", False),

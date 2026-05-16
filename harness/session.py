@@ -145,6 +145,7 @@ class InteractiveHarnessSession:
             if all(report.passed for report in reports):
                 self._emit("pass", "All enabled validation stages passed")
                 self.store.write_text("code/final_scene.py", self.code)
+                self._render_final_animation_gif()
                 return
 
             if round_index >= max_rounds:
@@ -208,7 +209,9 @@ class InteractiveHarnessSession:
             if not self.skip_video and self.ir.animation.verifier.enabled:
                 self._emit("render", "Rendering animation sampled frames")
                 sampled_frames, preview_video = self.blender.render_animation_samples(
-                    self.ir, self.store.root / "animation" / label
+                    self.ir,
+                    self.store.root / "animation" / label,
+                    render_gif=self.config.render_gif_each_round,
                 )
                 self._latest_screenshots = [*self._latest_screenshots, *sampled_frames]
                 self._emit(
@@ -225,6 +228,22 @@ class InteractiveHarnessSession:
                 self._emit_report(video_report)
 
         return reports
+
+    def _render_final_animation_gif(self) -> None:
+        if not self.store or not self.ir or not self.ir.animation:
+            return
+        self._emit("render", "Rendering final full animation GIF")
+        sampled_frames, gif_path = self.blender.render_animation_samples(
+            self.ir,
+            self.store.root / "animation" / "final",
+            render_gif=True,
+        )
+        self._emit(
+            "render",
+            f"Rendered final animation GIF {gif_path}" if gif_path else "Final animation GIF render produced no GIF",
+            paths=[str(path) for path in sampled_frames],
+            preview=str(gif_path) if gif_path else None,
+        )
 
     def _emit_report(self, report: ValidationReport) -> None:
         status = "passed" if report.passed else "failed"
