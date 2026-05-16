@@ -546,6 +546,9 @@ class GenerationIR:
                     )
 
         if self.animation:
+            animation_events = [*self.animation.events, *self.animation.camera_events]
+            camera_actions = {AnimationAction.CAMERA_MOVE, AnimationAction.CAMERA_ORBIT}
+
             if self.animation.duration_frames <= 0:
                 issues.append(
                     ValidationIssue(
@@ -562,48 +565,81 @@ class GenerationIR:
                         severity=Severity.CRITICAL,
                     )
                 )
-            for event in [*self.animation.events, *self.animation.camera_events]:
-                if event.start_frame < 0 or event.end_frame < event.start_frame:
+            if not animation_events:
+                issues.append(
+                    ValidationIssue(
+                        code="NO_ANIMATION_EVENTS",
+                        message="AnimationSpec must contain at least one event or camera_event.",
+                        severity=Severity.CRITICAL,
+                    )
+                )
+            if self.animation.verifier.enabled:
+                if not self.animation.verifier.questions:
                     issues.append(
                         ValidationIssue(
-                            code="INVALID_EVENT_FRAME_RANGE",
-                            message=f"Animation event '{event.id}' has an invalid frame range.",
-                            severity=Severity.CRITICAL,
+                            code="MISSING_VIDEO_VERIFIER_QUESTIONS",
+                            message="Enabled video verification requires at least one temporal question.",
+                            severity=Severity.MAJOR,
+                        )
+                    )
+                if not self.animation.verifier.pass_criteria:
+                    issues.append(
+                        ValidationIssue(
+                            code="MISSING_VIDEO_VERIFIER_PASS_CRITERIA",
+                            message="Enabled video verification requires pass criteria.",
+                            severity=Severity.MAJOR,
+                        )
+                    )
+            for frame in self.animation.verifier.sampled_frames:
+                if frame < 1 or frame > self.animation.duration_frames:
+                    issues.append(
+                        ValidationIssue(
+                            code="INVALID_SAMPLED_FRAME",
+                            message=f"Sampled frame '{frame}' is outside the animation range.",
+                            severity=Severity.MAJOR,
+                            frame=frame,
+                        )
+                    )
+
+            for event in self.animation.events:
+                if event.action in camera_actions:
+                    issues.append(
+                        ValidationIssue(
+                            code="CAMERA_ACTION_IN_OBJECT_EVENTS",
+                            message=f"Camera action event '{event.id}' should be placed in camera_events.",
+                            severity=Severity.MAJOR,
                             frame=event.start_frame,
                         )
                     )
-                if event.end_frame > self.animation.duration_frames:
+                _validate_animation_event(
+                    event,
+                    issues=issues,
+                    object_id_set=object_id_set,
+                    camera_ids=camera_ids,
+                    duration_frames=self.animation.duration_frames,
+                    sampled_frames=self.animation.verifier.sampled_frames,
+                    is_camera_event=False,
+                )
+
+            for event in self.animation.camera_events:
+                if event.action not in camera_actions:
                     issues.append(
                         ValidationIssue(
-                            code="EVENT_EXCEEDS_DURATION",
-                            message=f"Animation event '{event.id}' ends after the animation duration.",
+                            code="NON_CAMERA_ACTION_IN_CAMERA_EVENTS",
+                            message=f"Non-camera event '{event.id}' should be placed in events.",
                             severity=Severity.MAJOR,
-                            frame=event.end_frame,
+                            frame=event.start_frame,
                         )
                     )
-                for subject_id in event.subject_ids:
-                    if subject_id not in object_id_set and event.action not in {
-                        AnimationAction.CAMERA_MOVE,
-                        AnimationAction.CAMERA_ORBIT,
-                    }:
-                        issues.append(
-                            ValidationIssue(
-                                code="UNKNOWN_ANIMATION_SUBJECT",
-                                message=f"Animation event '{event.id}' references unknown subject '{subject_id}'.",
-                                severity=Severity.CRITICAL,
-                                target_id=subject_id,
-                            )
-                        )
-                for target_id in event.target_ids:
-                    if target_id not in object_id_set and target_id not in camera_ids:
-                        issues.append(
-                            ValidationIssue(
-                                code="UNKNOWN_ANIMATION_TARGET",
-                                message=f"Animation event '{event.id}' references unknown target '{target_id}'.",
-                                severity=Severity.MAJOR,
-                                target_id=target_id,
-                            )
-                        )
+                _validate_animation_event(
+                    event,
+                    issues=issues,
+                    object_id_set=object_id_set,
+                    camera_ids=camera_ids,
+                    duration_frames=self.animation.duration_frames,
+                    sampled_frames=self.animation.verifier.sampled_frames,
+                    is_camera_event=True,
+                )
 
         return ValidationReport(
             mode=VerificationMode.DETERMINISTIC,
@@ -617,6 +653,312 @@ class GenerationIR:
 
     def to_json(self, *, indent: int = 2, omit_none: bool = True) -> str:
         return json.dumps(self.to_dict(omit_none=omit_none), indent=indent, sort_keys=True)
+
+
+def _validate_animation_event(
+    event: AnimationEventSpec,
+    *,
+    issues: list[ValidationIssue],
+    object_id_set: set[str],
+    camera_ids: set[str],
+    duration_frames: int,
+    sampled_frames: list[int],
+    is_camera_event: bool,
+) -> None:
+    camera_actions = {AnimationAction.CAMERA_MOVE, AnimationAction.CAMERA_ORBIT}
+    if not event.id:
+        issues.append(
+            ValidationIssue(
+                code="EMPTY_ANIMATION_EVENT_ID",
+                message="Animation event id cannot be empty.",
+                severity=Severity.CRITICAL,
+                frame=event.start_frame,
+            )
+        )
+    if not event.subject_ids:
+        issues.append(
+            ValidationIssue(
+                code="MISSING_ANIMATION_SUBJECTS",
+                message=f"Animation event '{event.id}' must reference at least one subject.",
+                severity=Severity.CRITICAL,
+                frame=event.start_frame,
+            )
+        )
+    if not (event.description or "").strip():
+        issues.append(
+            ValidationIssue(
+                code="MISSING_EVENT_DESCRIPTION",
+                message=f"Animation event '{event.id}' needs a semantic description.",
+                severity=Severity.MAJOR,
+                frame=event.start_frame,
+            )
+        )
+    if event.required and not (event.expected_visual_result or "").strip():
+        issues.append(
+            ValidationIssue(
+                code="MISSING_EXPECTED_VISUAL_RESULT",
+                message=f"Required animation event '{event.id}' needs expected_visual_result for video verification.",
+                severity=Severity.MAJOR,
+                frame=event.start_frame,
+            )
+        )
+
+    if event.start_frame < 1 or event.end_frame <= event.start_frame:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_EVENT_FRAME_RANGE",
+                message=f"Animation event '{event.id}' must have start_frame >= 1 and end_frame > start_frame.",
+                severity=Severity.CRITICAL,
+                frame=event.start_frame,
+            )
+        )
+    if event.end_frame > duration_frames:
+        issues.append(
+            ValidationIssue(
+                code="EVENT_EXCEEDS_DURATION",
+                message=f"Animation event '{event.id}' ends after the animation duration.",
+                severity=Severity.MAJOR,
+                frame=event.end_frame,
+            )
+        )
+
+    for subject_id in event.subject_ids:
+        if event.action in camera_actions or is_camera_event:
+            if subject_id not in camera_ids:
+                issues.append(
+                    ValidationIssue(
+                        code="UNKNOWN_CAMERA_ANIMATION_SUBJECT",
+                        message=f"Camera animation event '{event.id}' references unknown camera '{subject_id}'.",
+                        severity=Severity.CRITICAL,
+                        target_id=subject_id,
+                    )
+                )
+        elif subject_id not in object_id_set:
+            issues.append(
+                ValidationIssue(
+                    code="UNKNOWN_ANIMATION_SUBJECT",
+                    message=f"Animation event '{event.id}' references unknown subject '{subject_id}'.",
+                    severity=Severity.CRITICAL,
+                    target_id=subject_id,
+                )
+            )
+
+    for target_id in event.target_ids:
+        if target_id not in object_id_set and target_id not in camera_ids:
+            issues.append(
+                ValidationIssue(
+                    code="UNKNOWN_ANIMATION_TARGET",
+                    message=f"Animation event '{event.id}' references unknown target '{target_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=target_id,
+                )
+            )
+
+    if event.start_frame >= 1 and event.end_frame <= duration_frames and event.end_frame > event.start_frame:
+        missing_samples = _missing_sampled_frames(event, sampled_frames)
+        if missing_samples:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_ANIMATION_SAMPLE_FRAMES",
+                    message=f"Animation event '{event.id}' sampled_frames must cover start, middle, and end states.",
+                    severity=Severity.MAJOR,
+                    frame=event.start_frame,
+                    evidence={"missing": missing_samples, "sampled_frames": sampled_frames},
+                )
+            )
+
+    _validate_motion_path(event, issues)
+    _validate_action_requirements(event, issues)
+
+
+def _missing_sampled_frames(event: AnimationEventSpec, sampled_frames: list[int]) -> list[str]:
+    samples = set(sampled_frames)
+    missing: list[str] = []
+    if event.start_frame not in samples:
+        missing.append("start")
+    if not any(event.start_frame < frame < event.end_frame for frame in samples):
+        missing.append("middle")
+    if event.end_frame not in samples:
+        missing.append("end")
+    return missing
+
+
+def _validate_motion_path(event: AnimationEventSpec, issues: list[ValidationIssue]) -> None:
+    if not event.path:
+        return
+    for index, point in enumerate(event.path.points):
+        if len(point) != 3:
+            issues.append(
+                ValidationIssue(
+                    code="INVALID_PATH_POINT",
+                    message=f"Animation event '{event.id}' path point {index} must be a 3D coordinate.",
+                    severity=Severity.MAJOR,
+                    frame=event.start_frame,
+                )
+            )
+    for keyframe in event.path.keyframes:
+        if keyframe.frame < event.start_frame or keyframe.frame > event.end_frame:
+            issues.append(
+                ValidationIssue(
+                    code="PATH_KEYFRAME_OUT_OF_RANGE",
+                    message=f"Animation event '{event.id}' keyframe {keyframe.frame} is outside its event frame range.",
+                    severity=Severity.MAJOR,
+                    frame=keyframe.frame,
+                )
+            )
+
+
+def _validate_action_requirements(event: AnimationEventSpec, issues: list[ValidationIssue]) -> None:
+    transform_field_by_action = {
+        AnimationAction.TRANSLATE: "location",
+        AnimationAction.ROTATE: "rotation_euler",
+        AnimationAction.SCALE: "scale",
+        AnimationAction.CAMERA_MOVE: "location",
+        AnimationAction.CAMERA_ORBIT: "location",
+    }
+    explicit_actions = {
+        AnimationAction.TRANSLATE,
+        AnimationAction.ROTATE,
+        AnimationAction.SCALE,
+        AnimationAction.FOLLOW_PATH,
+        AnimationAction.APPEAR,
+        AnimationAction.DISAPPEAR,
+        AnimationAction.CAMERA_MOVE,
+        AnimationAction.CAMERA_ORBIT,
+    }
+    if event.action not in explicit_actions:
+        issues.append(
+            ValidationIssue(
+                code="UNVERIFIABLE_ANIMATION_ACTION",
+                message=(
+                    f"Animation event '{event.id}' uses action '{event.action.value}', which is not part of "
+                    "the repeatably verifiable action subset. Use translate, rotate, scale, follow_path, "
+                    "appear, disappear, camera_move, or camera_orbit."
+                ),
+                severity=Severity.MAJOR,
+                frame=event.start_frame,
+            )
+        )
+        return
+
+    if event.action == AnimationAction.FOLLOW_PATH:
+        if not event.path or (len(event.path.points) < 2 and len(event.path.keyframes) < 2):
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_FOLLOW_PATH",
+                    message=f"follow_path event '{event.id}' requires at least two path points or two path keyframes.",
+                    severity=Severity.MAJOR,
+                    frame=event.start_frame,
+                )
+            )
+        if not _transform_has(event.start_transform, "location") or not _transform_has(event.end_transform, "location"):
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_ANIMATION_TRANSFORM",
+                    message=f"follow_path event '{event.id}' requires start_transform.location and end_transform.location.",
+                    severity=Severity.MAJOR,
+                    frame=event.start_frame,
+                )
+            )
+        if not _has_intermediate_state(event):
+            issues.append(_missing_middle_keyframe_issue(event))
+        return
+
+    if event.action in {AnimationAction.APPEAR, AnimationAction.DISAPPEAR}:
+        if not _has_visibility_transition(event):
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_VISIBILITY_KEYFRAMES",
+                    message=(
+                        f"{event.action.value} event '{event.id}' requires start and end path.keyframes "
+                        "with value.visible, value.hide_viewport, value.hide_render, or value.alpha."
+                    ),
+                    severity=Severity.MAJOR,
+                    frame=event.start_frame,
+                )
+            )
+        return
+
+    field_name = transform_field_by_action[event.action]
+    if not _transform_has(event.start_transform, field_name) or not _transform_has(event.end_transform, field_name):
+        issues.append(
+            ValidationIssue(
+                code="MISSING_ANIMATION_TRANSFORM",
+                message=(
+                    f"{event.action.value} event '{event.id}' requires start_transform.{field_name} "
+                    f"and end_transform.{field_name}."
+                ),
+                severity=Severity.MAJOR,
+                frame=event.start_frame,
+            )
+        )
+    if event.action == AnimationAction.CAMERA_ORBIT and not event.target_ids:
+        issues.append(
+            ValidationIssue(
+                code="MISSING_CAMERA_ORBIT_TARGET",
+                message=f"camera_orbit event '{event.id}' must target the object or scene center being orbited.",
+                severity=Severity.MAJOR,
+                frame=event.start_frame,
+            )
+        )
+    if not _has_intermediate_state(event):
+        issues.append(_missing_middle_keyframe_issue(event))
+
+
+def _transform_has(transform: TransformSpec | None, field_name: str) -> bool:
+    value = getattr(transform, field_name, None) if transform else None
+    return value is not None and len(value) == 3
+
+
+def _has_intermediate_state(event: AnimationEventSpec) -> bool:
+    if not event.path:
+        return False
+    if event.action in {AnimationAction.FOLLOW_PATH, AnimationAction.CAMERA_ORBIT} and len(event.path.points) >= 3:
+        return True
+    field_name = {
+        AnimationAction.TRANSLATE: "location",
+        AnimationAction.ROTATE: "rotation_euler",
+        AnimationAction.SCALE: "scale",
+        AnimationAction.FOLLOW_PATH: "location",
+        AnimationAction.CAMERA_MOVE: "location",
+        AnimationAction.CAMERA_ORBIT: "location",
+    }.get(event.action)
+    for keyframe in event.path.keyframes:
+        if not (event.start_frame < keyframe.frame < event.end_frame):
+            continue
+        if field_name is None:
+            return True
+        if keyframe.transform and _transform_has(keyframe.transform, field_name):
+            return True
+    return False
+
+
+def _missing_middle_keyframe_issue(event: AnimationEventSpec) -> ValidationIssue:
+    return ValidationIssue(
+        code="MISSING_INTERMEDIATE_KEYFRAME",
+        message=f"Animation event '{event.id}' requires at least one explicit intermediate state between start and end.",
+        severity=Severity.MAJOR,
+        frame=event.start_frame,
+    )
+
+
+def _has_visibility_transition(event: AnimationEventSpec) -> bool:
+    if not event.path:
+        return False
+    start = False
+    end = False
+    for keyframe in event.path.keyframes:
+        if not _keyframe_has_visibility_value(keyframe):
+            continue
+        if keyframe.frame == event.start_frame:
+            start = True
+        if keyframe.frame == event.end_frame:
+            end = True
+    return start and end
+
+
+def _keyframe_has_visibility_value(keyframe: KeyframeSpec) -> bool:
+    return any(key in keyframe.value for key in ("visible", "hide_viewport", "hide_render", "alpha"))
 
 
 def _to_plain_data(value: Any, *, omit_none: bool) -> Any:

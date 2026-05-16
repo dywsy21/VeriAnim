@@ -399,7 +399,15 @@ def has_fcurve(obj, path_prefix):
     action = obj.animation_data.action if obj.animation_data else None
     if not action:
         return False
-    return any(fc.data_path.startswith(path_prefix) for fc in action.fcurves)
+    fcurves = []
+    if hasattr(action, "fcurves"):
+        fcurves.extend(list(action.fcurves))
+    if hasattr(action, "layers"):
+        for layer in action.layers:
+            for strip in getattr(layer, "strips", []):
+                for bag in getattr(strip, "channelbags", []):
+                    fcurves.extend(list(getattr(bag, "fcurves", [])))
+    return any(fc.data_path.startswith(path_prefix) for fc in fcurves)
 
 def distance(a, b):
     return sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)) ** 0.5
@@ -495,8 +503,24 @@ def material_candidate_colors(mat):
 for material_id, spec in material_specs.items():
     mat = find_material(material_id)
     if not mat:
-        issue("MISSING_MATERIAL_SPEC", f"Material '{{material_id}}' was not created.", "major")
-        continue
+        expected = spec.get("base_color")
+        if expected:
+            best = None
+            best_distance = 999.0
+            for candidate in bpy.data.materials:
+                for color in material_candidate_colors(candidate):
+                    dist = color_distance(color, expected)
+                    if dist < best_distance:
+                        best = candidate
+                        best_distance = dist
+            if best and best_distance <= 0.2:
+                mat = best
+            else:
+                issue("MISSING_MATERIAL_SPEC", f"Material '{{material_id}}' was not created.", "major")
+                continue
+        else:
+            issue("MISSING_MATERIAL_SPEC", f"Material '{{material_id}}' was not created.", "major")
+            continue
     expected = spec.get("base_color")
     if expected and all(color_distance(color, expected) > 0.35 for color in material_candidate_colors(mat)):
         issue(

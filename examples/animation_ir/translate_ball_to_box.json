@@ -1,0 +1,382 @@
+{
+  "prompt": {
+    "text": "Create a small red ball that rolls from the left side of the floor to stop beside a blue box.",
+    "image_paths": [],
+    "user_constraints": [
+      "The ball must visibly move from left to right.",
+      "The final frame must show the ball stopped near the box."
+    ]
+  },
+  "scene": {
+    "objects": [
+      {
+        "id": "ball",
+        "description": "small red rolling ball",
+        "category": "prop",
+        "role": "primary",
+        "importance": "required",
+        "parts": [
+          {
+            "id": "ball_body",
+            "description": "smooth spherical body",
+            "required": true,
+            "material_id": "red_rubber",
+            "expected_count": 1
+          }
+        ],
+        "required_features": [
+          "round silhouette",
+          "red material"
+        ],
+        "dimensions": {
+          "size": [
+            0.45,
+            0.45,
+            0.45
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              -2.0,
+              0.0,
+              0.225
+            ]
+          },
+          "anchor": "bottom_center"
+        },
+        "material_ids": [
+          "red_rubber"
+        ],
+        "visual_check_prompts": [
+          "Is the red ball clearly visible?"
+        ]
+      },
+      {
+        "id": "box",
+        "description": "blue cube target box",
+        "category": "prop",
+        "role": "secondary",
+        "importance": "required",
+        "parts": [
+          {
+            "id": "box_body",
+            "description": "rigid cube body",
+            "required": true,
+            "material_id": "blue_plastic",
+            "expected_count": 1
+          }
+        ],
+        "dimensions": {
+          "size": [
+            0.7,
+            0.7,
+            0.7
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              1.6,
+              0.0,
+              0.35
+            ]
+          },
+          "anchor": "bottom_center"
+        },
+        "material_ids": [
+          "blue_plastic"
+        ],
+        "visual_check_prompts": [
+          "Is the blue box clearly visible as the target?"
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "id": "ball_final_near_box",
+        "relation_type": "near",
+        "subject_id": "ball",
+        "object_id": "box",
+        "description": "At the end of the animation, the ball stops near the box.",
+        "required": true,
+        "max_distance": 1.0,
+        "visual_priority": "required"
+      }
+    ],
+    "materials": [
+      {
+        "id": "red_rubber",
+        "description": "matte red rubber",
+        "base_color": [
+          0.9,
+          0.05,
+          0.04,
+          1.0
+        ],
+        "roughness": 0.65,
+        "texture_hints": []
+      },
+      {
+        "id": "blue_plastic",
+        "description": "matte blue plastic",
+        "base_color": [
+          0.05,
+          0.2,
+          0.9,
+          1.0
+        ],
+        "roughness": 0.5,
+        "texture_hints": []
+      }
+    ],
+    "environment": {
+      "environment_type": "studio",
+      "description": "simple studio floor with neutral background",
+      "floor": "matte gray floor plane",
+      "lights": [
+        {
+          "id": "key_light",
+          "light_type": "area",
+          "description": "large soft light above the scene",
+          "location": [
+            0.0,
+            -3.0,
+            4.0
+          ],
+          "energy": 450,
+          "size": 5.0
+        }
+      ],
+      "ambient_occlusion": true
+    },
+    "cameras": [
+      {
+        "id": "camera_main",
+        "view_type": "three_quarter",
+        "description": "wide three-quarter view showing the complete ball path and box",
+        "location": [
+          3.8,
+          -4.2,
+          2.2
+        ],
+        "look_at": [
+          0.0,
+          0.0,
+          0.35
+        ],
+        "target_object_ids": [
+          "ball",
+          "box"
+        ],
+        "coverage": "ball start position, midpoint, and final box area visible"
+      }
+    ],
+    "style": {
+      "description": "clean low-poly instructional animation",
+      "detail_level": "medium",
+      "color_palette": [
+        "red",
+        "blue",
+        "neutral gray"
+      ]
+    },
+    "verifier": {
+      "screenshot_plan": {
+        "views": [
+          {
+            "id": "three_quarter",
+            "view_type": "three_quarter",
+            "description": "overall scene view",
+            "camera_id": "camera_main",
+            "target_object_ids": [
+              "ball",
+              "box"
+            ],
+            "relation_ids": [
+              "ball_final_near_box"
+            ],
+            "required": true
+          },
+          {
+            "id": "top_path",
+            "view_type": "top",
+            "description": "top view showing the path from ball to box",
+            "target_object_ids": [
+              "ball",
+              "box"
+            ],
+            "relation_ids": [
+              "ball_final_near_box"
+            ],
+            "required": true
+          },
+          {
+            "id": "side_contact",
+            "view_type": "right",
+            "description": "side view verifying the ball sits on the floor",
+            "target_object_ids": [
+              "ball",
+              "box"
+            ],
+            "relation_ids": [],
+            "required": true
+          }
+        ],
+        "min_required_views": 3
+      },
+      "visual": {
+        "enabled": true,
+        "required_view_ids": [
+          "three_quarter",
+          "top_path",
+          "side_contact"
+        ],
+        "questions": [
+          "Are the ball and box both visible?",
+          "Does the ball rest on the floor instead of floating?"
+        ],
+        "pass_criteria": [
+          "The red ball and blue box are visible.",
+          "The ball is physically on the floor.",
+          "The view is sufficient to judge the path and final proximity."
+        ],
+        "max_rounds": 6
+      }
+    },
+    "coordinate_system": "Blender default: Z up, right-handed",
+    "units": "meters"
+  },
+  "animation": {
+    "duration_frames": 120,
+    "fps": 24,
+    "events": [
+      {
+        "id": "ball_translate_to_box",
+        "action": "translate",
+        "subject_ids": [
+          "ball"
+        ],
+        "target_ids": [
+          "box"
+        ],
+        "start_frame": 1,
+        "end_frame": 120,
+        "description": "The red ball rolls from the left side of the floor to stop beside the blue box.",
+        "start_transform": {
+          "location": [
+            -2.0,
+            0.0,
+            0.225
+          ]
+        },
+        "end_transform": {
+          "location": [
+            1.05,
+            0.0,
+            0.225
+          ]
+        },
+        "path": {
+          "keyframes": [
+            {
+              "frame": 60,
+              "transform": {
+                "location": [
+                  -0.45,
+                  0.0,
+                  0.225
+                ]
+              },
+              "value": {},
+              "interpolation": "linear",
+              "description": "The ball is halfway across the floor."
+            }
+          ],
+          "follow_orientation": false
+        },
+        "interpolation": "linear",
+        "required": true,
+        "expected_visual_result": "The ball visibly travels left to right and stops close to the blue box.",
+        "constraints": [
+          "The ball must stay on the floor throughout the animation.",
+          "The motion must be visible across sampled frames."
+        ]
+      },
+      {
+        "id": "ball_roll_spin",
+        "action": "rotate",
+        "subject_ids": [
+          "ball"
+        ],
+        "start_frame": 1,
+        "end_frame": 120,
+        "description": "The ball rotates as it rolls.",
+        "start_transform": {
+          "rotation_euler": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "end_transform": {
+          "rotation_euler": [
+            0.0,
+            6.283185,
+            0.0
+          ]
+        },
+        "path": {
+          "keyframes": [
+            {
+              "frame": 60,
+              "transform": {
+                "rotation_euler": [
+                  0.0,
+                  3.141592,
+                  0.0
+                ]
+              },
+              "value": {},
+              "interpolation": "linear",
+              "description": "The ball has completed half a rotation."
+            }
+          ],
+          "follow_orientation": false
+        },
+        "interpolation": "linear",
+        "required": true,
+        "expected_visual_result": "The ball spin is visible while the ball moves across the floor.",
+        "constraints": [
+          "Rotation should be synchronized with the translation event."
+        ]
+      }
+    ],
+    "camera_events": [],
+    "loop": false,
+    "verifier": {
+      "enabled": true,
+      "model_hint": "qwen3.5-omni",
+      "sampled_frames": [
+        1,
+        60,
+        120
+      ],
+      "require_preview_video": false,
+      "questions": [
+        "Does the ball visibly move from left to right over the ordered frames?",
+        "Does the final frame show the ball stopped near the box?",
+        "Does the ball remain on the floor and visible?"
+      ],
+      "pass_criteria": [
+        "The ball location changes from left to right between frames 1, 60, and 120.",
+        "The ball final state is near the blue box.",
+        "The camera keeps the ball and box visible throughout the sampled frames."
+      ],
+      "max_rounds": 6
+    }
+  },
+  "version": "0.1",
+  "project_id": "example_translate_ball_to_box",
+  "notes": "Repeatable animation IR fixture for translate and rotate validation."
+}

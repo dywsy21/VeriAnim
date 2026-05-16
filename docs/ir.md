@@ -287,6 +287,67 @@ matching object or relation ids.
 - `interpolation`: interpolation hint.
 - `description`: semantic keyframe note.
 
+## Animation Event Requirements
+
+Animation planning is intentionally constrained to a repeatably verifiable
+subset. A planner should not emit an animation as only a natural-language
+sentence. Each required event must expose start, middle, and end states that can
+be checked by structural validation, deterministic Blender sampling, and the
+video verifier.
+
+Supported first-pass actions and required fields:
+
+- `translate`: `start_transform.location`, `end_transform.location`, and at
+  least one intermediate `path.keyframes[].transform.location`.
+- `rotate`: `start_transform.rotation_euler`, `end_transform.rotation_euler`,
+  and at least one intermediate `path.keyframes[].transform.rotation_euler`.
+- `scale`: `start_transform.scale`, `end_transform.scale`, and at least one
+  intermediate `path.keyframes[].transform.scale`.
+- `follow_path`: `start_transform.location`, `end_transform.location`, and at
+  least two `path.points` or two `path.keyframes`; three path points are
+  preferred because they explicitly encode a middle state.
+- `appear` / `disappear`: `path.keyframes` at the start and end frames with
+  `value.visible`, `value.hide_viewport`, `value.hide_render`, or `value.alpha`.
+- `camera_move`: put the event in `camera_events`; the subject must be a camera
+  id and the event must include start, middle, and end camera locations.
+- `camera_orbit`: put the event in `camera_events`; the subject must be a
+  camera id, `target_ids` must name the object or camera target being orbited,
+  and the path should include a start point, at least one orbit midpoint, and
+  an end point.
+
+For every required event:
+
+- `start_frame` must be at least 1.
+- `end_frame` must be greater than `start_frame` and no later than
+  `duration_frames`.
+- `subject_ids` must be non-empty and reference scene object ids, except camera
+  events, which reference camera ids.
+- `expected_visual_result` must describe what the ordered frames should show.
+- `animation.verifier.sampled_frames` must include the event start frame, at
+  least one frame strictly between start and end, and the event end frame.
+- `animation.verifier.questions` must ask temporal questions about visible
+  motion, final state, and camera coverage.
+- `animation.verifier.pass_criteria` must state objective pass conditions.
+
+The repository includes repeatable fixtures:
+
+- `examples/animation_ir/translate_ball_to_box.json`
+- `examples/animation_ir/rotate_windmill_blades.json`
+- `examples/animation_ir/camera_orbit_showcase.json`
+
+Run structural validation without an LLM or Blender:
+
+```bash
+python -m unittest tests.test_animation_ir_validation
+```
+
+Run a single example through the harness after Blender and model credentials are
+configured:
+
+```bash
+python -m harness.runner --ir examples/animation_ir/translate_ball_to_box.json --animation
+```
+
 ## Video Verification
 
 `VideoVerifierSpec`
@@ -349,6 +410,11 @@ All verifiers should return `ValidationReport`.
 - Invalid event frame ranges.
 - Animation events that exceed the duration.
 - Animation events that reference unknown objects or targets.
+- Animation events missing action-specific start/end transforms.
+- Animation events missing explicit intermediate states.
+- Video verifier settings missing sampled start/middle/end frames, temporal
+  questions, or pass criteria.
+- Camera events whose subjects do not reference known camera ids.
 
 This is not a substitute for Blender execution or visual/video verification. It
 only ensures that the IR itself is internally coherent before generation starts.

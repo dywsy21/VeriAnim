@@ -1,0 +1,354 @@
+{
+  "prompt": {
+    "text": "Create a bronze sculpture on a pedestal and animate the camera orbiting around it.",
+    "image_paths": [],
+    "user_constraints": [
+      "The sculpture stays still.",
+      "The camera moves around the sculpture while keeping it centered."
+    ]
+  },
+  "scene": {
+    "objects": [
+      {
+        "id": "sculpture",
+        "description": "abstract bronze sculpture with curved vertical forms",
+        "category": "prop",
+        "role": "primary",
+        "importance": "required",
+        "parts": [
+          {
+            "id": "bronze_forms",
+            "description": "curved bronze vertical forms",
+            "required": true,
+            "material_id": "bronze",
+            "expected_count": 3
+          }
+        ],
+        "required_features": [
+          "bronze material",
+          "abstract vertical silhouette"
+        ],
+        "dimensions": {
+          "size": [
+            0.9,
+            0.9,
+            1.6
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              0.0,
+              0.0,
+              1.1
+            ]
+          },
+          "anchor": "bottom_center"
+        },
+        "material_ids": [
+          "bronze"
+        ],
+        "visual_check_prompts": [
+          "Is the bronze sculpture visible on the pedestal?"
+        ]
+      },
+      {
+        "id": "pedestal",
+        "description": "simple square stone pedestal supporting the sculpture",
+        "category": "architecture",
+        "role": "support",
+        "importance": "required",
+        "parts": [
+          {
+            "id": "pedestal_block",
+            "description": "square stone block",
+            "required": true,
+            "material_id": "stone",
+            "expected_count": 1
+          }
+        ],
+        "dimensions": {
+          "size": [
+            1.2,
+            1.2,
+            0.6
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              0.0,
+              0.0,
+              0.3
+            ]
+          },
+          "anchor": "bottom_center"
+        },
+        "material_ids": [
+          "stone"
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "id": "sculpture_on_pedestal",
+        "relation_type": "on_top_of",
+        "subject_id": "sculpture",
+        "object_id": "pedestal",
+        "description": "The sculpture rests on top of the pedestal.",
+        "required": true,
+        "tolerance": 0.08,
+        "visual_priority": "required"
+      }
+    ],
+    "materials": [
+      {
+        "id": "bronze",
+        "description": "warm metallic bronze",
+        "base_color": [
+          0.55,
+          0.32,
+          0.12,
+          1.0
+        ],
+        "metallic": 0.9,
+        "roughness": 0.35,
+        "texture_hints": [
+          "slightly weathered"
+        ]
+      },
+      {
+        "id": "stone",
+        "description": "matte light gray stone",
+        "base_color": [
+          0.58,
+          0.58,
+          0.55,
+          1.0
+        ],
+        "roughness": 0.8,
+        "texture_hints": [
+          "subtle stone grain"
+        ]
+      }
+    ],
+    "environment": {
+      "environment_type": "studio",
+      "description": "museum-style studio with clean floor",
+      "floor": "dark neutral floor",
+      "lights": [
+        {
+          "id": "key_light",
+          "light_type": "area",
+          "description": "large soft gallery light",
+          "location": [
+            2.0,
+            -3.0,
+            4.0
+          ],
+          "energy": 550,
+          "size": 4.0
+        }
+      ],
+      "ambient_occlusion": true
+    },
+    "cameras": [
+      {
+        "id": "camera_main",
+        "view_type": "three_quarter",
+        "description": "animated camera orbiting the sculpture",
+        "location": [
+          3.2,
+          -3.2,
+          1.9
+        ],
+        "look_at": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "target_object_ids": [
+          "sculpture",
+          "pedestal"
+        ],
+        "coverage": "sculpture and pedestal centered throughout orbit"
+      }
+    ],
+    "style": {
+      "description": "gallery turntable presentation",
+      "detail_level": "medium",
+      "color_palette": [
+        "bronze",
+        "stone gray",
+        "dark neutral"
+      ]
+    },
+    "verifier": {
+      "screenshot_plan": {
+        "views": [
+          {
+            "id": "three_quarter",
+            "view_type": "three_quarter",
+            "description": "overall sculpture view",
+            "camera_id": "camera_main",
+            "target_object_ids": [
+              "sculpture",
+              "pedestal"
+            ],
+            "relation_ids": [
+              "sculpture_on_pedestal"
+            ],
+            "required": true
+          },
+          {
+            "id": "front_support",
+            "view_type": "front",
+            "description": "front support view",
+            "target_object_ids": [
+              "sculpture",
+              "pedestal"
+            ],
+            "relation_ids": [
+              "sculpture_on_pedestal"
+            ],
+            "required": true
+          },
+          {
+            "id": "top_layout",
+            "view_type": "top",
+            "description": "top view showing centered sculpture on pedestal",
+            "target_object_ids": [
+              "sculpture",
+              "pedestal"
+            ],
+            "relation_ids": [
+              "sculpture_on_pedestal"
+            ],
+            "required": true
+          }
+        ],
+        "min_required_views": 3
+      },
+      "visual": {
+        "enabled": true,
+        "required_view_ids": [
+          "three_quarter",
+          "front_support",
+          "top_layout"
+        ],
+        "questions": [
+          "Is the sculpture visibly supported by the pedestal?",
+          "Are the sculpture and pedestal both visible?"
+        ],
+        "pass_criteria": [
+          "The sculpture rests on the pedestal without floating.",
+          "The main object is centered enough for camera orbit verification."
+        ],
+        "max_rounds": 6
+      }
+    },
+    "coordinate_system": "Blender default: Z up, right-handed",
+    "units": "meters"
+  },
+  "animation": {
+    "duration_frames": 96,
+    "fps": 24,
+    "events": [],
+    "camera_events": [
+      {
+        "id": "camera_orbit_sculpture",
+        "action": "camera_orbit",
+        "subject_ids": [
+          "camera_main"
+        ],
+        "target_ids": [
+          "sculpture"
+        ],
+        "start_frame": 1,
+        "end_frame": 96,
+        "description": "The camera orbits halfway around the sculpture while keeping it centered.",
+        "start_transform": {
+          "location": [
+            3.2,
+            -3.2,
+            1.9
+          ]
+        },
+        "end_transform": {
+          "location": [
+            -3.2,
+            3.2,
+            1.9
+          ]
+        },
+        "path": {
+          "points": [
+            [
+              3.2,
+              -3.2,
+              1.9
+            ],
+            [
+              4.2,
+              0.0,
+              1.9
+            ],
+            [
+              -3.2,
+              3.2,
+              1.9
+            ]
+          ],
+          "keyframes": [
+            {
+              "frame": 48,
+              "transform": {
+                "location": [
+                  4.2,
+                  0.0,
+                  1.9
+                ]
+              },
+              "value": {},
+              "interpolation": "ease_in_out",
+              "description": "Camera reaches the side of the sculpture orbit."
+            }
+          ],
+          "follow_orientation": true
+        },
+        "interpolation": "ease_in_out",
+        "required": true,
+        "expected_visual_result": "The sculpture remains centered while the camera view changes around it.",
+        "constraints": [
+          "The sculpture and pedestal remain visible in all sampled frames.",
+          "The sculpture itself should not move."
+        ]
+      }
+    ],
+    "loop": false,
+    "verifier": {
+      "enabled": true,
+      "model_hint": "qwen3.5-omni",
+      "sampled_frames": [
+        1,
+        48,
+        96
+      ],
+      "require_preview_video": false,
+      "questions": [
+        "Do the sampled frames show the viewpoint moving around the sculpture?",
+        "Does the sculpture remain centered and visible?",
+        "Does the sculpture remain static while only the camera changes viewpoint?"
+      ],
+      "pass_criteria": [
+        "Camera position changes across frames 1, 48, and 96.",
+        "The sculpture and pedestal remain visible in every sampled frame.",
+        "The apparent viewpoint changes without moving the sculpture itself."
+      ],
+      "max_rounds": 6
+    }
+  },
+  "version": "0.1",
+  "project_id": "example_camera_orbit_showcase",
+  "notes": "Repeatable animation IR fixture for camera_orbit validation."
+}

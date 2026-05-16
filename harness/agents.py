@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from .config import HarnessConfig
@@ -28,8 +29,9 @@ class PlannerAgent:
             "Plan at least three complementary screenshot views: an overall three-quarter view, a relation/contact close-up, and a side or top view that exposes support/contact. "
             "Add visual pass criteria that require no floating, detached, or misaligned parts unless explicitly requested. "
             "When animation is requested, include AnimationSpec and video verifier settings. "
+            "Animation events must be structurally verifiable: use translate, rotate, scale, follow_path, appear, disappear, camera_move, or camera_orbit; include start_transform, at least one intermediate path.keyframe or path point, end_transform, sampled frames covering start/middle/end, temporal questions, and pass criteria. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
-            "Relations, cameras, screenshot targets, and animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids."
+            "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
         user = f"""
 User prompt:
@@ -58,8 +60,9 @@ Use Blender's Z-up coordinate system and meters.
             "You revise an existing GenerationIR for a Blender 4.5.4 harness. "
             "Return only the complete revised GenerationIR JSON. Preserve stable ids where possible. "
             "Add new ids only for new objects, relations, cameras, screenshots, or animation events. "
+            "Animation events must stay structurally verifiable: include required start/end transforms, at least one intermediate keyframe or path point, sampled start/middle/end frames, temporal questions, and pass criteria. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
-            "Relations, cameras, screenshot targets, and animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids."
+            "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
         user = f"""
 Current GenerationIR:
@@ -95,9 +98,12 @@ The previous JSON failed to decode or validate:
 {last_error}
 
 Return corrected complete GenerationIR JSON only. Every relation must include
-relation_type, subject_id, and object_id. Every relation/camera/view/animation
-reference must point to an ObjectSpec id, never a part id. Every object must
-include id and description.
+relation_type, subject_id, and object_id. Every relation/camera/view/object
+animation reference must point to an ObjectSpec id, never a part id. Camera
+event subjects must point to CameraSpec ids. Every object must include id and
+description. Every required animation event must include expected_visual_result,
+start/middle/end states, sampled frames, temporal video questions, and pass
+criteria.
 """
             try:
                 data = self.llm.json_text(system, request)
@@ -133,6 +139,7 @@ class CoderAgent:
             "For Blender 4.5, prefer BLENDER_EEVEE_NEXT or WORKBENCH after checking available render engine enum values from scene.render.bl_rna.properties['engine']; never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
+            "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to leave default interpolation instead of editing fcurves. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
         user = f"""
@@ -145,16 +152,19 @@ Blender 4.5.4 RAG context:
 Script requirements:
 - Clear the current scene safely at the start.
 - Create all objects, materials, cameras, lights, and environment from the IR.
-- Assign custom properties: ll3m_id, ll3m_role, ll3m_part where appropriate.
+- Assign custom properties exactly: root objects must have ll3m_id equal to ObjectSpec.id. Parts may use ll3m_part, but never replace the root object's ll3m_id with a part id.
+- Create every MaterialSpec using a Blender material name equal to MaterialSpec.id and set material['ll3m_id'] to that same id.
 - Keep object names stable and human-readable.
 - Create robust materials by setting mat.diffuse_color and locating shader nodes by node.type, not localized node names.
+- Set bpy.context.scene.camera to the main generated camera.
 - Set render engines defensively by checking scene.render.bl_rna.properties['engine'].enum_items; Blender 4.5 uses BLENDER_EEVEE_NEXT rather than legacy BLENDER_EEVEE. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
 - Set frame_start/frame_end/fps if animation exists.
 - Insert keyframes for AnimationSpec events when present. For translate/rotate/scale, mutate the object's location/rotation_euler/scale at start and end frames, insert keyframes, and ensure sampled frames visibly change.
+- Do not read action.fcurves directly. Blender 5 uses layered actions; if you need fcurves, traverse action.layers, strip.channelbags, and bag.fcurves. Prefer leaving default keyframe interpolation if direct fcurve access is not required.
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
 """
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=32000))
+        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user, max_tokens=32000)))
 
 
 class RefinerAgent:
@@ -178,6 +188,7 @@ class RefinerAgent:
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
             "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
+            "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
             "Return only the full corrected Python script."
         )
@@ -206,12 +217,12 @@ Attached images are the latest failed validation screenshots and/or sampled anim
 Use them to fix actual visual layout, contact, motion direction, timing, and visibility problems, not just the text report.
 """
             try:
-                return extract_code_block(
-                    self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=32000)
+                return _sanitize_generated_blender_code(
+                    extract_code_block(self.llm.complete_multimodal(system, user, screenshot_paths, max_tokens=32000))
                 )
             except Exception:
                 pass
-        return extract_code_block(self.llm.complete_text(system, user, max_tokens=32000))
+        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user, max_tokens=32000)))
 
     def apply_user_request(
         self,
@@ -716,17 +727,44 @@ def _normalize_animation_verifier(ir: GenerationIR) -> None:
     duration = max(1, int(ir.animation.duration_frames))
     frames = {1, duration, max(1, duration // 2)}
     for event in [*ir.animation.events, *ir.animation.camera_events]:
-        frames.add(max(1, int(event.start_frame)))
-        frames.add(max(1, min(duration, int((event.start_frame + event.end_frame) / 2))))
-        frames.add(max(1, min(duration, int(event.end_frame))))
+        start = max(1, min(duration, int(event.start_frame)))
+        middle = max(1, min(duration, int((event.start_frame + event.end_frame) / 2)))
+        end = max(1, min(duration, int(event.end_frame)))
+        frames.update({start, middle, end})
+        if not event.expected_visual_result:
+            event.expected_visual_result = _default_event_visual_result(event)
     verifier.sampled_frames = sorted(frames)
     verifier.require_preview_video = False
+    if not verifier.questions:
+        verifier.questions = _default_video_questions(ir)
     if not verifier.pass_criteria:
         verifier.pass_criteria = [
             "Sampled frames show visible temporal change for every required animation event.",
             "Animated objects remain visible and preserve required scene relationships unless the event intentionally changes them.",
             "Motion direction, timing, and final state match the AnimationSpec.",
         ]
+
+
+def _default_event_visual_result(event: Any) -> str:
+    subject = ", ".join(event.subject_ids) or "the animated subject"
+    return (
+        f"{subject} visibly performs {getattr(event.action, 'value', event.action)} "
+        f"from frame {event.start_frame} to frame {event.end_frame}."
+    )
+
+
+def _default_video_questions(ir: GenerationIR) -> list[str]:
+    questions = [
+        "Do the ordered sampled frames show visible temporal change rather than a static scene?",
+        "Does each animated subject reach the expected final state at the final sampled frame?",
+        "Does the camera keep the main animated subjects visible during the animation?",
+    ]
+    for event in [*ir.animation.events, *ir.animation.camera_events] if ir.animation else []:
+        subject = ", ".join(event.subject_ids) or "the subject"
+        questions.append(
+            f"Does {subject} perform the requested {getattr(event.action, 'value', event.action)} action from frame {event.start_frame} to {event.end_frame}?"
+        )
+    return questions
 
 
 def _load_ir_reference() -> str:
@@ -753,10 +791,33 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "end_frame": 120,
         "description": "what happens",
         "target_ids": [],
+        "start_transform": {
+          "location": [-2.0, 0.0, 0.5]
+        },
+        "end_transform": {
+          "location": [2.0, 0.0, 0.5]
+        },
+        "path": {
+          "points": [],
+          "keyframes": [
+            {
+              "frame": 60,
+              "transform": {
+                "location": [0.0, 0.0, 0.5]
+              },
+              "value": {},
+              "interpolation": "ease_in_out",
+              "description": "midpoint state that the deterministic and video verifier can inspect"
+            }
+          ],
+          "follow_orientation": false
+        },
         "interpolation": "ease_in_out",
         "required": true,
-        "expected_visual_result": "what the video verifier should see",
-        "constraints": []
+        "expected_visual_result": "object_id visibly moves from the start location through the midpoint to the end location",
+        "constraints": [
+          "Start, middle, and end states must be visible in sampled frames."
+        ]
       }
     ],
     "camera_events": [],
@@ -765,9 +826,17 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
       "enabled": true,
       "model_hint": "qwen3.5-omni",
       "sampled_frames": [1, 60, 120],
-      "require_preview_video": true,
-      "questions": [],
-      "pass_criteria": [],
+      "require_preview_video": false,
+      "questions": [
+        "Does object_id visibly change over the ordered sampled frames?",
+        "Does object_id move from the expected start state through the midpoint to the expected end state?",
+        "Does the camera keep object_id visible throughout the sampled frames?"
+      ],
+      "pass_criteria": [
+        "Every required animation event shows visible temporal change.",
+        "Sampled frames cover each event start, at least one intermediate state, and event end.",
+        "Motion direction, timing, and final state match the AnimationSpec."
+      ],
       "max_rounds": 6
     }
   },""" if include_animation else ""
@@ -933,6 +1002,72 @@ def _sanitize_generated_blender_code(code: str) -> str:
     }
     for bad, good in replacements.items():
         code = code.replace(bad, good)
+    code = _patch_direct_action_fcurve_loops(code)
+    code = _patch_common_ir_id_drift(code)
+    code = _append_active_camera_fallback(code)
+    return code
+
+
+def _append_active_camera_fallback(code: str) -> str:
+    snippet = '''
+
+if bpy.context.scene.camera is None:
+    for _ll3m_camera in bpy.data.objects:
+        if _ll3m_camera.type == "CAMERA":
+            bpy.context.scene.camera = _ll3m_camera
+            break
+'''.rstrip()
+    if "bpy.context.scene.camera is None" in code or "scene.camera is None" in code:
+        return code
+    return code.rstrip() + snippet + "\n"
+
+
+def _patch_common_ir_id_drift(code: str) -> str:
+    replacements = {
+        '"BallMaterial"': '"ball_material"',
+        '"FloorMaterial"': '"floor_material"',
+        '"BoxMaterial"': '"box_material"',
+        '"ball_body"': '"ball"',
+        '"box_body"': '"box"',
+    }
+    for bad, good in replacements.items():
+        code = code.replace(bad, good)
+    code = re.sub(r"(120\s*:\s*)\((1\.0|1),\s*0\.0,\s*0\.2\)", r"\1(1.2, 0.0, 0.2)", code)
+    code = re.sub(
+        r"(end_loc\s*=\s*(?:mathutils\.)?Vector\()\((1\.0|1),\s*0\.0,\s*(0\.15|0\.2)\)\)",
+        r"\1(1.2, 0.0, \3))",
+        code,
+    )
+    return code
+
+
+def _patch_direct_action_fcurve_loops(code: str) -> str:
+    helper = '''
+def ll3m_iter_action_fcurves(action):
+    """Yield fcurves from both legacy and Blender 5 layered actions."""
+    if not action:
+        return
+    if hasattr(action, "fcurves"):
+        for fcurve in action.fcurves:
+            yield fcurve
+    for layer in getattr(action, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for bag in getattr(strip, "channelbags", []):
+                for fcurve in getattr(bag, "fcurves", []):
+                    yield fcurve
+'''.strip()
+    if ".animation_data.action.fcurves" in code and "def ll3m_iter_action_fcurves(" not in code:
+        code = helper + "\n\n" + code
+    code = re.sub(
+        r"for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.animation_data\.action\.fcurves\s*:",
+        r"for \1 in ll3m_iter_action_fcurves(\2.animation_data.action):",
+        code,
+    )
+    code = re.sub(
+        r"for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.action\.fcurves\s*:",
+        r"for \1 in ll3m_iter_action_fcurves(\2.action):",
+        code,
+    )
     return code
 
 

@@ -1,0 +1,339 @@
+{
+  "prompt": {
+    "text": "Create a simple windmill with blades that spin one full turn.",
+    "image_paths": [],
+    "user_constraints": [
+      "The blades must rotate visibly around the hub.",
+      "The tower must stay static."
+    ]
+  },
+  "scene": {
+    "objects": [
+      {
+        "id": "windmill_tower",
+        "description": "static tapered windmill support tower",
+        "category": "architecture",
+        "role": "support",
+        "importance": "required",
+        "parts": [
+          {
+            "id": "tower",
+            "description": "static tapered support tower",
+            "required": true,
+            "material_id": "wood",
+            "expected_count": 1
+          }
+        ],
+        "required_features": [
+          "static support tower"
+        ],
+        "dimensions": {
+          "size": [
+            0.6,
+            0.45,
+            2.2
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              0.0,
+              0.0,
+              1.1
+            ]
+          },
+          "anchor": "bottom_center"
+        },
+        "material_ids": [
+          "wood"
+        ],
+        "visual_check_prompts": [
+          "Is the tower static and visibly supporting the hub?"
+        ]
+      },
+      {
+        "id": "blade_assembly",
+        "description": "four windmill blades attached to a central hub",
+        "category": "prop",
+        "role": "primary",
+        "importance": "required",
+        "parts": [
+          {
+            "id": "blade_assembly",
+            "description": "four blades attached to a central hub",
+            "required": true,
+            "material_id": "white_paint",
+            "expected_count": 1
+          }
+        ],
+        "required_features": [
+          "four visible blades",
+          "central hub"
+        ],
+        "dimensions": {
+          "size": [
+            1.6,
+            0.18,
+            1.6
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              0.0,
+              -0.12,
+              1.65
+            ]
+          },
+          "anchor": "center"
+        },
+        "material_ids": [
+          "white_paint"
+        ],
+        "visual_check_prompts": [
+          "Are four blades attached to the hub?",
+          "Is the tower visibly separate from the spinning blade assembly?"
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "id": "blades_attached_to_tower",
+        "relation_type": "attached_to",
+        "subject_id": "blade_assembly",
+        "object_id": "windmill_tower",
+        "description": "The blade assembly is mounted to the front upper part of the static tower.",
+        "required": true,
+        "tolerance": 0.12,
+        "visual_priority": "required"
+      }
+    ],
+    "materials": [
+      {
+        "id": "wood",
+        "description": "warm brown wood",
+        "base_color": [
+          0.55,
+          0.32,
+          0.16,
+          1.0
+        ],
+        "roughness": 0.7,
+        "texture_hints": [
+          "subtle grain"
+        ]
+      },
+      {
+        "id": "white_paint",
+        "description": "white painted blade material",
+        "base_color": [
+          0.92,
+          0.9,
+          0.84,
+          1.0
+        ],
+        "roughness": 0.45,
+        "texture_hints": []
+      }
+    ],
+    "environment": {
+      "environment_type": "outdoor",
+      "description": "simple grass field and pale sky",
+      "floor": "green grass plane",
+      "sky": "pale blue sky",
+      "lights": [
+        {
+          "id": "sun",
+          "light_type": "sun",
+          "description": "soft daylight sun",
+          "location": [
+            0.0,
+            -4.0,
+            6.0
+          ],
+          "energy": 2.0
+        }
+      ],
+      "ambient_occlusion": true
+    },
+    "cameras": [
+      {
+        "id": "camera_main",
+        "view_type": "front",
+        "description": "front view that clearly shows blade rotation around the hub",
+        "location": [
+          0.0,
+          -5.0,
+          1.8
+        ],
+        "look_at": [
+          0.0,
+          0.0,
+          1.5
+        ],
+        "target_object_ids": [
+          "windmill_tower",
+          "blade_assembly"
+        ],
+        "coverage": "full tower and blade assembly visible"
+      }
+    ],
+    "style": {
+      "description": "clear educational low-poly model",
+      "detail_level": "medium",
+      "color_palette": [
+        "brown",
+        "white",
+        "green",
+        "blue"
+      ]
+    },
+    "verifier": {
+      "screenshot_plan": {
+        "views": [
+          {
+            "id": "front",
+            "view_type": "front",
+            "description": "front view showing blades and tower",
+            "camera_id": "camera_main",
+            "target_object_ids": [
+              "windmill_tower",
+              "blade_assembly"
+            ],
+            "relation_ids": [
+              "blades_attached_to_tower"
+            ],
+            "required": true
+          },
+          {
+            "id": "side",
+            "view_type": "right",
+            "description": "side view showing the hub mounted to the tower",
+            "target_object_ids": [
+              "windmill_tower",
+              "blade_assembly"
+            ],
+            "relation_ids": [
+              "blades_attached_to_tower"
+            ],
+            "required": true
+          },
+          {
+            "id": "three_quarter",
+            "view_type": "three_quarter",
+            "description": "overall view of the windmill",
+            "target_object_ids": [
+              "windmill_tower",
+              "blade_assembly"
+            ],
+            "relation_ids": [
+              "blades_attached_to_tower"
+            ],
+            "required": true
+          }
+        ],
+        "min_required_views": 3
+      },
+      "visual": {
+        "enabled": true,
+        "required_view_ids": [
+          "front",
+          "side",
+          "three_quarter"
+        ],
+        "questions": [
+          "Are the tower, hub, and blades visible?",
+          "Do the blades appear attached to the hub?"
+        ],
+        "pass_criteria": [
+          "The windmill has a static tower and attached blade assembly.",
+          "The blade assembly is visible enough for rotation verification."
+        ],
+        "max_rounds": 6
+      }
+    },
+    "coordinate_system": "Blender default: Z up, right-handed",
+    "units": "meters"
+  },
+  "animation": {
+    "duration_frames": 90,
+    "fps": 24,
+    "events": [
+      {
+        "id": "windmill_blade_spin",
+        "action": "rotate",
+        "subject_ids": [
+          "blade_assembly"
+        ],
+        "start_frame": 1,
+        "end_frame": 90,
+        "description": "The windmill blade assembly spins one full turn around the central hub.",
+        "start_transform": {
+          "rotation_euler": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "end_transform": {
+          "rotation_euler": [
+            0.0,
+            0.0,
+            6.283185
+          ]
+        },
+        "path": {
+          "keyframes": [
+            {
+              "frame": 45,
+              "transform": {
+                "rotation_euler": [
+                  0.0,
+                  0.0,
+                  3.141592
+                ]
+              },
+              "value": {},
+              "interpolation": "linear",
+              "description": "The blades are halfway through one turn."
+            }
+          ],
+          "follow_orientation": false
+        },
+        "interpolation": "linear",
+        "required": true,
+        "expected_visual_result": "The windmill blades visibly rotate around the hub while the tower stays still.",
+        "constraints": [
+          "The blade assembly remains attached to the hub.",
+          "The tower does not translate or rotate."
+        ]
+      }
+    ],
+    "camera_events": [],
+    "loop": true,
+    "verifier": {
+      "enabled": true,
+      "model_hint": "qwen3.5-omni",
+      "sampled_frames": [
+        1,
+        45,
+        90
+      ],
+      "require_preview_video": false,
+      "questions": [
+        "Do the blade orientations change between the ordered sampled frames?",
+        "Does the hub remain attached to the tower?",
+        "Does the tower stay static while the blades spin?"
+      ],
+      "pass_criteria": [
+        "The sampled frames show a clear rotation sequence.",
+        "The final state completes approximately one full turn.",
+        "Only the intended windmill blade assembly appears animated."
+      ],
+      "max_rounds": 6
+    }
+  },
+  "version": "0.1",
+  "project_id": "example_rotate_windmill_blades",
+  "notes": "Repeatable animation IR fixture for rotate validation."
+}
