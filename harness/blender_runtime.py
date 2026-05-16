@@ -743,12 +743,10 @@ scene.render.resolution_y = HEIGHT
 scene.render.resolution_percentage = 100
 original_engine = scene.render.engine
 engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-if "BLENDER_WORKBENCH" in engines:
-    scene.render.engine = "BLENDER_WORKBENCH"
-elif "BLENDER_EEVEE_NEXT" in engines:
+if "BLENDER_EEVEE_NEXT" in engines:
     scene.render.engine = "BLENDER_EEVEE_NEXT"
-elif "BLENDER_EEVEE" in engines:
-    scene.render.engine = "BLENDER_EEVEE"
+elif "BLENDER_WORKBENCH" in engines:
+    scene.render.engine = "BLENDER_WORKBENCH"
 
 try:
     scene.view_settings.view_transform = "Standard"
@@ -874,12 +872,10 @@ scene.render.resolution_y = HEIGHT
 scene.render.resolution_percentage = 100
 original_engine = scene.render.engine
 engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-if "BLENDER_WORKBENCH" in engines:
-    scene.render.engine = "BLENDER_WORKBENCH"
-elif "BLENDER_EEVEE_NEXT" in engines:
+if "BLENDER_EEVEE_NEXT" in engines:
     scene.render.engine = "BLENDER_EEVEE_NEXT"
-elif "BLENDER_EEVEE" in engines:
-    scene.render.engine = "BLENDER_EEVEE"
+elif "BLENDER_WORKBENCH" in engines:
+    scene.render.engine = "BLENDER_WORKBENCH"
 
 original_view_settings = {{
     "view_transform": getattr(scene.view_settings, "view_transform", None),
@@ -891,42 +887,64 @@ original_light_energy = {{obj.name: obj.data.energy for obj in bpy.data.objects 
 original_world_strength = None
 world = scene.world
 if world and world.use_nodes:
-    bg = world.node_tree.nodes.get("Background")
-    if bg:
-        original_world_strength = bg.inputs[1].default_value
+    for _node in world.node_tree.nodes:
+        if _node.type == "BACKGROUND":
+            original_world_strength = _node.inputs[1].default_value
+            break
 
 def apply_inspection_render_settings():
     # Verification screenshots must be legible even when generated code creates
     # poor lights/exposure. Keep this temporary and restore after rendering.
     try:
         scene.view_settings.view_transform = "Standard"
-        scene.view_settings.look = "Medium High Contrast"
-        scene.view_settings.exposure = -1.5
+        scene.view_settings.look = "None"
+        scene.view_settings.exposure = 0.0
         scene.view_settings.gamma = 1.0
     except Exception:
         pass
+    # For Workbench engine, configure studio lighting via scene.display
     try:
         scene.display.shading.light = "STUDIO"
+        scene.display.shading.studio_light = "studio.exr"
         scene.display.shading.color_type = "MATERIAL"
         scene.display.shading.show_shadows = True
         scene.display.shading.show_cavity = True
+        scene.display.shading.studiolight_intensity = 1.0
     except Exception:
         pass
-    if world and world.use_nodes:
-        bg = world.node_tree.nodes.get("Background")
-        if bg:
-            bg.inputs[1].default_value = min(float(bg.inputs[1].default_value), 0.2)
+    # Ensure at least one adequate light exists for EEVEE/Cycles fallback
+    has_light = any(obj.type == "LIGHT" for obj in bpy.data.objects if not obj.name.startswith("ll3m_"))
+    if not has_light:
+        light_data = bpy.data.lights.new("ll3m_inspection_light", type="SUN")
+        light_data.energy = 3.0
+        light_obj = bpy.data.objects.new("ll3m_inspection_light", light_data)
+        light_obj.location = (0, 0, 10)
+        light_obj.rotation_euler = (0.5, 0.2, -0.3)
+        bpy.context.scene.collection.objects.link(light_obj)
+    # Clamp extreme light values that would blow out the render
     for obj in bpy.data.objects:
         if obj.type != "LIGHT" or not hasattr(obj.data, "energy"):
             continue
-        if obj.data.type == "AREA":
-            obj.data.energy = min(float(obj.data.energy), 120.0)
+        if obj.name.startswith("ll3m_"):
+            continue
+        if obj.data.type == "SUN":
+            obj.data.energy = max(min(float(obj.data.energy), 8.0), 1.0)
+        elif obj.data.type == "AREA":
+            obj.data.energy = max(min(float(obj.data.energy), 800.0), 50.0)
         elif obj.data.type == "POINT":
-            obj.data.energy = min(float(obj.data.energy), 250.0)
-        elif obj.data.type == "SUN":
-            obj.data.energy = min(float(obj.data.energy), 2.0)
+            obj.data.energy = max(min(float(obj.data.energy), 1000.0), 50.0)
         else:
-            obj.data.energy = min(float(obj.data.energy), 500.0)
+            obj.data.energy = max(min(float(obj.data.energy), 1000.0), 50.0)
+    # Ensure world background is not pitch black
+    if world and world.use_nodes:
+        bg = None
+        for node in world.node_tree.nodes:
+            if node.type == "BACKGROUND":
+                bg = node
+                break
+        if bg:
+            strength = float(bg.inputs[1].default_value)
+            bg.inputs[1].default_value = max(min(strength, 1.0), 0.1)
 
 def restore_render_settings():
     try:
@@ -943,9 +961,17 @@ def restore_render_settings():
         if obj.name in original_light_energy and hasattr(obj.data, "energy"):
             obj.data.energy = original_light_energy[obj.name]
     if original_world_strength is not None and world and world.use_nodes:
-        bg = world.node_tree.nodes.get("Background")
+        bg = None
+        for node in world.node_tree.nodes:
+            if node.type == "BACKGROUND":
+                bg = node
+                break
         if bg:
             bg.inputs[1].default_value = original_world_strength
+    # Remove inspection light if we added one
+    inspection_light = bpy.data.objects.get("ll3m_inspection_light")
+    if inspection_light:
+        bpy.data.objects.remove(inspection_light, do_unlink=True)
 
 apply_inspection_render_settings()
 
