@@ -833,12 +833,36 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
                     transform = keyframe.get("transform")
                     if isinstance(transform, dict) and "location" in transform:
                         transform["location"] = _normalize_vec3(transform["location"])
+        _expand_event_range_to_keyframes(event)
         for key in ("start_transform", "end_transform"):
             transform = event.get(key)
             if isinstance(transform, dict):
                 for field_name in ("location", "rotation_euler", "scale"):
                     if field_name in transform:
                         transform[field_name] = _normalize_vec3(transform[field_name])
+
+
+def _expand_event_range_to_keyframes(event: dict[str, Any]) -> None:
+    path = event.get("path")
+    if not isinstance(path, dict):
+        return
+    frames = []
+    for keyframe in path.get("keyframes") or []:
+        if not isinstance(keyframe, dict) or "frame" not in keyframe:
+            continue
+        try:
+            frames.append(int(keyframe["frame"]))
+        except (TypeError, ValueError):
+            continue
+    if not frames:
+        return
+    try:
+        start = int(event.get("start_frame", min(frames)))
+        end = int(event.get("end_frame", max(frames)))
+    except (TypeError, ValueError):
+        return
+    event["start_frame"] = min(start, min(frames))
+    event["end_frame"] = max(end, max(frames))
 
 
 def _normalize_interpolation(value: Any) -> str:
