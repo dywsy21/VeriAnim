@@ -140,7 +140,7 @@ class InteractiveHarnessSession:
             if reports:
                 if round_index >= max_rounds:
                     self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
-                    self.store.write_text("code/final_scene.py", self.code)
+                    self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
                     return
                 refine_code = self._last_executed_code or self.code
                 if self._last_executed_code and self.code != self._last_executed_code:
@@ -187,7 +187,7 @@ class InteractiveHarnessSession:
 
             if round_index >= max_rounds:
                 self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
-                self.store.write_text("code/final_scene.py", self.code)
+                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
                 return
 
             failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
