@@ -52,6 +52,7 @@ class InteractiveHarnessSession:
         self.store: ArtifactStore | None = None
         self.ir: GenerationIR | None = None
         self.code: str | None = None
+        self._last_executed_code: str | None = None
         self.turn_index = 0
         self._latest_screenshots: list[Path] = []
 
@@ -141,11 +142,18 @@ class InteractiveHarnessSession:
                     self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
                     self.store.write_text("code/final_scene.py", self.code)
                     return
+                refine_code = self._last_executed_code or self.code
+                if self._last_executed_code and self.code != self._last_executed_code:
+                    execution_error = (
+                        (execution_error or "")
+                        + "\nThe latest refiner output was rejected before execution. "
+                        + "Continue from the last executable script and return a complete full script."
+                    ).strip()
                 failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
                 self._emit("refiner", f"Refining script from failed verifier feedback: {failed_modes}")
                 self.code = self.refiner.refine(
                     ir=self.ir,
-                    code=self.code,
+                    code=refine_code,
                     reports=reports,
                     execution_error=execution_error,
                     screenshot_paths=self._latest_screenshots,
@@ -168,6 +176,7 @@ class InteractiveHarnessSession:
             else:
                 execution_error = None
                 self._emit("execute", "Blender scene updated")
+                self._last_executed_code = self.code
                 reports = self._run_validation_pass(label)
 
             if all(report.passed for report in reports):
