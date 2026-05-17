@@ -779,6 +779,10 @@ def gripper_subset(objs):
     ]
     return grippers or [obj for obj in objs if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
 
+def mentions_signal_or_light(text):
+    words = text.lower().replace("_", " ").replace("-", " ").split()
+    return any(word in ("light", "status", "signal") for word in words)
+
 def interaction_targets(event):
     if event.get("action") in ("appear", "disappear"):
         return []
@@ -788,7 +792,7 @@ def interaction_targets(event):
         str(event.get("expected_visual_result", "")),
         " ".join(event.get("constraints", []) or []),
     ]).lower()
-    if any(token in text for token in ("light", "status", "signal")):
+    if mentions_signal_or_light(text):
         return []
     if not any(token in text for token in ("grasp", "gripper", "lift", "carry", "pick", "place", "transfer")):
         return []

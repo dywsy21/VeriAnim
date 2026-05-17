@@ -613,6 +613,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
     scene = data.get("scene") if isinstance(data, dict) else None
     if not isinstance(scene, dict):
         return
+    _promote_animation_end_effectors(data)
     valid_categories = {
         "generic",
         "furniture",
@@ -641,6 +642,111 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         obj["category"] = category_aliases.get(category, category if category in valid_categories else "generic")
         role = str(obj.get("role", "secondary")).lower()
         obj["role"] = role if role in valid_roles else "secondary"
+
+
+def _promote_animation_end_effectors(data: dict[str, Any]) -> None:
+    animation = data.get("animation") if isinstance(data, dict) else None
+    scene = data.get("scene") if isinstance(data, dict) else None
+    if not isinstance(animation, dict) or not isinstance(scene, dict):
+        return
+    objects = scene.get("objects") or []
+    if not isinstance(objects, list):
+        return
+    object_ids = {obj.get("id") for obj in objects if isinstance(obj, dict)}
+    if any(_is_end_effector_text(f"{obj.get('id', '')} {obj.get('description', '')}") for obj in objects if isinstance(obj, dict)):
+        return
+
+    promoted: list[tuple[str, str, dict[str, Any]]] = []
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        for part in obj.get("parts") or []:
+            if not isinstance(part, dict):
+                continue
+            part_text = f"{part.get('id', '')} {part.get('description', '')}"
+            if not _is_end_effector_text(part_text):
+                continue
+            part_id = str(part.get("id") or "gripper")
+            object_id = _unique_object_id(part_id, object_ids)
+            object_ids.add(object_id)
+            material_id = part.get("material_id")
+            promoted_obj = {
+                "id": object_id,
+                "description": part.get("description") or "black gripper end-effector that grasps and carries the package",
+                "label": "Gripper",
+                "category": "generic",
+                "role": "primary",
+                "importance": "required",
+                "required_features": ["visible end-effector", "attached to robotic arm", "contacts package during carry"],
+                "material_ids": [material_id] if material_id else [],
+                "generation_notes": "Create as its own root object or empty with ll3m_id so animation verification can track contact.",
+            }
+            objects.append(promoted_obj)
+            promoted.append((object_id, str(obj.get("id") or ""), promoted_obj))
+            break
+
+    if not promoted:
+        return
+    relations = scene.setdefault("relations", [])
+    if isinstance(relations, list):
+        for object_id, parent_id, _ in promoted:
+            if parent_id:
+                relations.append(
+                    {
+                        "id": f"{object_id}_attached_to_{parent_id}",
+                        "relation_type": "attached_to",
+                        "subject_id": object_id,
+                        "object_id": parent_id,
+                        "description": f"{object_id} is visibly attached to {parent_id}",
+                        "required": True,
+                        "visual_priority": "required",
+                    }
+                )
+    promoted_ids = [item[0] for item in promoted]
+    for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("action", "")).lower() in {"appear", "disappear"}:
+            continue
+        text = " ".join(
+            [
+                str(event.get("id", "")),
+                str(event.get("description", "")),
+                str(event.get("expected_visual_result", "")),
+                " ".join(event.get("constraints", []) or []),
+                " ".join(event.get("subject_ids", []) or []),
+            ]
+        ).lower()
+        if _mentions_signal_or_light(text):
+            continue
+        if not any(token in text for token in ("grasp", "gripper", "lift", "carry", "pick", "place", "transfer")):
+            continue
+        if not any(token in text for token in ("package", "box", "parcel", "object")):
+            continue
+        targets = event.setdefault("target_ids", [])
+        if isinstance(targets, list):
+            for object_id in promoted_ids:
+                if object_id not in targets and object_id not in (event.get("subject_ids") or []):
+                    targets.append(object_id)
+
+
+def _is_end_effector_text(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in ("gripper", "end effector", "end-effector", "endeffector"))
+
+
+def _mentions_signal_or_light(text: str) -> bool:
+    return bool(re.search(r"\b(light|status|signal)\b", text.lower()))
+
+
+def _unique_object_id(preferred: str, existing: set[Any]) -> str:
+    base = re.sub(r"[^a-zA-Z0-9_]+", "_", preferred.strip().lower()).strip("_") or "gripper"
+    if base not in existing:
+        return base
+    suffix = 2
+    while f"{base}_{suffix}" in existing:
+        suffix += 1
+    return f"{base}_{suffix}"
 
 
 def _sanitize_animation_data(data: dict[str, Any]) -> None:
@@ -881,7 +987,7 @@ def _normalize_animation_interaction_targets(ir: GenerationIR) -> None:
                 " ".join(event.subject_ids),
             ]
         ).lower()
-        if any(token in text for token in ("light", "status", "signal")):
+        if _mentions_signal_or_light(text):
             continue
         if not any(token in text for token in ("grasp", "gripper", "lift", "carry", "pick", "place", "transfer")):
             continue
