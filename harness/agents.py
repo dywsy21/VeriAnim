@@ -122,6 +122,7 @@ notes, duplicate questions, and redundant pass criteria.
                 _normalize_part_references(ir)
                 _normalize_ambiguous_beside_relations(ir)
                 _normalize_animation_verifier(ir)
+                ir.ensure_progressive_stages()
                 report = ir.validate()
                 if report.passed:
                     return ir

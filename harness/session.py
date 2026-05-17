@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -103,8 +102,8 @@ class InteractiveHarnessSession:
     def _run_two_stage_animation_start(self, full_ir: GenerationIR) -> None:
         assert self.store is not None
         self._emit("stage", "Stage 1/2: generating and validating static scene before animation")
-        scene_ir = copy.deepcopy(full_ir)
-        scene_ir.animation = None
+        full_ir.ensure_progressive_stages()
+        scene_ir = full_ir.static_scene_projection()
         self.ir = scene_ir
         self.store.write_json("ir_scene_stage.json", scene_ir.to_dict())
         self._emit("coder", "Generating static Blender scene script")

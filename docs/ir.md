@@ -34,6 +34,31 @@ Optional:
 - `project_id`: caller-provided id for logging and artifacts.
 - `notes`: free-form planner notes.
 - `version`: IR version. Current version is `0.1`.
+- `stages`: progressive generation plan. For animation tasks this should be
+  `static_scene` followed by `animation_extension`.
+
+The IR is progressive. A task that ultimately produces animation still has a
+complete static scene baseline first. The animation spec is an extension that
+references and modifies that validated baseline; it is not a license to mix
+scene construction and motion into one undifferentiated code-generation step.
+
+The harness uses two IR projections:
+
+- `static_scene_projection()`: contains `prompt` and `scene`, omits
+  `animation`, and synthesizes a static-only prompt from `SceneSpec` so leftover
+  natural-language motion instructions cannot leak into scene generation.
+- Full `GenerationIR`: contains the same `scene` plus `animation`, and is used
+  only after the static scene has passed deterministic and visual verification.
+
+`PipelineStageSpec`
+
+- `id`: stable stage id, normally `static_scene` or `animation_extension`.
+- `stage_type`: `static_scene` or `animation_extension`.
+- `description`: stage purpose.
+- `depends_on`: earlier stages that must pass first.
+- `freezes_scene_geometry`: whether the stage should preserve the validated
+  static scene geometry.
+- `verifier_modes`: verifier gates for the stage.
 
 ## Prompt
 

@@ -44,6 +44,7 @@ class HarnessRunner:
         print(f"[Harness] Loading IR: {ir_path}")
         data = json.loads(ir_path.read_text(encoding="utf-8"))
         ir = from_dict(GenerationIR, data)
+        ir.ensure_progressive_stages()
         report = ir.validate()
         if not report.passed:
             raise ValueError(f"Invalid IR file: {report_to_dict(report)}")

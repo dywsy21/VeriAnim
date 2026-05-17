@@ -7,6 +7,7 @@ deterministic validation, visual verification, and refinement.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 import json
@@ -140,6 +141,11 @@ class VerificationMode(str, Enum):
     VISION = "vision"
     VIDEO = "video"
     HUMAN = "human"
+
+
+class GenerationStageType(str, Enum):
+    STATIC_SCENE = "static_scene"
+    ANIMATION_EXTENSION = "animation_extension"
 
 
 @dataclass(slots=True)
@@ -437,13 +443,83 @@ class SceneSpec:
 
 
 @dataclass(slots=True)
+class PipelineStageSpec:
+    id: str
+    stage_type: GenerationStageType
+    description: str
+    depends_on: list[str] = field(default_factory=list)
+    freezes_scene_geometry: bool = False
+    verifier_modes: list[VerificationMode] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class GenerationIR:
     prompt: SourcePrompt
     scene: SceneSpec
     animation: AnimationSpec | None = None
+    stages: list[PipelineStageSpec] = field(default_factory=list)
     version: str = IR_VERSION
     project_id: str | None = None
     notes: str | None = None
+
+    def ensure_progressive_stages(self) -> None:
+        """Populate the canonical static-scene -> animation stage plan."""
+
+        if not self.animation:
+            self.stages = [
+                PipelineStageSpec(
+                    id="static_scene",
+                    stage_type=GenerationStageType.STATIC_SCENE,
+                    description="Generate and verify the static scene baseline.",
+                    verifier_modes=[VerificationMode.DETERMINISTIC, VerificationMode.VISION],
+                )
+            ]
+            return
+        self.stages = [
+            PipelineStageSpec(
+                id="static_scene",
+                stage_type=GenerationStageType.STATIC_SCENE,
+                description="Generate and verify the static scene baseline without animation data.",
+                verifier_modes=[VerificationMode.DETERMINISTIC, VerificationMode.VISION],
+            ),
+            PipelineStageSpec(
+                id="animation_extension",
+                stage_type=GenerationStageType.ANIMATION_EXTENSION,
+                description="Add animation on top of the validated static scene baseline.",
+                depends_on=["static_scene"],
+                freezes_scene_geometry=True,
+                verifier_modes=[VerificationMode.DETERMINISTIC, VerificationMode.VISION, VerificationMode.VIDEO],
+            ),
+        ]
+
+    def static_scene_projection(self) -> "GenerationIR":
+        """Return a static-only IR projection for the first pipeline stage.
+
+        The original prompt may contain motion language. The scene-stage prompt
+        is therefore synthesized from SceneSpec so code generation cannot infer
+        animation from leftover natural language.
+        """
+
+        projected = copy.deepcopy(self)
+        projected.animation = None
+        projected.prompt = SourcePrompt(
+            text=_static_scene_prompt(projected.scene),
+            negative_text=self.prompt.negative_text,
+            image_paths=list(self.prompt.image_paths),
+            user_constraints=[
+                "Static scene baseline only; do not create keyframes, drivers, animated materials, frame ranges, or animated visibility.",
+                "Represent objects in a neutral pose that makes required contacts and spatial relations visible.",
+            ],
+        )
+        projected.stages = [
+            PipelineStageSpec(
+                id="static_scene",
+                stage_type=GenerationStageType.STATIC_SCENE,
+                description="Generate and verify the static scene baseline without animation data.",
+                verifier_modes=[VerificationMode.DETERMINISTIC, VerificationMode.VISION],
+            )
+        ]
+        return projected
 
     def validate(self) -> ValidationReport:
         issues: list[ValidationIssue] = []
@@ -781,6 +857,42 @@ def _missing_sampled_frames(event: AnimationEventSpec, sampled_frames: list[int]
     if event.end_frame not in samples:
         missing.append("end")
     return missing
+
+
+def _static_scene_prompt(scene: SceneSpec) -> str:
+    object_lines = [
+        f"- {obj.id}: {obj.description}"
+        for obj in scene.objects
+    ]
+    relation_lines = [
+        f"- {relation.id}: {relation.subject_id} {relation.relation_type.value} {relation.object_id}"
+        + (f" ({relation.description})" if relation.description else "")
+        for relation in scene.relations
+    ]
+    material_lines = [
+        f"- {material.id}: {material.description}"
+        for material in scene.materials
+    ]
+    camera_lines = [
+        f"- {camera.id}: {camera.description or camera.coverage or camera.view_type.value}"
+        for camera in scene.cameras
+    ]
+    sections = [
+        "Generate the static scene baseline described by this SceneSpec projection.",
+        "Do not animate anything in this stage.",
+        "Objects:",
+        *object_lines,
+    ]
+    if relation_lines:
+        sections.extend(["Required spatial relations:", *relation_lines])
+    if material_lines:
+        sections.extend(["Materials:", *material_lines])
+    if camera_lines:
+        sections.extend(["Cameras:", *camera_lines])
+    if scene.environment.description:
+        sections.extend(["Environment:", scene.environment.description])
+    sections.append("All objects should be placed in a neutral representative pose suitable for later animation.")
+    return "\n".join(sections)
 
 
 def _validate_motion_path(event: AnimationEventSpec, issues: list[ValidationIssue]) -> None:
