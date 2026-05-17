@@ -279,6 +279,40 @@ Current script:
 """
         return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
+    def add_animation(self, *, ir: GenerationIR, code: str, scene_graph: dict[str, Any] | None = None) -> str:
+        context = self.rag.format_context("Blender 4.5 animation keyframe_insert visibility parent constraint", limit=4, max_chars=5000)
+        system = (
+            "You add animation to an already validated Blender 4.5.4 scene script. "
+            "Preserve the static scene geometry, materials, cameras, object ids, and support/contact relationships. "
+            "Only add or adjust animation setup, keyframes, frame range, visibility timing, and metadata needed for the AnimationSpec. "
+            "Do not rewrite the whole scene from scratch unless absolutely necessary. "
+            "Keep the script concise and complete; no long reasoning comments. "
+            "Return only the full corrected Python script."
+        )
+        user = f"""
+Validated static scene script:
+```python
+{code}
+```
+
+Full GenerationIR including AnimationSpec:
+{json.dumps(_compact_ir_for_coder(ir), indent=2)}
+
+Current Blender scene graph:
+{json.dumps(scene_graph or {}, indent=2, default=str)[:12000]}
+
+Relevant Blender 4.5.4 notes:
+{context}
+
+Requirements:
+- Keep the validated static scene intact.
+- Add frame_start, frame_end, fps, and explicit keyframes for every animation event.
+- For appear/disappear events, keyframe actual visibility or near-zero scale, not emission only.
+- For contact/carry events, keep the interacting objects visibly connected at sampled frames.
+- End with a complete LL3M_METADATA assignment.
+"""
+        return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
+
 
 class VisionVerifierAgent:
     def __init__(self, config: HarnessConfig):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -63,13 +64,19 @@ class InteractiveHarnessSession:
     def start(self, prompt: str) -> Path:
         self.store = ArtifactStore.create(self.config.runs_dir)
         self.turn_index = 0
+        self._last_executed_code = None
         self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
 
         self._emit("planner", "Planning structured IR")
-        self.ir = self.planner.plan(prompt, include_animation=self.include_animation)
-        self.store.write_json("ir.json", self.ir.to_dict())
-        self._emit("planner", f"Planned {len(self.ir.scene.objects)} objects")
+        planned_ir = self.planner.plan(prompt, include_animation=self.include_animation)
+        self.store.write_json("ir.json", planned_ir.to_dict())
+        self._emit("planner", f"Planned {len(planned_ir.scene.objects)} objects")
 
+        if self.include_animation and planned_ir.animation:
+            self._run_two_stage_animation_start(planned_ir)
+            return self.store.root
+
+        self.ir = planned_ir
         self._emit("coder", "Generating Blender script")
         self.code = self.coder.generate(self.ir)
         self.store.write_text("code/generated_scene.py", self.code)
@@ -80,14 +87,43 @@ class InteractiveHarnessSession:
     def start_from_ir(self, ir: GenerationIR) -> Path:
         self.store = ArtifactStore.create(self.config.runs_dir)
         self.turn_index = 0
-        self.ir = ir
+        self._last_executed_code = None
         self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
-        self.store.write_json("ir.json", self.ir.to_dict())
+        self.store.write_json("ir.json", ir.to_dict())
+        if self.include_animation and ir.animation:
+            self._run_two_stage_animation_start(ir)
+            return self.store.root
+        self.ir = ir
         self._emit("coder", "Generating Blender script from provided IR")
         self.code = self.coder.generate(self.ir)
         self.store.write_text("code/generated_scene.py", self.code)
         self._execute_validate_refine(reason="initial")
         return self.store.root
+
+    def _run_two_stage_animation_start(self, full_ir: GenerationIR) -> None:
+        assert self.store is not None
+        self._emit("stage", "Stage 1/2: generating and validating static scene before animation")
+        scene_ir = copy.deepcopy(full_ir)
+        scene_ir.animation = None
+        self.ir = scene_ir
+        self.store.write_json("ir_scene_stage.json", scene_ir.to_dict())
+        self._emit("coder", "Generating static Blender scene script")
+        self.code = self.coder.generate(scene_ir)
+        self.store.write_text("code/generated_scene_stage.py", self.code)
+        scene_passed = self._execute_validate_refine(reason="scene_stage")
+        if not scene_passed:
+            self._emit("warn", "Static scene stage did not pass; animation stage skipped")
+            return
+
+        self._emit("stage", "Stage 2/2: adding animation to validated scene")
+        self.ir = full_ir
+        self.store.write_json("ir_animation_stage.json", full_ir.to_dict())
+        scene_graph = self.blender.get_scene_graph()
+        self.store.write_json("scene_stage_graph.json", scene_graph)
+        base_code = self._last_executed_code or self.code or ""
+        self.code = self.refiner.add_animation(ir=full_ir, code=base_code, scene_graph=scene_graph)
+        self.store.write_text("code/generated_animation_stage.py", self.code)
+        self._execute_validate_refine(reason="animation_stage")
 
     def apply_user_request(self, request: str) -> Path:
         if not self.has_scene or not self.store or not self.ir or not self.code:
@@ -116,7 +152,7 @@ class InteractiveHarnessSession:
         self._execute_validate_refine(reason=f"user_turn_{self.turn_index:03d}")
         return self.store.root
 
-    def _execute_validate_refine(self, *, reason: str) -> None:
+    def _execute_validate_refine(self, *, reason: str) -> bool:
         if not self.store or not self.ir or self.code is None:
             raise RuntimeError("Session has not been initialized.")
 
@@ -141,7 +177,7 @@ class InteractiveHarnessSession:
                 if round_index >= max_rounds:
                     self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
                     self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
-                    return
+                    return False
                 refine_code = self._last_executed_code or self.code
                 if self._last_executed_code and self.code != self._last_executed_code:
                     execution_error = (
@@ -183,12 +219,12 @@ class InteractiveHarnessSession:
                 self._emit("pass", "All enabled validation stages passed")
                 self.store.write_text("code/final_scene.py", self.code)
                 self._render_final_animation_gif()
-                return
+                return True
 
             if round_index >= max_rounds:
                 self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
                 self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
-                return
+                return False
 
             failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
             self._emit("refiner", f"Refining script from failed verifier feedback: {failed_modes}")
@@ -200,6 +236,7 @@ class InteractiveHarnessSession:
                 screenshot_paths=self._latest_screenshots,
             )
             self.store.write_text(f"code/{label}_refined.py", self.code)
+        return False
 
     def _static_code_report(self) -> ValidationReport:
         assert self.ir is not None

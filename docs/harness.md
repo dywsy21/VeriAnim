@@ -231,7 +231,8 @@ at sampled screenshot frames, camera coverage, and visible geometry defects. It
 should not fail a run solely because temporal smoothness or the full motion is
 not proven from still screenshots; those issues belong to the video verifier.
 
-Current best practice for nontrivial animation is two-stage generation:
+Nontrivial animation now uses two-stage generation by default when the CLI or
+TUI requests animation:
 
 1. Generate and verifier-gate the static scene first.
 2. Add animation on top of that validated scene.
@@ -239,7 +240,14 @@ Current best practice for nontrivial animation is two-stage generation:
 4. Feed sampled frames and transform traces into the refiner until both static
    and temporal verifiers pass.
 
-This avoids mixing object construction failures with animation failures. In the
+The run directory records both phases. `ir_scene_stage.json` is the static-only
+IR used for scene generation, `ir_animation_stage.json` is the full animation
+IR, `code/generated_scene_stage.py` is the validated scene script, and
+`code/generated_animation_stage.py` is the first animation-bearing script.
+
+If the static scene stage does not pass, the harness skips animation generation
+instead of trying to animate a broken scene. This avoids mixing object
+construction failures with animation failures. In the
 May 15, 2026 validation run, the video loop caught two issues that deterministic
 checks alone could not: a rolling ball that visually separated from the table,
 and a smooth featureless sphere whose rotation was mathematically present but
