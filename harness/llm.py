@@ -160,18 +160,35 @@ class LLMClient:
             kwargs["response_format"] = {"type": "json_object"}
 
         try:
-            return _content_from_response(completion(**kwargs), self.config.name)
+            return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
         except Exception as first_exc:
             if "response_format" in kwargs:
                 kwargs.pop("response_format", None)
                 try:
-                    return _content_from_response(completion(**kwargs), self.config.name)
+                    return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
                 except Exception:
                     pass
             try:
-                return _content_from_stream(completion(**kwargs, stream=True), self.config.name)
+                stream_kwargs = {**kwargs, "stream": True}
+                return _content_from_stream(_completion_with_parameter_fallback(completion, stream_kwargs), self.config.name)
             except Exception as stream_exc:
                 raise LLMError(f"{self.config.name} LLM call failed: {stream_exc}") from first_exc
+
+
+def _completion_with_parameter_fallback(completion: Any, kwargs: dict[str, Any]) -> Any:
+    try:
+        return completion(**kwargs)
+    except Exception as exc:
+        if _mentions_unsupported_parameter(exc, "temperature") and "temperature" in kwargs:
+            retry_kwargs = dict(kwargs)
+            retry_kwargs.pop("temperature", None)
+            return completion(**retry_kwargs)
+        raise
+
+
+def _mentions_unsupported_parameter(exc: Exception, parameter: str) -> bool:
+    text = str(exc).lower()
+    return parameter.lower() in text and any(token in text for token in ("deprecated", "unsupported", "not support", "unrecognized", "unknown parameter"))
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
