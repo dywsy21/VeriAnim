@@ -81,6 +81,7 @@ class HarnessConfig:
     max_refinement_rounds: int
     max_visual_refinement_rounds: int
     max_video_refinement_rounds: int
+    max_stagnant_refinement_rounds: int
     rag_docs: tuple[Path, ...]
     runs_dir: Path
     blender_host: str
@@ -110,6 +111,7 @@ class HarnessConfig:
             max_refinement_rounds=_env_int("LL3M_MAX_REFINEMENT_ROUNDS", 2),
             max_visual_refinement_rounds=_env_int("LL3M_MAX_VISUAL_REFINEMENT_ROUNDS", 6),
             max_video_refinement_rounds=_env_int("LL3M_MAX_VIDEO_REFINEMENT_ROUNDS", 6),
+            max_stagnant_refinement_rounds=_env_int("LL3M_MAX_STAGNANT_REFINEMENT_ROUNDS", 3),
             rag_docs=rag_docs,
             runs_dir=Path(_env("LL3M_RUNS_DIR", "runs")),
             blender_host=_env("LL3M_BLENDER_HOST", "localhost"),

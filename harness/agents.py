@@ -220,6 +220,8 @@ class RefinerAgent:
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
+            "For RELATION_ON_TOP_OF_FAILED, use the numeric evidence: move the subject so its bottom z equals the reported support_z and adjust x/y so overlap_x and overlap_y are both positive; do not rename ids or leave the object floating. "
+            "For 'on floor of a room/greenhouse/enclosure' relations, place wheels/tanks/props on the interior floor plane, not on the roof or top of the enclosing walls. "
             "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
             "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames, or parent/constraint the package to the gripper for that segment, so screenshots show continuous contact. "
             "Keep the gripper attached to the robotic arm at every sampled frame; moving the gripper as a detached block is a failure. "
@@ -253,12 +255,9 @@ Current script:
 Attached images are the latest failed validation screenshots and/or sampled animation frames in verifier order.
 Use them to fix actual visual layout, contact, motion direction, timing, and visibility problems, not just the text report.
 """
-            try:
-                return _sanitize_generated_blender_code(
-                    extract_code_block(self.llm.complete_multimodal(system, user, screenshot_paths))
-                )
-            except Exception:
-                pass
+            return _sanitize_generated_blender_code(
+                extract_code_block(self.llm.complete_multimodal(system, user, screenshot_paths))
+            )
         return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
     def apply_user_request(

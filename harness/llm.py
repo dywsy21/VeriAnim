@@ -143,6 +143,7 @@ class LLMClient:
             "model": self.config.model,
             "messages": messages,
             "temperature": self.config.temperature,
+            "num_retries": 0,
         }
         if self.config.api_base:
             kwargs["api_base"] = self.config.api_base
@@ -159,20 +160,29 @@ class LLMClient:
         if response_format == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
 
+        if response_format == "json_object":
+            try:
+                return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
+            except Exception as first_exc:
+                if "response_format" in kwargs and _mentions_unsupported_parameter(first_exc, "response_format"):
+                    retry_kwargs = dict(kwargs)
+                    retry_kwargs.pop("response_format", None)
+                    try:
+                        return _content_from_response(_completion_with_parameter_fallback(completion, retry_kwargs), self.config.name)
+                    except Exception as retry_exc:
+                        raise LLMError(f"{self.config.name} LLM JSON call failed: {retry_exc}") from first_exc
+                raise LLMError(f"{self.config.name} LLM JSON call failed: {first_exc}") from first_exc
+
+        stream_kwargs = {**kwargs, "stream": True}
         try:
-            return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
-        except Exception as first_exc:
-            if "response_format" in kwargs:
-                kwargs.pop("response_format", None)
+            return _content_from_stream(_completion_with_parameter_fallback(completion, stream_kwargs), self.config.name)
+        except Exception as stream_exc:
+            if _mentions_unsupported_parameter(stream_exc, "stream"):
                 try:
                     return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
-                except Exception:
-                    pass
-            try:
-                stream_kwargs = {**kwargs, "stream": True}
-                return _content_from_stream(_completion_with_parameter_fallback(completion, stream_kwargs), self.config.name)
-            except Exception as stream_exc:
-                raise LLMError(f"{self.config.name} LLM call failed: {stream_exc}") from first_exc
+                except Exception as retry_exc:
+                    raise LLMError(f"{self.config.name} LLM call failed: {retry_exc}") from stream_exc
+            raise LLMError(f"{self.config.name} LLM streaming call failed: {stream_exc}") from stream_exc
 
 
 def _completion_with_parameter_fallback(completion: Any, kwargs: dict[str, Any]) -> Any:

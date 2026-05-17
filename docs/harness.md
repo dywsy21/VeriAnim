@@ -81,10 +81,23 @@ LiteLLM model name that matches your deployed Qwen Omni or other video-capable
 endpoint.
 
 Long Blender code generations can exceed the stable non-streaming response
-window of some OpenAI-compatible gateways. The LLM client therefore retries
-failed non-streaming calls with streaming automatically. `CoderAgent` and
-`RefinerAgent` also receive a compact code-generation IR instead of the full
-verification IR; the full IR is still written to disk and used by validators.
+window of some OpenAI-compatible gateways. For non-JSON code-generation calls,
+the LLM client now streams first and disables LiteLLM's internal retries
+(`num_retries=0`) so a single harness call does not silently become several
+identical provider requests. JSON calls use a single structured request, with
+one compatibility retry only when the provider explicitly rejects
+`response_format`. `CoderAgent` and `RefinerAgent` also receive a compact
+code-generation IR instead of the full verification IR; the full IR is still
+written to disk and used by validators.
+
+`LL3M_MAX_STAGNANT_REFINEMENT_ROUNDS` stops a verifier loop when the same
+failure signature repeats without progress, preventing repeated expensive
+refiner calls on an unchanged issue.
+
+When failed validation screenshots are available, the refiner sends them to the
+configured refiner model. This is no longer silently retried as a second
+text-only Opus call if the multimodal request fails; the error is surfaced so
+provider capability/configuration problems are visible in the run.
 
 ## Pipeline
 

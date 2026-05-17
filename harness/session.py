@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -160,6 +161,8 @@ class InteractiveHarnessSession:
         reports: list[ValidationReport] = []
         execution_error: str | None = None
         max_rounds = self._max_refinement_rounds()
+        last_failure_signature: str | None = None
+        stagnant_rounds = 0
         self._emit("validate", f"Verifier-gated loop enabled: up to {max_rounds + 1} validation passes")
 
         for round_index in range(max_rounds + 1):
@@ -224,6 +227,21 @@ class InteractiveHarnessSession:
 
             if round_index >= max_rounds:
                 self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
+                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                return False
+
+            signature = _failure_signature(reports, execution_error)
+            if signature == last_failure_signature:
+                stagnant_rounds += 1
+            else:
+                last_failure_signature = signature
+                stagnant_rounds = 1
+            if stagnant_rounds >= self.config.max_stagnant_refinement_rounds:
+                self._emit(
+                    "warn",
+                    "Verifier loop stopped because the same failure repeated without progress",
+                    stagnant_rounds=stagnant_rounds,
+                )
                 self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
                 return False
 
@@ -409,6 +427,32 @@ class InteractiveHarnessSession:
     def _emit(self, kind: str, message: str, **data: Any) -> None:
         if self.callback:
             self.callback(HarnessEvent(kind=kind, message=message, data=data))
+
+
+def _failure_signature(reports: list[ValidationReport], execution_error: str | None) -> str:
+    issues: list[dict[str, Any]] = []
+    for report in reports:
+        if report.passed:
+            continue
+        for issue in report.issues:
+            issues.append(
+                {
+                    "mode": report.mode.value,
+                    "code": issue.code,
+                    "target_id": issue.target_id,
+                    "relation_id": issue.relation_id,
+                    "frame": issue.frame,
+                    "message": issue.message,
+                }
+            )
+    return json.dumps(
+        {
+            "execution_error": execution_error or "",
+            "issues": sorted(issues, key=lambda item: json.dumps(item, sort_keys=True)),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
 
 
 def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
