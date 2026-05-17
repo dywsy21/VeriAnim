@@ -18,6 +18,24 @@ SCREENSHOT_MARKER = "LL3M_SCREENSHOTS:"
 ANIMATION_MARKER = "LL3M_ANIMATION_REPORT:"
 
 
+def _clean_scene_prefix() -> str:
+    return """
+import bpy
+for _ll3m_obj in list(bpy.context.scene.objects):
+    _ll3m_obj.select_set(True)
+bpy.ops.object.delete()
+for _ll3m_collection in list(bpy.data.collections):
+    if not _ll3m_collection.users:
+        bpy.data.collections.remove(_ll3m_collection)
+for _ll3m_mesh in list(bpy.data.meshes):
+    if not _ll3m_mesh.users:
+        bpy.data.meshes.remove(_ll3m_mesh)
+for _ll3m_material in list(bpy.data.materials):
+    if not _ll3m_material.users:
+        bpy.data.materials.remove(_ll3m_material)
+""".strip()
+
+
 @dataclass(slots=True)
 class BlenderRunResult:
     ok: bool
@@ -29,6 +47,16 @@ class BlenderRunResult:
 class BlenderRuntime:
     def __init__(self, config: HarnessConfig):
         self.config = config
+
+    def execute_scene_code(self, code: str) -> BlenderRunResult:
+        """Execute generated scene code from a clean Blender scene.
+
+        Validation and render helper scripts intentionally run against the
+        current scene, but generated scene scripts must not be allowed to pass
+        by accidentally reusing geometry from a previous failed round.
+        """
+
+        return self.execute_code(_clean_scene_prefix() + "\n" + code)
 
     def execute_code(self, code: str, *, expects_render: bool = False) -> BlenderRunResult:
         result = BlenderClient.execute_code(

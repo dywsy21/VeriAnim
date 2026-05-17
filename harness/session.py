@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -10,7 +11,7 @@ from .agents import CoderAgent, PlannerAgent, RefinerAgent, VideoVerifierAgent, 
 from .artifacts import ArtifactStore
 from .blender_runtime import BlenderRuntime
 from .config import HarnessConfig
-from .ir import GenerationIR, ValidationIssue, ValidationReport, VerificationMode, report_to_dict
+from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_dict
 from .rag import LocalRAG
 
 
@@ -125,8 +126,35 @@ class InteractiveHarnessSession:
 
         for round_index in range(max_rounds + 1):
             label = f"{reason}_round_{round_index}"
+            static_report = self._static_code_report()
+            if not static_report.passed:
+                reports = [static_report]
+                execution_error = "Generated script failed static completeness checks before Blender execution."
+                self.store.write_json(f"reports/{label}_code_static.json", report_to_dict(static_report))
+                self._emit_report(static_report)
+            else:
+                reports = []
+                execution_error = None
+
+            if reports:
+                if round_index >= max_rounds:
+                    self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
+                    self.store.write_text("code/final_scene.py", self.code)
+                    return
+                failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
+                self._emit("refiner", f"Refining script from failed verifier feedback: {failed_modes}")
+                self.code = self.refiner.refine(
+                    ir=self.ir,
+                    code=self.code,
+                    reports=reports,
+                    execution_error=execution_error,
+                    screenshot_paths=self._latest_screenshots,
+                )
+                self.store.write_text(f"code/{label}_refined.py", self.code)
+                continue
+
             self._emit("execute", f"Executing Blender script: {label}")
-            execution = self.blender.execute_code(self.code)
+            execution = self.blender.execute_scene_code(self.code)
             self.store.write_text(f"logs/{label}_execution.txt", execution.stdout)
             if not execution.ok:
                 execution_error = execution.message or execution.stdout
@@ -163,6 +191,70 @@ class InteractiveHarnessSession:
                 screenshot_paths=self._latest_screenshots,
             )
             self.store.write_text(f"code/{label}_refined.py", self.code)
+
+    def _static_code_report(self) -> ValidationReport:
+        assert self.ir is not None
+        assert self.code is not None
+        issues: list[ValidationIssue] = []
+        try:
+            tree = ast.parse(self.code)
+        except SyntaxError as exc:
+            issues.append(
+                ValidationIssue(
+                    code="CODE_SYNTAX_ERROR",
+                    message=f"Generated Python does not parse: {exc.msg} at line {exc.lineno}.",
+                    severity=Severity.CRITICAL,
+                )
+            )
+            return ValidationReport.failed(VerificationMode.DETERMINISTIC, issues, "Generated code is incomplete or invalid.")
+
+        assigned_names = {
+            target.id
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            if isinstance(target, ast.Name)
+        }
+        called_names = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        if "LL3M_METADATA" not in assigned_names:
+            issues.append(
+                ValidationIssue(
+                    code="CODE_MISSING_METADATA",
+                    message="Generated script must finish with LL3M_METADATA so the harness can tell it is complete.",
+                    severity=Severity.MAJOR,
+                )
+            )
+        if "main" in {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)} and "main" not in called_names:
+            issues.append(
+                ValidationIssue(
+                    code="CODE_ENTRYPOINT_NOT_CALLED",
+                    message="Generated script defines main() but never calls it, so no fresh scene may be created.",
+                    severity=Severity.CRITICAL,
+                )
+            )
+        if self.ir.animation:
+            keyframe_calls = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "keyframe_insert"
+            ]
+            if len(keyframe_calls) < max(2, len(self.ir.animation.events)):
+                issues.append(
+                    ValidationIssue(
+                        code="CODE_MISSING_ANIMATION_KEYFRAMES",
+                        message="Animation script has too few actual keyframe_insert calls for the planned events.",
+                        severity=Severity.CRITICAL,
+                    )
+                )
+        if issues:
+            return ValidationReport.failed(VerificationMode.DETERMINISTIC, issues, "Generated code failed static completeness checks.")
+        return ValidationReport.ok(VerificationMode.DETERMINISTIC, "Generated code passed static completeness checks.")
 
     def _max_refinement_rounds(self) -> int:
         if not self.ir:
