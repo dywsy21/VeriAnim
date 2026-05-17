@@ -650,6 +650,8 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
     for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
         if not isinstance(event, dict):
             continue
+        if "interpolation" in event:
+            event["interpolation"] = _normalize_interpolation(event["interpolation"])
         path = event.get("path")
         if isinstance(path, dict):
             points = path.get("points")
@@ -660,6 +662,8 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
                 for keyframe in keyframes:
                     if not isinstance(keyframe, dict):
                         continue
+                    if "interpolation" in keyframe:
+                        keyframe["interpolation"] = _normalize_interpolation(keyframe["interpolation"])
                     transform = keyframe.get("transform")
                     if isinstance(transform, dict) and "location" in transform:
                         transform["location"] = _normalize_vec3(transform["location"])
@@ -669,6 +673,32 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
                 for field_name in ("location", "rotation_euler", "scale"):
                     if field_name in transform:
                         transform[field_name] = _normalize_vec3(transform[field_name])
+
+
+def _normalize_interpolation(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "": "ease_in_out",
+        "step": "constant",
+        "stepped": "constant",
+        "hold": "constant",
+        "held": "constant",
+        "none": "constant",
+        "linear_interpolation": "linear",
+        "easein": "ease_in",
+        "ease_in": "ease_in",
+        "easeout": "ease_out",
+        "ease_out": "ease_out",
+        "easeinout": "ease_in_out",
+        "ease_inout": "ease_in_out",
+        "ease_out_in": "ease_in_out",
+        "ease_in_out": "ease_in_out",
+        "smooth": "ease_in_out",
+        "spline": "bezier",
+        "bezier_curve": "bezier",
+    }
+    valid = {"constant", "linear", "ease_in", "ease_out", "ease_in_out", "bezier"}
+    return aliases.get(text, text if text in valid else "ease_in_out")
 
 
 def _normalize_path_point(point: Any) -> list[float]:
