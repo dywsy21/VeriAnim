@@ -152,6 +152,7 @@ class CoderAgent:
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. "
             "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to leave default interpolation instead of editing fcurves. "
+            "Keep the script concise. Do not write long reasoning comments, abandoned design notes, or step-by-step analysis inside the code. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
         user = f"""
@@ -177,6 +178,7 @@ Script requirements:
 - Do not read action.fcurves directly. Blender 5 uses layered actions; if you need fcurves, traverse action.layers, strip.channelbags, and bag.fcurves. Prefer leaving default keyframe interpolation if direct fcurve access is not required.
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
+- End the script with a complete LL3M_METADATA assignment. Keep comments short so the response does not truncate before metadata.
 """
         return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
@@ -207,6 +209,7 @@ class RefinerAgent:
             "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
+            "Keep the script concise and complete. Remove long comments, scratch reasoning, and abandoned implementation notes. "
             "Return only the full corrected Python script."
         )
         user = f"""
