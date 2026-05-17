@@ -18,6 +18,7 @@ class PlannerAgent:
     def __init__(self, config: HarnessConfig, rag: LocalRAG):
         self.llm = LLMClient(config.planner)
         self.rag = rag
+        self.max_retries = config.planner_max_retries
 
     def plan(self, prompt: str, *, include_animation: bool = False) -> GenerationIR:
         context = self.rag.format_context("IR SceneSpec AnimationSpec ScreenshotPlan VideoVerifierSpec", limit=3, max_chars=7000)
@@ -96,7 +97,7 @@ Return the full revised GenerationIR JSON.
 
     def _generate_valid_ir(self, system: str, user: str) -> GenerationIR:
         last_error = ""
-        for attempt in range(3):
+        for attempt in range(max(1, self.max_retries + 1)):
             request = user
             if attempt:
                 request += f"""
