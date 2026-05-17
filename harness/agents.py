@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from .config import HarnessConfig
-from .ir import GenerationIR, RelationType, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
+from .ir import AnimationAction, GenerationIR, RelationType, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
 from .llm import LLMClient, extract_code_block
 from .rag import LocalRAG
 from .serde import from_dict
