@@ -388,7 +388,20 @@ Critical checks:
 - Set passed=true only when all required objects, relations, composition, and visible geometry are acceptable.
 - If animation is present, judge only static geometry, object presence, per-frame contact/visibility shown in the screenshots, and camera coverage. Do not fail this scene verifier solely for temporal smoothness, full-frame motion continuity, or video-only questions; those are handled by the video verifier.
 """
-        data = self.llm.json_multimodal(system, user, screenshot_paths)
+        try:
+            data = self.llm.json_multimodal(system, user, screenshot_paths)
+        except Exception as exc:
+            return ValidationReport.failed(
+                VerificationMode.VISION,
+                [
+                    ValidationIssue(
+                        code="VISION_VERIFIER_PARSE_FAILED",
+                        message=f"Vision verifier did not return valid JSON: {exc}",
+                        severity=Severity.MAJOR,
+                    )
+                ],
+                "Vision verifier response could not be parsed.",
+            )
         return _report_from_model(data, VerificationMode.VISION)
 
 
@@ -444,10 +457,23 @@ Deterministic animation report:
 The attached images are ordered sampled frames. Verify whether the requested animation is visually and temporally correct.
 If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
 """
-        if preview_video_path and preview_video_path.exists():
-            data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
-        else:
-            data = self.llm.json_multimodal(system, user, sampled_frame_paths)
+        try:
+            if preview_video_path and preview_video_path.exists():
+                data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
+            else:
+                data = self.llm.json_multimodal(system, user, sampled_frame_paths)
+        except Exception as exc:
+            return ValidationReport.failed(
+                VerificationMode.VIDEO,
+                [
+                    ValidationIssue(
+                        code="VIDEO_VERIFIER_PARSE_FAILED",
+                        message=f"Video verifier did not return valid JSON: {exc}",
+                        severity=Severity.MAJOR,
+                    )
+                ],
+                "Video verifier response could not be parsed.",
+            )
         return _report_from_model(data, VerificationMode.VIDEO)
 
 
