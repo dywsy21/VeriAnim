@@ -237,13 +237,7 @@ class InteractiveHarnessSession:
                 )
             )
         if self.ir.animation:
-            keyframe_calls = [
-                node
-                for node in ast.walk(tree)
-                if isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "keyframe_insert"
-            ]
+            keyframe_calls = _count_effective_keyframe_calls(tree)
             if len(keyframe_calls) < max(2, len(self.ir.animation.events)):
                 issues.append(
                     ValidationIssue(
@@ -352,3 +346,26 @@ class InteractiveHarnessSession:
     def _emit(self, kind: str, message: str, **data: Any) -> None:
         if self.callback:
             self.callback(HarnessEvent(kind=kind, message=message, data=data))
+
+
+def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
+    helper_names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "keyframe_insert"
+            for child in ast.walk(node)
+        ):
+            helper_names.add(node.name)
+    calls: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "keyframe_insert":
+            calls.append(node)
+        elif isinstance(node.func, ast.Name) and node.func.id in helper_names:
+            calls.append(node)
+    return calls

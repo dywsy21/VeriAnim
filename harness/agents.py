@@ -149,6 +149,8 @@ class CoderAgent:
             "For Blender 4.5, prefer BLENDER_EEVEE_NEXT or WORKBENCH after checking available render engine enum values from scene.render.bl_rna.properties['engine']; never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
+            "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. "
+            "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to leave default interpolation instead of editing fcurves. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
@@ -170,6 +172,8 @@ Script requirements:
 - Set render engines defensively by checking scene.render.bl_rna.properties['engine'].enum_items; Blender 4.5 uses BLENDER_EEVEE_NEXT rather than legacy BLENDER_EEVEE. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
 - Set frame_start/frame_end/fps if animation exists.
 - Insert keyframes for AnimationSpec events when present. For translate/rotate/scale, mutate the object's location/rotation_euler/scale at start and end frames, insert keyframes, and ensure sampled frames visibly change.
+- For robotic pick-and-place, keep a continuous articulated chain from arm base to gripper. Do not detach the gripper from the arm just to make it follow the package.
+- For appear/disappear events, keyframe hide_viewport/hide_render and/or near-zero scale before activation; material emission alone is not enough if the verifier can still see the light.
 - Do not read action.fcurves directly. Blender 5 uses layered actions; if you need fcurves, traverse action.layers, strip.channelbags, and bag.fcurves. Prefer leaving default keyframe interpolation if direct fcurve access is not required.
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
@@ -199,6 +203,8 @@ class RefinerAgent:
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
             "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
             "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames, or parent/constraint the package to the gripper for that segment, so screenshots show continuous contact. "
+            "Keep the gripper attached to the robotic arm at every sampled frame; moving the gripper as a detached block is a failure. "
+            "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
             "Return only the full corrected Python script."

@@ -783,6 +783,29 @@ def mentions_signal_or_light(text):
     words = text.lower().replace("_", " ").replace("-", " ").split()
     return any(word in ("light", "status", "signal") for word in words)
 
+def target_haystack(target_id):
+    for obj_spec in IR.get("scene", {{}}).get("objects", []):
+        if obj_spec.get("id") == target_id:
+            return f"{{obj_spec.get('id', '')}} {{obj_spec.get('description', '')}} {{obj_spec.get('label', '')}}".lower()
+    return str(target_id).lower()
+
+def is_static_destination_target(target_id):
+    haystack = target_haystack(target_id)
+    return any(token in haystack for token in ("platform", "table", "conveyor", "belt", "surface", "floor", "output"))
+
+def frames_for_interaction_target(event, target_id, frames):
+    if not is_static_destination_target(target_id):
+        return frames
+    text = " ".join([
+        str(event.get("id", "")),
+        str(event.get("description", "")),
+        str(event.get("expected_visual_result", "")),
+        " ".join(event.get("constraints", []) or []),
+    ]).lower()
+    if any(token in text for token in ("place", "placed", "output", "destination", "final")):
+        return [int(event.get("end_frame", frames[-1] if frames else 1))]
+    return []
+
 def interaction_targets(event):
     if event.get("action") in ("appear", "disappear"):
         return []
@@ -867,7 +890,7 @@ for event in events:
                     target_objs = gripper_subset(target_objs)
                 if not target_objs:
                     continue
-                for frame in frames:
+                for frame in frames_for_interaction_target(event, target_id, frames):
                     bpy.context.scene.frame_set(frame)
                     sb = aggregate_minmax(subj_objs)
                     tb = aggregate_minmax(target_objs)
