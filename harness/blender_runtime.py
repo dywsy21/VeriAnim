@@ -1058,19 +1058,31 @@ def find_obj(ll3m_id):
             return obj
     return None
 
+def descendants(obj):
+    found = []
+    stack = list(getattr(obj, "children", []))
+    while stack:
+        child = stack.pop(0)
+        found.append(child)
+        stack.extend(list(getattr(child, "children", [])))
+    return found
+
 def find_objects(ll3m_id):
     marker = str(ll3m_id)
     matches = []
     exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
+        matches.extend(descendants(exact))
     for obj in bpy.data.objects:
         obj_id = str(obj.get("ll3m_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             matches.append(obj)
+            matches.extend([child for child in descendants(obj) if child not in matches])
     for obj in bpy.data.objects:
         if obj not in matches and obj.name.startswith(marker):
             matches.append(obj)
+            matches.extend([child for child in descendants(obj) if child not in matches])
     return matches
 
 def bbox_for_objects(objs):
@@ -1090,7 +1102,7 @@ def look_at(camera, target):
 
 def camera_offset(view_type, radius):
     if view_type in {{"close_up", "relation_close_up"}}:
-        radius = max(radius * 0.55, 1.5)
+        radius = max(radius * 0.9, 2.0)
         return Vector((radius * 0.75, -radius * 0.75, radius * 0.45))
     if view_type == "front":
         return Vector((0, -radius, radius * 0.35))
@@ -1241,7 +1253,7 @@ try:
         view_type = view.get("view_type", "three_quarter")
         cam.location = center + camera_offset(view_type, radius)
         look_at(cam, center)
-        cam_data.lens = 70 if view_type in {{"close_up", "relation_close_up"}} else 35
+        cam_data.lens = 55 if view_type == "close_up" else 35
         scene.camera = cam
         path = os.path.join(OUT_DIR, view["id"] + ".png").replace("\\\\", "/")
         scene.render.filepath = path
