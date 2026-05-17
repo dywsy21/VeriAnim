@@ -34,9 +34,9 @@ class LL3MAgentServer:
         self.server_thread = None
 
     def start(self):
-        if self.running:
+        if self.running and self.socket:
             print("Server already running")
-            return
+            return True
         self.running = True
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -47,9 +47,11 @@ class LL3MAgentServer:
             self.server_thread.daemon = True
             self.server_thread.start()
             print(f"LL3MAgentServer started on {self.host}:{self.port}")
+            return True
         except Exception as e:
             print(f"Failed to start server: {e}")
             self.stop()
+            return False
 
     def stop(self):
         self.running = False
@@ -731,12 +733,20 @@ class BLENDERCUSTOMAGENT_OT_StartServer(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        if not hasattr(bpy.types, "blendercustomagent_server") or not bpy.types.blendercustomagent_server:
+        existing = getattr(bpy.types, "blendercustomagent_server", None)
+        if existing and getattr(existing, "port", None) != scene.blendercustomagent_port:
+            existing.stop()
+            del bpy.types.blendercustomagent_server
+            existing = None
+        if not existing:
             bpy.types.blendercustomagent_server = LL3MAgentServer(port=scene.blendercustomagent_port)
-        bpy.types.blendercustomagent_server.start()
-        scene.blendercustomagent_server_running = True
-        self.report({'INFO'}, "LL3M Server started!")
-        return {'FINISHED'}
+        if bpy.types.blendercustomagent_server.start():
+            scene.blendercustomagent_server_running = True
+            self.report({'INFO'}, f"LL3M Server started on port {scene.blendercustomagent_port}")
+            return {'FINISHED'}
+        scene.blendercustomagent_server_running = False
+        self.report({'ERROR'}, f"LL3M Server failed to start on port {scene.blendercustomagent_port}; check Blender console")
+        return {'CANCELLED'}
 
 class BLENDERCUSTOMAGENT_OT_StopServer(bpy.types.Operator):
     bl_idname = "blendercustomagent.stop_server"
