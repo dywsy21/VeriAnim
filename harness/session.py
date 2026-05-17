@@ -108,7 +108,7 @@ class InteractiveHarnessSession:
         self.ir = scene_ir
         self.store.write_json("ir_scene_stage.json", scene_ir.to_dict())
         self._emit("coder", "Generating static Blender scene script")
-        self.code = self.coder.generate(scene_ir)
+        self.code = self.coder.generate(scene_ir, static_only=True)
         self.store.write_text("code/generated_scene_stage.py", self.code)
         scene_passed = self._execute_validate_refine(reason="scene_stage")
         if not scene_passed:
@@ -282,8 +282,8 @@ class InteractiveHarnessSession:
                     severity=Severity.CRITICAL,
                 )
             )
+        keyframe_calls = _count_effective_keyframe_calls(tree)
         if self.ir.animation:
-            keyframe_calls = _count_effective_keyframe_calls(tree)
             if len(keyframe_calls) < max(2, len(self.ir.animation.events)):
                 issues.append(
                     ValidationIssue(
@@ -292,6 +292,14 @@ class InteractiveHarnessSession:
                         severity=Severity.CRITICAL,
                     )
                 )
+        elif keyframe_calls:
+            issues.append(
+                ValidationIssue(
+                    code="CODE_STATIC_STAGE_HAS_ANIMATION",
+                    message="Static scene stage must not create keyframes or animation data.",
+                    severity=Severity.MAJOR,
+                )
+            )
         if issues:
             return ValidationReport.failed(VerificationMode.DETERMINISTIC, issues, "Generated code failed static completeness checks.")
         return ValidationReport.ok(VerificationMode.DETERMINISTIC, "Generated code passed static completeness checks.")

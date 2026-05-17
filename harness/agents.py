@@ -136,7 +136,7 @@ class CoderAgent:
         self.llm = LLMClient(config.coder)
         self.rag = rag
 
-    def generate(self, ir: GenerationIR) -> str:
+    def generate(self, ir: GenerationIR, *, static_only: bool = False) -> str:
         query = "Blender 4.5 bpy data API mesh from_pydata material camera light render keyframe_insert"
         context = self.rag.format_context(query, limit=4, max_chars=5000)
         coder_ir = _compact_ir_for_coder(ir)
@@ -155,6 +155,13 @@ class CoderAgent:
             "Keep the script concise. Do not write long reasoning comments, abandoned design notes, or step-by-step analysis inside the code. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
+        if static_only:
+            system += (
+                " This is the static scene stage of a two-stage animation pipeline. "
+                "Ignore any motion/timing language that remains in the source prompt. "
+                "Do not create keyframes, drivers, frame changes, animated visibility, animated materials, or frame range setup. "
+                "Create a single representative static scene only."
+            )
         user = f"""
 Compact GenerationIR JSON for code generation:
 {json.dumps(coder_ir, indent=2)}
@@ -179,6 +186,15 @@ Script requirements:
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
 - End the script with a complete LL3M_METADATA assignment. Keep comments short so the response does not truncate before metadata.
+"""
+        if static_only:
+            user += """
+
+Static scene stage constraints:
+- Do not call keyframe_insert.
+- Do not set scene.frame_start, scene.frame_end, or scene.render.fps for animation.
+- Do not animate light beams, signals, doors, bridges, vehicles, cameras, or materials.
+- Place moving objects in a neutral representative pose that makes all required objects visible and spatially plausible.
 """
         return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
