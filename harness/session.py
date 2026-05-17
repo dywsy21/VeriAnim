@@ -53,6 +53,7 @@ class InteractiveHarnessSession:
         self.ir: GenerationIR | None = None
         self.code: str | None = None
         self._last_executed_code: str | None = None
+        self._frozen_scene_graph: dict[str, Any] | None = None
         self.turn_index = 0
         self._latest_screenshots: list[Path] = []
 
@@ -119,6 +120,7 @@ class InteractiveHarnessSession:
         self.store.write_json("ir_animation_stage.json", full_ir.to_dict())
         scene_graph = self.blender.get_scene_graph()
         self.store.write_json("scene_stage_graph.json", scene_graph)
+        self._frozen_scene_graph = scene_graph
         base_code = self._last_executed_code or self.code or ""
         self.code = self.refiner.add_animation(ir=full_ir, code=base_code, scene_graph=scene_graph)
         self.store.write_text("code/generated_animation_stage.py", self.code)
@@ -319,6 +321,14 @@ class InteractiveHarnessSession:
         assert self.ir is not None
         reports: list[ValidationReport] = []
 
+        if self.ir.animation and self._frozen_scene_graph:
+            self.blender.execute_code("import bpy\nbpy.context.scene.frame_set(bpy.context.scene.frame_start)")
+            current_graph = self.blender.get_scene_graph()
+            preservation_report = _scene_preservation_report(self.ir, self._frozen_scene_graph, current_graph)
+            reports.append(preservation_report)
+            self.store.write_json(f"reports/{label}_scene_preservation.json", report_to_dict(preservation_report))
+            self._emit_report(preservation_report)
+
         self._emit("validate", "Running deterministic scene validation")
         scene_report = self.blender.validate_scene(self.ir)
         reports.append(scene_report)
@@ -422,3 +432,82 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
         elif isinstance(node.func, ast.Name) and node.func.id in helper_names:
             calls.append(node)
     return calls
+
+
+def _scene_preservation_report(
+    ir: GenerationIR,
+    baseline_graph: dict[str, Any],
+    current_graph: dict[str, Any],
+) -> ValidationReport:
+    animated_ids: set[str] = set()
+    if ir.animation:
+        for event in [*ir.animation.events, *ir.animation.camera_events]:
+            animated_ids.update(event.subject_ids)
+            animated_ids.update(event.target_ids)
+    baseline = _objects_by_ll3m_id(baseline_graph)
+    current = _objects_by_ll3m_id(current_graph)
+    issues: list[ValidationIssue] = []
+    for obj in ir.scene.objects:
+        if obj.id in animated_ids:
+            continue
+        if obj.id not in baseline:
+            continue
+        if obj.id not in current:
+            issues.append(
+                ValidationIssue(
+                    code="SCENE_BASELINE_OBJECT_REMOVED",
+                    message=f"Animation stage removed static baseline object '{obj.id}'.",
+                    severity=Severity.CRITICAL,
+                    target_id=obj.id,
+                )
+            )
+            continue
+        before_size = _bbox_size(baseline[obj.id])
+        after_size = _bbox_size(current[obj.id])
+        if not before_size or not after_size:
+            continue
+        max_before = max(before_size)
+        if max_before <= 0:
+            continue
+        delta = max(abs(after_size[index] - before_size[index]) for index in range(3)) / max_before
+        if delta > 0.25:
+            issues.append(
+                ValidationIssue(
+                    code="SCENE_BASELINE_GEOMETRY_CHANGED",
+                    message=f"Animation stage changed static baseline geometry for '{obj.id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=obj.id,
+                    evidence={"before_size": before_size, "after_size": after_size, "relative_delta": delta},
+                )
+            )
+    if issues:
+        return ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            issues,
+            "Animation stage changed the validated static scene baseline.",
+        )
+    return ValidationReport.ok(VerificationMode.DETERMINISTIC, "Animation stage preserved static scene baseline geometry.")
+
+
+def _objects_by_ll3m_id(scene_graph: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for obj in scene_graph.get("objects", []) if isinstance(scene_graph, dict) else []:
+        if not isinstance(obj, dict):
+            continue
+        ll3m_id = obj.get("ll3m_id")
+        if isinstance(ll3m_id, str) and ll3m_id and ll3m_id not in result:
+            result[ll3m_id] = obj
+    return result
+
+
+def _bbox_size(obj: dict[str, Any]) -> list[float] | None:
+    bbox = obj.get("bbox")
+    if not isinstance(bbox, list) or len(bbox) < 2:
+        return None
+    try:
+        xs = [float(point[0]) for point in bbox]
+        ys = [float(point[1]) for point in bbox]
+        zs = [float(point[2]) for point in bbox]
+    except (TypeError, ValueError, IndexError):
+        return None
+    return [max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs)]
