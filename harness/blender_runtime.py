@@ -1081,11 +1081,32 @@ for attr in (
         pass
 original_material_colors = {{}}
 original_node_values = {{}}
+original_material_settings = {{}}
+original_object_visibility = {{
+    obj.name: {{
+        "hide_render": obj.hide_render,
+        "hide_viewport": obj.hide_viewport,
+        "visible_camera": getattr(obj, "visible_camera", None),
+    }}
+    for obj in bpy.data.objects
+}}
+original_eevee_settings = {{}}
+for attr in ("use_volume_custom_range", "volumetric_light_clamp", "volumetric_samples", "volumetric_shadow_samples"):
+    try:
+        original_eevee_settings[attr] = getattr(scene.eevee, attr)
+    except Exception:
+        pass
 for mat in bpy.data.materials:
     try:
         original_material_colors[mat.name] = tuple(mat.diffuse_color)
     except Exception:
         pass
+    original_material_settings[mat.name] = {{}}
+    for attr in ("blend_method", "use_screen_refraction", "show_transparent_back"):
+        try:
+            original_material_settings[mat.name][attr] = getattr(mat, attr)
+        except Exception:
+            pass
     try:
         if mat.use_nodes and mat.node_tree:
             for node in mat.node_tree.nodes:
@@ -1112,8 +1133,23 @@ def apply_inspection_materials():
         scale = 0.82 / max_channel
         return (rgb[0] * scale, rgb[1] * scale, rgb[2] * scale, rgba[3])
     for mat in bpy.data.materials:
+        is_transparent = False
         try:
-            mat.diffuse_color = tone_map_rgba(tuple(mat.diffuse_color))
+            rgba = tuple(mat.diffuse_color)
+            is_transparent = len(rgba) >= 4 and rgba[3] < 0.55
+            if "glass" in mat.name.lower() or "transparent" in mat.name.lower() or is_transparent:
+                mapped = tone_map_rgba((rgba[0], rgba[1], rgba[2], 0.08))
+                mat.diffuse_color = mapped
+                try:
+                    mat.blend_method = "BLEND"
+                except Exception:
+                    pass
+                try:
+                    mat.show_transparent_back = False
+                except Exception:
+                    pass
+            else:
+                mat.diffuse_color = tone_map_rgba(rgba)
         except Exception:
             pass
         try:
@@ -1121,7 +1157,11 @@ def apply_inspection_materials():
                 for node in mat.node_tree.nodes:
                     socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
                     if socket is not None and hasattr(socket, "default_value"):
-                        socket.default_value = tone_map_rgba(tuple(socket.default_value))
+                        rgba = tuple(socket.default_value)
+                        if "glass" in mat.name.lower() or "transparent" in mat.name.lower() or (len(rgba) >= 4 and rgba[3] < 0.55):
+                            socket.default_value = tone_map_rgba((rgba[0], rgba[1], rgba[2], 0.08))
+                        else:
+                            socket.default_value = tone_map_rgba(rgba)
                     socket = node.inputs.get("Emission Color") if hasattr(node, "inputs") else None
                     if socket is not None and hasattr(socket, "default_value"):
                         socket.default_value = tone_map_rgba(tuple(socket.default_value))
@@ -1153,7 +1193,35 @@ try:
     scene.display.shading.background_color = (0.42, 0.42, 0.42)
 except Exception:
     pass
+try:
+    scene.eevee.use_volume_custom_range = False
+except Exception:
+    pass
+try:
+    scene.eevee.volumetric_light_clamp = 1.0
+except Exception:
+    pass
 apply_inspection_materials()
+for obj in bpy.data.objects:
+    try:
+        mat_names = [slot.material.name.lower() for slot in getattr(obj, "material_slots", []) if slot.material]
+        name = obj.name.lower()
+        if (
+            ("glass" in " ".join(mat_names) or name.startswith("wall_") or name.startswith("roof_") or name in {{"wall_n", "wall_s", "wall_e", "wall_w", "roof_a", "roof_b"}})
+            and "floor" not in name
+        ):
+            obj.hide_render = True
+            obj.hide_viewport = True
+            try:
+                obj.hide_set(True)
+            except Exception:
+                pass
+            try:
+                obj.visible_camera = False
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 all_points = []
 objs = target_objects()
@@ -1206,10 +1274,30 @@ finally:
             setattr(scene.display.shading, attr, value)
         except Exception:
             pass
+    for attr, value in original_eevee_settings.items():
+        try:
+            setattr(scene.eevee, attr, value)
+        except Exception:
+            pass
+    for obj in bpy.data.objects:
+        if obj.name in original_object_visibility:
+            try:
+                obj.hide_render = original_object_visibility[obj.name]["hide_render"]
+                obj.hide_viewport = original_object_visibility[obj.name]["hide_viewport"]
+                obj.hide_set(False)
+                if original_object_visibility[obj.name]["visible_camera"] is not None:
+                    obj.visible_camera = original_object_visibility[obj.name]["visible_camera"]
+            except Exception:
+                pass
     for mat in bpy.data.materials:
         if mat.name in original_material_colors:
             try:
                 mat.diffuse_color = original_material_colors[mat.name]
+            except Exception:
+                pass
+        for attr, value in original_material_settings.get(mat.name, {{}}).items():
+            try:
+                setattr(mat, attr, value)
             except Exception:
                 pass
         try:
@@ -1338,11 +1426,32 @@ for attr in (
         pass
 original_material_colors = {{}}
 original_node_values = {{}}
+original_material_settings = {{}}
+original_object_visibility = {{
+    obj.name: {{
+        "hide_render": obj.hide_render,
+        "hide_viewport": obj.hide_viewport,
+        "visible_camera": getattr(obj, "visible_camera", None),
+    }}
+    for obj in bpy.data.objects
+}}
+original_eevee_settings = {{}}
+for attr in ("use_volume_custom_range", "volumetric_light_clamp", "volumetric_samples", "volumetric_shadow_samples"):
+    try:
+        original_eevee_settings[attr] = getattr(scene.eevee, attr)
+    except Exception:
+        pass
 for mat in bpy.data.materials:
     try:
         original_material_colors[mat.name] = tuple(mat.diffuse_color)
     except Exception:
         pass
+    original_material_settings[mat.name] = {{}}
+    for attr in ("blend_method", "use_screen_refraction", "show_transparent_back"):
+        try:
+            original_material_settings[mat.name][attr] = getattr(mat, attr)
+        except Exception:
+            pass
     try:
         if mat.use_nodes and mat.node_tree:
             for node in mat.node_tree.nodes:
@@ -1390,6 +1499,14 @@ def apply_inspection_render_settings():
         scene.display.shading.background_color = (0.42, 0.42, 0.42)
     except Exception:
         pass
+    try:
+        scene.eevee.use_volume_custom_range = False
+    except Exception:
+        pass
+    try:
+        scene.eevee.volumetric_light_clamp = 1.0
+    except Exception:
+        pass
     # Ensure at least one adequate light exists for EEVEE/Cycles fallback.
     # Workbench ignores scene lights, so normal verification should not depend
     # on generated light intensity.
@@ -1435,8 +1552,23 @@ def apply_inspection_render_settings():
         scale = 0.82 / max_channel
         return (rgb[0] * scale, rgb[1] * scale, rgb[2] * scale, rgba[3])
     for mat in bpy.data.materials:
+        is_transparent = False
         try:
-            mat.diffuse_color = tone_map_rgba(tuple(mat.diffuse_color))
+            rgba = tuple(mat.diffuse_color)
+            is_transparent = len(rgba) >= 4 and rgba[3] < 0.55
+            if "glass" in mat.name.lower() or "transparent" in mat.name.lower() or is_transparent:
+                mapped = tone_map_rgba((rgba[0], rgba[1], rgba[2], 0.08))
+                mat.diffuse_color = mapped
+                try:
+                    mat.blend_method = "BLEND"
+                except Exception:
+                    pass
+                try:
+                    mat.show_transparent_back = False
+                except Exception:
+                    pass
+            else:
+                mat.diffuse_color = tone_map_rgba(rgba)
         except Exception:
             pass
         try:
@@ -1444,7 +1576,11 @@ def apply_inspection_render_settings():
                 for node in mat.node_tree.nodes:
                     socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
                     if socket is not None and hasattr(socket, "default_value"):
-                        socket.default_value = tone_map_rgba(tuple(socket.default_value))
+                        rgba = tuple(socket.default_value)
+                        if "glass" in mat.name.lower() or "transparent" in mat.name.lower() or (len(rgba) >= 4 and rgba[3] < 0.55):
+                            socket.default_value = tone_map_rgba((rgba[0], rgba[1], rgba[2], 0.08))
+                        else:
+                            socket.default_value = tone_map_rgba(rgba)
                     socket = node.inputs.get("Emission Color") if hasattr(node, "inputs") else None
                     if socket is not None and hasattr(socket, "default_value"):
                         socket.default_value = tone_map_rgba(tuple(socket.default_value))
@@ -1454,6 +1590,26 @@ def apply_inspection_render_settings():
                     socket = node.inputs.get("Strength") if hasattr(node, "inputs") else None
                     if node.type == "EMISSION" and socket is not None and hasattr(socket, "default_value"):
                         socket.default_value = min(float(socket.default_value), 0.15)
+        except Exception:
+            pass
+    for obj in bpy.data.objects:
+        try:
+            mat_names = [slot.material.name.lower() for slot in getattr(obj, "material_slots", []) if slot.material]
+            name = obj.name.lower()
+            if (
+                ("glass" in " ".join(mat_names) or name.startswith("wall_") or name.startswith("roof_") or name in {{"wall_n", "wall_s", "wall_e", "wall_w", "roof_a", "roof_b"}})
+                and "floor" not in name
+            ):
+                obj.hide_render = True
+                obj.hide_viewport = True
+                try:
+                    obj.hide_set(True)
+                except Exception:
+                    pass
+                try:
+                    obj.visible_camera = False
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1473,10 +1629,30 @@ def restore_render_settings():
             setattr(scene.display.shading, attr, value)
         except Exception:
             pass
+    for attr, value in original_eevee_settings.items():
+        try:
+            setattr(scene.eevee, attr, value)
+        except Exception:
+            pass
+    for obj in bpy.data.objects:
+        if obj.name in original_object_visibility:
+            try:
+                obj.hide_render = original_object_visibility[obj.name]["hide_render"]
+                obj.hide_viewport = original_object_visibility[obj.name]["hide_viewport"]
+                obj.hide_set(False)
+                if original_object_visibility[obj.name]["visible_camera"] is not None:
+                    obj.visible_camera = original_object_visibility[obj.name]["visible_camera"]
+            except Exception:
+                pass
     for mat in bpy.data.materials:
         if mat.name in original_material_colors:
             try:
                 mat.diffuse_color = original_material_colors[mat.name]
+            except Exception:
+                pass
+        for attr, value in original_material_settings.get(mat.name, {{}}).items():
+            try:
+                setattr(mat, attr, value)
             except Exception:
                 pass
         try:

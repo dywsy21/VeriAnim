@@ -163,6 +163,7 @@ class InteractiveHarnessSession:
         max_rounds = self._max_refinement_rounds()
         last_failure_signature: str | None = None
         stagnant_rounds = 0
+        failure_counts: dict[str, int] = {}
         self._emit("validate", f"Verifier-gated loop enabled: up to {max_rounds + 1} validation passes")
 
         for round_index in range(max_rounds + 1):
@@ -236,11 +237,20 @@ class InteractiveHarnessSession:
             else:
                 last_failure_signature = signature
                 stagnant_rounds = 1
+            failure_counts[signature] = failure_counts.get(signature, 0) + 1
             if stagnant_rounds >= self.config.max_stagnant_refinement_rounds:
                 self._emit(
                     "warn",
                     "Verifier loop stopped because the same failure repeated without progress",
                     stagnant_rounds=stagnant_rounds,
+                )
+                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                return False
+            if failure_counts[signature] >= self.config.max_stagnant_refinement_rounds:
+                self._emit(
+                    "warn",
+                    "Verifier loop stopped because the same failure recurred across refinement attempts",
+                    repeated_failures=failure_counts[signature],
                 )
                 self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
                 return False
@@ -442,7 +452,6 @@ def _failure_signature(reports: list[ValidationReport], execution_error: str | N
                     "target_id": issue.target_id,
                     "relation_id": issue.relation_id,
                     "frame": issue.frame,
-                    "message": issue.message,
                 }
             )
     return json.dumps(
