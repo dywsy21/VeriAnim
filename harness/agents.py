@@ -702,6 +702,34 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         obj["category"] = category_aliases.get(category, category if category in valid_categories else "generic")
         role = str(obj.get("role", "secondary")).lower()
         obj["role"] = role if role in valid_roles else "secondary"
+    relation_aliases = {
+        "above": "on_top_of",
+        "atop": "on_top_of",
+        "on": "on_top_of",
+        "on_top": "on_top_of",
+        "below": "under",
+        "beneath": "under",
+        "next_to": "near",
+        "beside": "near",
+        "adjacent_to": "near",
+        "close_to": "near",
+        "nearby": "near",
+        "in": "inside",
+        "within": "inside",
+        "holds": "contains",
+        "holding": "contains",
+        "facing_towards": "facing",
+        "attached": "attached_to",
+        "connected_to": "attached_to",
+        "same_height": "same_height_as",
+        "level_with": "same_height_as",
+    }
+    valid_relations = {item.value for item in RelationType}
+    for relation in scene.get("relations", []) or []:
+        if not isinstance(relation, dict):
+            continue
+        raw = str(relation.get("relation_type", "near")).strip().lower().replace("-", "_").replace(" ", "_")
+        relation["relation_type"] = relation_aliases.get(raw, raw if raw in valid_relations else "near")
 
 
 def _promote_animation_end_effectors(data: dict[str, Any]) -> None:
