@@ -334,9 +334,23 @@ def _normalize_verification_renders(paths: list[Path]) -> None:
                 mean = float(ImageStat.Stat(luminance).mean[0])
                 if mean <= 1.0:
                     continue
-                factor = max(0.58, min(1.85, target_mean / mean))
+                hist = luminance.histogram()
+                total = sum(hist)
+                threshold = total * 0.95
+                cumulative = 0
+                p95 = 255
+                for value, count in enumerate(hist):
+                    cumulative += count
+                    if cumulative >= threshold:
+                        p95 = value
+                        break
+                mean_factor = target_mean / mean
+                highlight_factor = 210.0 / max(float(p95), 1.0)
+                factor = max(0.45, min(1.85, mean_factor, highlight_factor))
                 adjusted = ImageEnhance.Brightness(rgb).enhance(factor)
-                if mean > 170.0:
+                if p95 > 235:
+                    adjusted = ImageEnhance.Contrast(adjusted).enhance(0.9)
+                elif mean > 170.0:
                     adjusted = ImageEnhance.Contrast(adjusted).enhance(1.08)
                 elif mean < 80.0:
                     adjusted = ImageEnhance.Contrast(adjusted).enhance(1.04)
@@ -644,9 +658,23 @@ for relation in IR["scene"].get("relations", []):
     if rtype == "on_top_of":
         overlap_x = min(sb[1].x, ob[1].x) - max(sb[0].x, ob[0].x)
         overlap_y = min(sb[1].y, ob[1].y) - max(sb[0].y, ob[0].y)
-        z_gap = abs(sb[0].z - ob[1].z)
+        relation_text = " ".join([
+            str(relation.get("id", "")),
+            str(relation.get("description", "")),
+            str(sid),
+            str(oid),
+        ]).lower()
+        if any(token in relation_text for token in ("above", "overhead", "hang", "hanging", "suspend", "suspended")):
+            z_gap = sb[0].z - ob[1].z
+            if overlap_x <= 0 or overlap_y <= 0 or sc.z <= oc.z + max(tol, 0.12):
+                issue("RELATION_ON_TOP_OF_FAILED", f"'{{sid}}' is not clearly above '{{oid}}'.", "major", sid, relation["id"], {{"z_gap": z_gap, "overlap_x": overlap_x, "overlap_y": overlap_y}})
+            continue
+        support_z = ob[1].z
+        if "floor" in relation_text and any(token in relation_text for token in ("room", "greenhouse", "enclosure", "interior")):
+            support_z = ob[0].z
+        z_gap = abs(sb[0].z - support_z)
         if overlap_x <= 0 or overlap_y <= 0 or z_gap > max(tol, 0.12):
-            issue("RELATION_ON_TOP_OF_FAILED", f"'{{sid}}' is not clearly on top of '{{oid}}'.", "major", sid, relation["id"], {{"z_gap": z_gap, "overlap_x": overlap_x, "overlap_y": overlap_y}})
+            issue("RELATION_ON_TOP_OF_FAILED", f"'{{sid}}' is not clearly on top of '{{oid}}'.", "major", sid, relation["id"], {{"z_gap": z_gap, "overlap_x": overlap_x, "overlap_y": overlap_y, "support_z": support_z}})
     elif rtype == "left_of" and not (sc.x < oc.x - tol):
         issue("RELATION_LEFT_OF_FAILED", f"'{{sid}}' is not left of '{{oid}}'.", "major", sid, relation["id"], {{"subject_x": sc.x, "object_x": oc.x}})
     elif rtype == "right_of" and not (sc.x > oc.x + tol):
@@ -1052,7 +1080,7 @@ for attr in (
     except Exception:
         pass
 original_material_colors = {{}}
-original_node_colors = {{}}
+original_node_values = {{}}
 for mat in bpy.data.materials:
     try:
         original_material_colors[mat.name] = tuple(mat.diffuse_color)
@@ -1061,9 +1089,15 @@ for mat in bpy.data.materials:
     try:
         if mat.use_nodes and mat.node_tree:
             for node in mat.node_tree.nodes:
-                socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
-                if socket is not None and hasattr(socket, "default_value"):
-                    original_node_colors[(mat.name, node.name)] = tuple(socket.default_value)
+                for input_name in ("Base Color", "Emission Color", "Emission Strength", "Strength"):
+                    socket = node.inputs.get(input_name) if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        value = socket.default_value
+                        try:
+                            value = tuple(value)
+                        except TypeError:
+                            pass
+                        original_node_values[(mat.name, node.name, input_name)] = value
     except Exception:
         pass
 
@@ -1088,6 +1122,15 @@ def apply_inspection_materials():
                     socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
                     if socket is not None and hasattr(socket, "default_value"):
                         socket.default_value = tone_map_rgba(tuple(socket.default_value))
+                    socket = node.inputs.get("Emission Color") if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = tone_map_rgba(tuple(socket.default_value))
+                    socket = node.inputs.get("Emission Strength") if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = min(float(socket.default_value), 0.15)
+                    socket = node.inputs.get("Strength") if hasattr(node, "inputs") else None
+                    if node.type == "EMISSION" and socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = min(float(socket.default_value), 0.15)
         except Exception:
             pass
 
@@ -1095,7 +1138,7 @@ try:
     transforms = bpy.types.ColorManagedViewSettings.bl_rna.properties["view_transform"].enum_items.keys()
     scene.view_settings.view_transform = "AgX" if "AgX" in transforms else "Standard"
     scene.view_settings.look = "None"
-    scene.view_settings.exposure = -0.3
+    scene.view_settings.exposure = -1.2
     scene.view_settings.gamma = 1.0
 except Exception:
     pass
@@ -1172,10 +1215,11 @@ finally:
         try:
             if mat.use_nodes and mat.node_tree:
                 for node in mat.node_tree.nodes:
-                    key = (mat.name, node.name)
-                    socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
-                    if key in original_node_colors and socket is not None and hasattr(socket, "default_value"):
-                        socket.default_value = original_node_colors[key]
+                    for input_name in ("Base Color", "Emission Color", "Emission Strength", "Strength"):
+                        key = (mat.name, node.name, input_name)
+                        socket = node.inputs.get(input_name) if hasattr(node, "inputs") else None
+                        if key in original_node_values and socket is not None and hasattr(socket, "default_value"):
+                            socket.default_value = original_node_values[key]
         except Exception:
             pass
 
@@ -1293,7 +1337,7 @@ for attr in (
     except Exception:
         pass
 original_material_colors = {{}}
-original_node_colors = {{}}
+original_node_values = {{}}
 for mat in bpy.data.materials:
     try:
         original_material_colors[mat.name] = tuple(mat.diffuse_color)
@@ -1302,9 +1346,15 @@ for mat in bpy.data.materials:
     try:
         if mat.use_nodes and mat.node_tree:
             for node in mat.node_tree.nodes:
-                socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
-                if socket is not None and hasattr(socket, "default_value"):
-                    original_node_colors[(mat.name, node.name)] = tuple(socket.default_value)
+                for input_name in ("Base Color", "Emission Color", "Emission Strength", "Strength"):
+                    socket = node.inputs.get(input_name) if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        value = socket.default_value
+                        try:
+                            value = tuple(value)
+                        except TypeError:
+                            pass
+                        original_node_values[(mat.name, node.name, input_name)] = value
     except Exception:
         pass
 original_light_energy = {{obj.name: obj.data.energy for obj in bpy.data.objects if obj.type == "LIGHT" and hasattr(obj.data, "energy")}}
@@ -1323,7 +1373,7 @@ def apply_inspection_render_settings():
         transforms = bpy.types.ColorManagedViewSettings.bl_rna.properties["view_transform"].enum_items.keys()
         scene.view_settings.view_transform = "AgX" if "AgX" in transforms else "Standard"
         scene.view_settings.look = "None"
-        scene.view_settings.exposure = -0.3
+        scene.view_settings.exposure = -1.2
         scene.view_settings.gamma = 1.0
     except Exception:
         pass
@@ -1358,13 +1408,13 @@ def apply_inspection_render_settings():
         if obj.name.startswith("ll3m_"):
             continue
         if obj.data.type == "SUN":
-            obj.data.energy = max(min(float(obj.data.energy), 8.0), 1.0)
+            obj.data.energy = max(min(float(obj.data.energy), 2.0), 0.2)
         elif obj.data.type == "AREA":
-            obj.data.energy = max(min(float(obj.data.energy), 800.0), 50.0)
+            obj.data.energy = max(min(float(obj.data.energy), 120.0), 10.0)
         elif obj.data.type == "POINT":
-            obj.data.energy = max(min(float(obj.data.energy), 1000.0), 50.0)
+            obj.data.energy = max(min(float(obj.data.energy), 150.0), 10.0)
         else:
-            obj.data.energy = max(min(float(obj.data.energy), 1000.0), 50.0)
+            obj.data.energy = max(min(float(obj.data.energy), 150.0), 10.0)
     # Ensure world background is not pitch black
     if world and world.use_nodes:
         bg = None
@@ -1395,6 +1445,15 @@ def apply_inspection_render_settings():
                     socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
                     if socket is not None and hasattr(socket, "default_value"):
                         socket.default_value = tone_map_rgba(tuple(socket.default_value))
+                    socket = node.inputs.get("Emission Color") if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = tone_map_rgba(tuple(socket.default_value))
+                    socket = node.inputs.get("Emission Strength") if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = min(float(socket.default_value), 0.15)
+                    socket = node.inputs.get("Strength") if hasattr(node, "inputs") else None
+                    if node.type == "EMISSION" and socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = min(float(socket.default_value), 0.15)
         except Exception:
             pass
 
@@ -1423,10 +1482,11 @@ def restore_render_settings():
         try:
             if mat.use_nodes and mat.node_tree:
                 for node in mat.node_tree.nodes:
-                    key = (mat.name, node.name)
-                    socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
-                    if key in original_node_colors and socket is not None and hasattr(socket, "default_value"):
-                        socket.default_value = original_node_colors[key]
+                    for input_name in ("Base Color", "Emission Color", "Emission Strength", "Strength"):
+                        key = (mat.name, node.name, input_name)
+                        socket = node.inputs.get(input_name) if hasattr(node, "inputs") else None
+                        if key in original_node_values and socket is not None and hasattr(socket, "default_value"):
+                            socket.default_value = original_node_values[key]
         except Exception:
             pass
     for obj in bpy.data.objects:
