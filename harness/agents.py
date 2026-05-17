@@ -256,9 +256,11 @@ Current script:
 Attached images are the latest failed validation screenshots and/or sampled animation frames in verifier order.
 Use them to fix actual visual layout, contact, motion direction, timing, and visibility problems, not just the text report.
 """
-            return _sanitize_generated_blender_code(
-                extract_code_block(self.llm.complete_multimodal(system, user, screenshot_paths))
-            )
+            if self.llm.config.supports_images:
+                return _sanitize_generated_blender_code(
+                    extract_code_block(self.llm.complete_multimodal(system, user, screenshot_paths))
+                )
+            user += "\nThe configured refiner model is text-only, so screenshots are not attached. Use the verifier text evidence precisely.\n"
         return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
     def apply_user_request(

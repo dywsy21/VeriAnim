@@ -70,6 +70,7 @@ class AgentModelConfig:
     api_key: str | None = None
     api_version: str | None = None
     custom_llm_provider: str | None = None
+    supports_images: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,8 +109,8 @@ class HarnessConfig:
             planner=_agent_config("planner", "openai/gpt-4.1", 0.2),
             coder=_agent_config("coder", "openai/gpt-4.1", 0.1),
             refiner=_agent_config("refiner", "openai/gpt-4.1", 0.1),
-            vision=_agent_config("vision", "openai/gpt-4.1", 0.0),
-            video=_agent_config("video", "dashscope/qwen-omni-turbo", 0.0),
+            vision=_agent_config("vision", "openai/gpt-4.1", 0.0, default_supports_images=True),
+            video=_agent_config("video", "dashscope/qwen-omni-turbo", 0.0, default_supports_images=True),
             max_refinement_rounds=_env_int("LL3M_MAX_REFINEMENT_ROUNDS", 2),
             max_visual_refinement_rounds=_env_int("LL3M_MAX_VISUAL_REFINEMENT_ROUNDS", 6),
             max_video_refinement_rounds=_env_int("LL3M_MAX_VIDEO_REFINEMENT_ROUNDS", 6),
@@ -129,7 +130,7 @@ class HarnessConfig:
         )
 
 
-def _agent_config(name: str, default_model: str, default_temperature: float) -> AgentModelConfig:
+def _agent_config(name: str, default_model: str, default_temperature: float, *, default_supports_images: bool = False) -> AgentModelConfig:
     prefix = f"LL3M_{name.upper()}"
     global_api_base = _env_optional("LITELLM_API_BASE")
     global_api_key = _env_optional("LITELLM_API_KEY")
@@ -144,4 +145,5 @@ def _agent_config(name: str, default_model: str, default_temperature: float) -> 
         api_key=_env_optional(f"{prefix}_API_KEY") or global_api_key,
         api_version=_env_optional(f"{prefix}_API_VERSION"),
         custom_llm_provider=_env_optional(f"{prefix}_PROVIDER"),
+        supports_images=_env_bool(f"{prefix}_SUPPORTS_IMAGES", default_supports_images),
     )
