@@ -65,6 +65,7 @@ class AgentModelConfig:
     temperature: float = 0.1
     max_tokens: int | None = None
     timeout_seconds: int | None = None
+    stream: bool = True
     api_base: str | None = None
     api_key: str | None = None
     api_version: str | None = None
@@ -138,6 +139,7 @@ def _agent_config(name: str, default_model: str, default_temperature: float) -> 
         temperature=_env_float(f"{prefix}_TEMPERATURE", default_temperature),
         max_tokens=_env_int(f"{prefix}_MAX_TOKENS", 0) or None,
         timeout_seconds=_env_int(f"{prefix}_TIMEOUT_SECONDS", _env_int("LL3M_LLM_TIMEOUT_SECONDS", 90)),
+        stream=_env_bool(f"{prefix}_STREAM", _env_bool("LL3M_LLM_STREAM", True)),
         api_base=_env_optional(f"{prefix}_API_BASE") or global_api_base,
         api_key=_env_optional(f"{prefix}_API_KEY") or global_api_key,
         api_version=_env_optional(f"{prefix}_API_VERSION"),
