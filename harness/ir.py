@@ -776,7 +776,7 @@ def _missing_sampled_frames(event: AnimationEventSpec, sampled_frames: list[int]
     missing: list[str] = []
     if event.start_frame not in samples:
         missing.append("start")
-    if not any(event.start_frame < frame < event.end_frame for frame in samples):
+    if event.end_frame - event.start_frame > 1 and not any(event.start_frame < frame < event.end_frame for frame in samples):
         missing.append("middle")
     if event.end_frame not in samples:
         missing.append("end")
