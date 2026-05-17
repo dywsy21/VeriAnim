@@ -104,6 +104,7 @@ class BlenderRuntime:
             payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": []})
             paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
             if paths:
+                _normalize_verification_renders(paths)
                 return paths
         views = _view_dicts(ir)
         structured = BlenderClient.render_view_plan(
@@ -118,6 +119,7 @@ class BlenderRuntime:
             payload = _command_result(structured)
             paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
             if paths:
+                _normalize_verification_renders(paths)
                 return paths
         return []
 
@@ -176,6 +178,7 @@ class BlenderRuntime:
             payload = _parse_marker_json(result.stdout, SCREENSHOT_MARKER, default={"paths": [], "gif_frames": [], "video": None})
             paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
             gif_frame_paths = [Path(path) for path in payload.get("gif_frames", []) if Path(path).exists()]
+            _normalize_verification_renders([*paths, *gif_frame_paths])
             gif_path = (
                 _write_animation_gif(
                     gif_frame_paths,
@@ -198,7 +201,9 @@ class BlenderRuntime:
         )
         if _command_ok(structured):
             payload = _command_result(structured)
-            return [Path(path) for path in payload.get("paths", []) if Path(path).exists()], (
+            paths = [Path(path) for path in payload.get("paths", []) if Path(path).exists()]
+            _normalize_verification_renders(paths)
+            return paths, (
                 Path(payload["video"]) if payload.get("video") and Path(payload["video"]).exists() else None
             )
         return [], None
@@ -301,6 +306,45 @@ def _write_animation_gif(frame_paths: list[Path], output_path: Path, *, fps: int
         optimize=False,
     )
     return output_path if output_path.exists() else None
+
+
+def _normalize_verification_renders(paths: list[Path]) -> None:
+    """Normalize inspection renders so verification is not gated by exposure.
+
+    Generated Blender scripts often create extreme lights, near-white materials,
+    or enclosed rooms that make screenshots unreadably bright or dark. The
+    verifier should judge geometry and scene semantics, so we keep a conservative
+    post-render luminance target similar to Blender's layout inspection view.
+    """
+
+    if not paths:
+        return
+    try:
+        from PIL import Image, ImageEnhance, ImageOps, ImageStat
+    except Exception:
+        return
+
+    target_mean = 128.0
+    for path in paths:
+        try:
+            with Image.open(path) as image:
+                rgba = image.convert("RGBA")
+                rgb = rgba.convert("RGB")
+                luminance = ImageOps.grayscale(rgb)
+                mean = float(ImageStat.Stat(luminance).mean[0])
+                if mean <= 1.0:
+                    continue
+                factor = max(0.58, min(1.85, target_mean / mean))
+                adjusted = ImageEnhance.Brightness(rgb).enhance(factor)
+                if mean > 170.0:
+                    adjusted = ImageEnhance.Contrast(adjusted).enhance(1.08)
+                elif mean < 80.0:
+                    adjusted = ImageEnhance.Contrast(adjusted).enhance(1.04)
+                if "A" in image.getbands():
+                    adjusted.putalpha(rgba.getchannel("A"))
+                adjusted.save(path)
+        except Exception:
+            continue
 
 
 def _severity(value: Any) -> Severity:
@@ -981,18 +1025,92 @@ scene.render.resolution_y = HEIGHT
 scene.render.resolution_percentage = 100
 original_engine = scene.render.engine
 engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-if "BLENDER_EEVEE_NEXT" in engines:
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
-elif "BLENDER_WORKBENCH" in engines:
+if "BLENDER_WORKBENCH" in engines:
     scene.render.engine = "BLENDER_WORKBENCH"
+elif "BLENDER_EEVEE_NEXT" in engines:
+    scene.render.engine = "BLENDER_EEVEE_NEXT"
+
+original_view_settings = {{
+    "view_transform": getattr(scene.view_settings, "view_transform", None),
+    "look": getattr(scene.view_settings, "look", None),
+    "exposure": getattr(scene.view_settings, "exposure", None),
+    "gamma": getattr(scene.view_settings, "gamma", None),
+}}
+original_shading_settings = {{}}
+for attr in (
+    "light",
+    "studio_light",
+    "color_type",
+    "show_shadows",
+    "show_cavity",
+    "studiolight_intensity",
+    "background_type",
+    "background_color",
+):
+    try:
+        original_shading_settings[attr] = getattr(scene.display.shading, attr)
+    except Exception:
+        pass
+original_material_colors = {{}}
+original_node_colors = {{}}
+for mat in bpy.data.materials:
+    try:
+        original_material_colors[mat.name] = tuple(mat.diffuse_color)
+    except Exception:
+        pass
+    try:
+        if mat.use_nodes and mat.node_tree:
+            for node in mat.node_tree.nodes:
+                socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
+                if socket is not None and hasattr(socket, "default_value"):
+                    original_node_colors[(mat.name, node.name)] = tuple(socket.default_value)
+    except Exception:
+        pass
+
+def apply_inspection_materials():
+    def tone_map_rgba(rgba):
+        if len(rgba) < 4:
+            return rgba
+        rgb = rgba[:3]
+        max_channel = max(rgb)
+        if max_channel <= 0.82:
+            return rgba
+        scale = 0.82 / max_channel
+        return (rgb[0] * scale, rgb[1] * scale, rgb[2] * scale, rgba[3])
+    for mat in bpy.data.materials:
+        try:
+            mat.diffuse_color = tone_map_rgba(tuple(mat.diffuse_color))
+        except Exception:
+            pass
+        try:
+            if mat.use_nodes and mat.node_tree:
+                for node in mat.node_tree.nodes:
+                    socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = tone_map_rgba(tuple(socket.default_value))
+        except Exception:
+            pass
 
 try:
-    scene.view_settings.view_transform = "Standard"
-    scene.view_settings.look = "Medium High Contrast"
-    scene.view_settings.exposure = -1.0
+    transforms = bpy.types.ColorManagedViewSettings.bl_rna.properties["view_transform"].enum_items.keys()
+    scene.view_settings.view_transform = "AgX" if "AgX" in transforms else "Standard"
+    scene.view_settings.look = "None"
+    scene.view_settings.exposure = -0.3
     scene.view_settings.gamma = 1.0
 except Exception:
     pass
+try:
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.studio_light = "studio.exr"
+    scene.display.shading.color_type = "MATERIAL"
+    scene.display.shading.show_shadows = True
+    scene.display.shading.show_cavity = True
+    scene.display.shading.studiolight_intensity = 0.45
+    scene.display.shading.background_type = "VIEWPORT"
+    scene.display.shading.background_color = (0.42, 0.42, 0.42)
+except Exception:
+    pass
+apply_inspection_materials()
 
 all_points = []
 objs = target_objects()
@@ -1034,6 +1152,32 @@ finally:
         scene.render.engine = original_engine
     except Exception:
         pass
+    for attr, value in original_view_settings.items():
+        if value is not None:
+            try:
+                setattr(scene.view_settings, attr, value)
+            except Exception:
+                pass
+    for attr, value in original_shading_settings.items():
+        try:
+            setattr(scene.display.shading, attr, value)
+        except Exception:
+            pass
+    for mat in bpy.data.materials:
+        if mat.name in original_material_colors:
+            try:
+                mat.diffuse_color = original_material_colors[mat.name]
+            except Exception:
+                pass
+        try:
+            if mat.use_nodes and mat.node_tree:
+                for node in mat.node_tree.nodes:
+                    key = (mat.name, node.name)
+                    socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
+                    if key in original_node_colors and socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = original_node_colors[key]
+        except Exception:
+            pass
 
 print("{SCREENSHOT_MARKER}" + json.dumps({{"paths": paths, "gif_frames": gif_paths, "video": os.path.join(OUT_DIR, "animation.gif").replace("\\\\", "/")}}))
 """
@@ -1122,10 +1266,10 @@ scene.render.resolution_y = HEIGHT
 scene.render.resolution_percentage = 100
 original_engine = scene.render.engine
 engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-if "BLENDER_EEVEE_NEXT" in engines:
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
-elif "BLENDER_WORKBENCH" in engines:
+if "BLENDER_WORKBENCH" in engines:
     scene.render.engine = "BLENDER_WORKBENCH"
+elif "BLENDER_EEVEE_NEXT" in engines:
+    scene.render.engine = "BLENDER_EEVEE_NEXT"
 
 original_view_settings = {{
     "view_transform": getattr(scene.view_settings, "view_transform", None),
@@ -1133,6 +1277,36 @@ original_view_settings = {{
     "exposure": getattr(scene.view_settings, "exposure", None),
     "gamma": getattr(scene.view_settings, "gamma", None),
 }}
+original_shading_settings = {{}}
+for attr in (
+    "light",
+    "studio_light",
+    "color_type",
+    "show_shadows",
+    "show_cavity",
+    "studiolight_intensity",
+    "background_type",
+    "background_color",
+):
+    try:
+        original_shading_settings[attr] = getattr(scene.display.shading, attr)
+    except Exception:
+        pass
+original_material_colors = {{}}
+original_node_colors = {{}}
+for mat in bpy.data.materials:
+    try:
+        original_material_colors[mat.name] = tuple(mat.diffuse_color)
+    except Exception:
+        pass
+    try:
+        if mat.use_nodes and mat.node_tree:
+            for node in mat.node_tree.nodes:
+                socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
+                if socket is not None and hasattr(socket, "default_value"):
+                    original_node_colors[(mat.name, node.name)] = tuple(socket.default_value)
+    except Exception:
+        pass
 original_light_energy = {{obj.name: obj.data.energy for obj in bpy.data.objects if obj.type == "LIGHT" and hasattr(obj.data, "energy")}}
 original_world_strength = None
 world = scene.world
@@ -1146,23 +1320,29 @@ def apply_inspection_render_settings():
     # Verification screenshots must be legible even when generated code creates
     # poor lights/exposure. Keep this temporary and restore after rendering.
     try:
-        scene.view_settings.view_transform = "Standard"
+        transforms = bpy.types.ColorManagedViewSettings.bl_rna.properties["view_transform"].enum_items.keys()
+        scene.view_settings.view_transform = "AgX" if "AgX" in transforms else "Standard"
         scene.view_settings.look = "None"
-        scene.view_settings.exposure = 0.0
+        scene.view_settings.exposure = -0.3
         scene.view_settings.gamma = 1.0
     except Exception:
         pass
-    # For Workbench engine, configure studio lighting via scene.display
+    # Verification screenshots should resemble Blender layout/workbench preview:
+    # stable geometry-readable lighting, neutral exposure, and no scene-light blowout.
     try:
         scene.display.shading.light = "STUDIO"
         scene.display.shading.studio_light = "studio.exr"
         scene.display.shading.color_type = "MATERIAL"
         scene.display.shading.show_shadows = True
         scene.display.shading.show_cavity = True
-        scene.display.shading.studiolight_intensity = 1.0
+        scene.display.shading.studiolight_intensity = 0.45
+        scene.display.shading.background_type = "VIEWPORT"
+        scene.display.shading.background_color = (0.42, 0.42, 0.42)
     except Exception:
         pass
-    # Ensure at least one adequate light exists for EEVEE/Cycles fallback
+    # Ensure at least one adequate light exists for EEVEE/Cycles fallback.
+    # Workbench ignores scene lights, so normal verification should not depend
+    # on generated light intensity.
     has_light = any(obj.type == "LIGHT" for obj in bpy.data.objects if not obj.name.startswith("ll3m_"))
     if not has_light:
         light_data = bpy.data.lights.new("ll3m_inspection_light", type="SUN")
@@ -1195,6 +1375,28 @@ def apply_inspection_render_settings():
         if bg:
             strength = float(bg.inputs[1].default_value)
             bg.inputs[1].default_value = max(min(strength, 1.0), 0.1)
+    def tone_map_rgba(rgba):
+        if len(rgba) < 4:
+            return rgba
+        rgb = rgba[:3]
+        max_channel = max(rgb)
+        if max_channel <= 0.82:
+            return rgba
+        scale = 0.82 / max_channel
+        return (rgb[0] * scale, rgb[1] * scale, rgb[2] * scale, rgba[3])
+    for mat in bpy.data.materials:
+        try:
+            mat.diffuse_color = tone_map_rgba(tuple(mat.diffuse_color))
+        except Exception:
+            pass
+        try:
+            if mat.use_nodes and mat.node_tree:
+                for node in mat.node_tree.nodes:
+                    socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
+                    if socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = tone_map_rgba(tuple(socket.default_value))
+        except Exception:
+            pass
 
 def restore_render_settings():
     try:
@@ -1207,6 +1409,26 @@ def restore_render_settings():
                 setattr(scene.view_settings, attr, value)
             except Exception:
                 pass
+    for attr, value in original_shading_settings.items():
+        try:
+            setattr(scene.display.shading, attr, value)
+        except Exception:
+            pass
+    for mat in bpy.data.materials:
+        if mat.name in original_material_colors:
+            try:
+                mat.diffuse_color = original_material_colors[mat.name]
+            except Exception:
+                pass
+        try:
+            if mat.use_nodes and mat.node_tree:
+                for node in mat.node_tree.nodes:
+                    key = (mat.name, node.name)
+                    socket = node.inputs.get("Base Color") if hasattr(node, "inputs") else None
+                    if key in original_node_colors and socket is not None and hasattr(socket, "default_value"):
+                        socket.default_value = original_node_colors[key]
+        except Exception:
+            pass
     for obj in bpy.data.objects:
         if obj.name in original_light_energy and hasattr(obj.data, "energy"):
             obj.data.energy = original_light_energy[obj.name]
