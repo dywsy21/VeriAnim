@@ -844,6 +844,9 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
     for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
         if not isinstance(event, dict):
             continue
+        action = str(event.get("action", "")).strip().lower()
+        if action in {"appear", "disappear"}:
+            _ensure_visibility_keyframes(event, action)
         if "interpolation" in event:
             event["interpolation"] = _normalize_interpolation(event["interpolation"])
         path = event.get("path")
@@ -868,6 +871,59 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
                 for field_name in ("location", "rotation_euler", "scale"):
                     if field_name in transform:
                         transform[field_name] = _normalize_vec3(transform[field_name])
+
+
+def _ensure_visibility_keyframes(event: dict[str, Any], action: str) -> None:
+    try:
+        start = int(event.get("start_frame", 1))
+        end = int(event.get("end_frame", start))
+    except (TypeError, ValueError):
+        start = 1
+        end = start
+    before_visible = action != "appear"
+    after_visible = action == "appear"
+    path = event.setdefault("path", {})
+    if not isinstance(path, dict):
+        path = {}
+        event["path"] = path
+    keyframes = path.setdefault("keyframes", [])
+    if not isinstance(keyframes, list):
+        keyframes = []
+        path["keyframes"] = keyframes
+
+    def has_visibility_value(item: Any) -> bool:
+        return isinstance(item, dict) and isinstance(item.get("value"), dict) and any(
+            key in item["value"] for key in ("visible", "hide_viewport", "hide_render", "alpha")
+        )
+
+    if any(has_visibility_value(item) for item in keyframes):
+        return
+    keyframes.extend(
+        [
+            {
+                "frame": start,
+                "value": {
+                    "visible": before_visible,
+                    "hide_viewport": not before_visible,
+                    "hide_render": not before_visible,
+                    "alpha": 1.0 if before_visible else 0.0,
+                },
+                "interpolation": "constant",
+                "description": "visibility state before transition",
+            },
+            {
+                "frame": end,
+                "value": {
+                    "visible": after_visible,
+                    "hide_viewport": not after_visible,
+                    "hide_render": not after_visible,
+                    "alpha": 1.0 if after_visible else 0.0,
+                },
+                "interpolation": "constant",
+                "description": "visibility state after transition",
+            },
+        ]
+    )
 
 
 def _expand_event_range_to_keyframes(event: dict[str, Any]) -> None:
