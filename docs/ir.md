@@ -124,6 +124,17 @@ into `scene` and `animation`.
 - `base_color`: RGBA tuple.
 - `metallic`, `roughness`, `alpha`: Blender-style material hints.
 - `texture_hints`: natural language texture hints.
+- `needs_texture`: planner decision for whether the harness should search for
+  an external image texture before code generation. Use this for natural,
+  patterned, grainy, or irregular surfaces such as wood, stone, concrete,
+  rusted metal, brick, bark, fabric, leather, tabletop planks, or walls.
+  Keep it false for intentionally plain surfaces such as a pure-color mug,
+  clean ceramic, flat plastic, signal lights, or simple painted parts.
+- `texture_query`: concise search query for the texture agent, for example
+  `wood tabletop grain`, `rough concrete wall`, or `rusted metal`.
+- `texture_source`: optional resolved texture asset populated after planning by
+  the texture agent. It includes source/page/image URLs, local cached path,
+  license, tags, and VISION approval metadata.
 
 Object specs reference materials by id. The generator may create additional
 procedural material internals, but should keep these ids stable.

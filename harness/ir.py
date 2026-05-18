@@ -215,6 +215,20 @@ class TransformSpec:
 
 
 @dataclass(slots=True)
+class TextureSourceSpec:
+    source: str = "freestocktextures"
+    title: str | None = None
+    page_url: str | None = None
+    image_url: str | None = None
+    download_url: str | None = None
+    local_path: str | None = None
+    license: str | None = "CC0"
+    tags: list[str] = field(default_factory=list)
+    approved_by_vision: bool = False
+    vision_summary: str | None = None
+
+
+@dataclass(slots=True)
 class MaterialSpec:
     id: str = "material"
     description: str = "material"
@@ -223,6 +237,9 @@ class MaterialSpec:
     roughness: float | None = None
     alpha: float | None = None
     texture_hints: list[str] = field(default_factory=list)
+    needs_texture: bool = False
+    texture_query: str | None = None
+    texture_source: TextureSourceSpec | None = None
 
 
 @dataclass(slots=True)

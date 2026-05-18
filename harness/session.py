@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from .agents import CoderAgent, PlannerAgent, RefinerAgent, VideoVerifierAgent, VisionVerifierAgent
+from .agents import CoderAgent, MaterialAgent, PlannerAgent, RefinerAgent, VideoVerifierAgent, VisionVerifierAgent
 from .artifacts import ArtifactStore
 from .blender_runtime import BlenderRuntime
 from .config import HarnessConfig
@@ -45,6 +45,7 @@ class InteractiveHarnessSession:
         self.callback = callback
         self.rag = LocalRAG(config.rag_docs)
         self.planner = PlannerAgent(config, self.rag)
+        self.materials = MaterialAgent(config)
         self.coder = CoderAgent(config, self.rag)
         self.refiner = RefinerAgent(config, self.rag)
         self.vision = VisionVerifierAgent(config)
@@ -70,6 +71,8 @@ class InteractiveHarnessSession:
 
         self._emit("planner", "Planning structured IR")
         planned_ir = self.planner.plan(prompt, include_animation=self.include_animation)
+        self.store.write_json("ir_planned.json", planned_ir.to_dict())
+        planned_ir = self._resolve_material_textures(planned_ir)
         self.store.write_json("ir.json", planned_ir.to_dict())
         self._emit("planner", f"Planned {len(planned_ir.scene.objects)} objects")
 
@@ -90,6 +93,7 @@ class InteractiveHarnessSession:
         self.turn_index = 0
         self._last_executed_code = None
         self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
+        ir = self._resolve_material_textures(ir)
         self.store.write_json("ir.json", ir.to_dict())
         if self.include_animation and ir.animation:
             self._run_two_stage_animation_start(ir)
@@ -136,6 +140,7 @@ class InteractiveHarnessSession:
 
         self._emit("planner", "Revising IR from user request")
         self.ir = self.planner.revise(self.ir, request, include_animation=self.include_animation)
+        self.ir = self._resolve_material_textures(self.ir)
         self.store.write_json(f"turns/turn_{self.turn_index:03d}_ir.json", self.ir.to_dict())
 
         self._emit("scene", "Reading current Blender scene graph")
@@ -153,6 +158,26 @@ class InteractiveHarnessSession:
 
         self._execute_validate_refine(reason=f"user_turn_{self.turn_index:03d}")
         return self.store.root
+
+    def _resolve_material_textures(self, ir: GenerationIR) -> GenerationIR:
+        if not self.store:
+            return ir
+        wanted = [
+            material.id
+            for material in ir.scene.materials
+            if material.needs_texture or material.texture_query
+        ]
+        if not wanted and not self.config.texture_search_enabled:
+            return ir
+        self._emit("materials", "Resolving external material textures", material_ids=wanted)
+        resolved = self.materials.resolve(ir, self.store.root / "textures")
+        self.store.write_json("materials/texture_search_results.json", {"results": self.materials.last_results})
+        selected = [item for item in self.materials.last_results if item.get("selected")]
+        if selected:
+            self._emit("materials", f"Selected {len(selected)} vision-approved texture assets", results=selected)
+        elif self.materials.last_results:
+            self._emit("materials", "No external texture candidates passed vision approval", results=self.materials.last_results)
+        return resolved
 
     def _execute_validate_refine(self, *, reason: str) -> bool:
         if not self.store or not self.ir or self.code is None:

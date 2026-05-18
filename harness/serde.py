@@ -74,7 +74,9 @@ def _convert(expected_type: Any, value: Any) -> Any:
         return expected_type(**kwargs)
 
     try:
-        if expected_type in {str, int, float, bool}:
+        if expected_type is bool:
+            return _convert_bool(value)
+        if expected_type in {str, int, float}:
             return expected_type(value)
     except (TypeError, ValueError):
         return value
@@ -94,3 +96,16 @@ def _convert_union(args: tuple[Any, ...], value: Any) -> Any:
     if errors:
         raise errors[0]
     return value
+
+
+def _convert_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "none", "null", ""}:
+        return False
+    return bool(value)

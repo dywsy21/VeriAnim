@@ -8,10 +8,22 @@ import re
 from typing import Any
 
 from .config import HarnessConfig
-from .ir import AnimationAction, GenerationIR, RelationType, RenderSpec, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
+from .ir import (
+    AnimationAction,
+    GenerationIR,
+    RelationType,
+    RenderSpec,
+    Severity,
+    TextureSourceSpec,
+    ValidationIssue,
+    ValidationReport,
+    VerificationMode,
+    report_to_json,
+)
 from .llm import LLMClient, extract_code_block
 from .rag import LocalRAG
 from .serde import from_dict
+from .textures import FREE_STOCK_TEXTURES_LICENSE, FreeStockTexturesClient, TextureCandidate
 
 
 class PlannerAgent:
@@ -29,6 +41,7 @@ class PlannerAgent:
             "Use stable machine ids. Include screenshot views for visual validation. "
             "Keep the IR concise and executable: use at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
             "Prefer compact descriptions and omit optional features that are not needed for verification. "
+            "For each MaterialSpec decide whether an external image texture is needed. Set needs_texture=true and texture_query for natural, patterned, grainy, irregular, or surface-specific materials such as wood grain, stone, concrete, rusted metal, bark, fabric, leather, brick, grass, tabletop planks, and walls. Set needs_texture=false for intentionally plain or solid surfaces such as a pure-color mug, simple plastic toy, flat painted part, signal light, or clean ceramic. "
             "Plan at least three complementary screenshot views: an overall three-quarter view, a relation/contact close-up, and a side or top view that exposes support/contact. "
             "Add visual pass criteria that require no floating, detached, or misaligned parts unless explicitly requested. "
             "When animation is requested, include AnimationSpec and video verifier settings. "
@@ -66,6 +79,7 @@ Use Blender's Z-up coordinate system and meters.
             "Return only the complete revised GenerationIR JSON. Preserve stable ids where possible. "
             "Add new ids only for new objects, relations, cameras, screenshots, or animation events. "
             "Keep the revised IR concise and executable: at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
+            "For each MaterialSpec decide whether an external image texture is needed. Use needs_texture=true and texture_query only for natural, patterned, grainy, irregular, or surface-specific materials; keep needs_texture=false for intentionally plain or solid-color surfaces. "
             "Animation events must stay structurally verifiable: include required start/end transforms, at least one intermediate keyframe or path point, sampled start/middle/end frames, temporal questions, and pass criteria. "
             "For signal or material color changes, use separate colored visible parts and explicit appear/disappear visibility keyframes. "
             "For pick, grasp, carry, lift, or place animations, keep an explicit gripper/end-effector object id in target_ids for package motion events. "
@@ -133,6 +147,136 @@ notes, duplicate questions, and redundant pass criteria.
         raise ValueError(f"Planner produced invalid IR after retry:\n{last_error}")
 
 
+class MaterialAgent:
+    """Resolve planner-requested external textures before code generation."""
+
+    def __init__(self, config: HarnessConfig):
+        self.config = config
+        self.llm = LLMClient(config.vision)
+        self.client = FreeStockTexturesClient(timeout_seconds=config.texture_search_timeout_seconds)
+        self.last_results: list[dict[str, Any]] = []
+
+    def resolve(self, ir: GenerationIR, output_dir: Path) -> GenerationIR:
+        self.last_results = []
+        output_dir = output_dir.resolve()
+        if not self.config.texture_search_enabled:
+            return ir
+        for material in ir.scene.materials:
+            if material.texture_source and material.texture_source.local_path:
+                material.texture_source.local_path = _absolute_existing_path(material.texture_source.local_path)
+                continue
+            if not _material_should_search_texture(material):
+                continue
+            query = _material_texture_query(material)
+            material.texture_query = material.texture_query or query
+            try:
+                candidates = self.client.search(query, limit=self.config.texture_search_candidate_limit)
+                downloaded: list[TextureCandidate] = []
+                material_dir = output_dir / _safe_path_token(material.id)
+                for candidate in candidates:
+                    try:
+                        downloaded.append(self.client.download_candidate(candidate, material_dir))
+                    except Exception:
+                        continue
+                selected = self._select_with_vision(ir, material.id, query, downloaded)
+                if selected:
+                    material.texture_source = TextureSourceSpec(
+                        source="freestocktextures",
+                        title=selected["candidate"].title,
+                        page_url=selected["candidate"].page_url,
+                        image_url=selected["candidate"].image_url,
+                        download_url=selected["candidate"].download_url,
+                        local_path=str(selected["candidate"].local_path.resolve()) if selected["candidate"].local_path else None,
+                        license=FREE_STOCK_TEXTURES_LICENSE,
+                        tags=selected["candidate"].tags,
+                        approved_by_vision=True,
+                        vision_summary=selected["summary"],
+                    )
+                    self.last_results.append(
+                        {
+                            "material_id": material.id,
+                            "query": query,
+                            "selected": material.texture_source.title,
+                            "local_path": material.texture_source.local_path,
+                            "summary": selected["summary"],
+                        }
+                    )
+                else:
+                    _mark_texture_unavailable(material, query, "No candidate passed vision suitability check.")
+                    self.last_results.append(
+                        {
+                            "material_id": material.id,
+                            "query": query,
+                            "selected": None,
+                            "summary": "No candidate passed vision suitability check.",
+                        }
+                    )
+            except Exception as exc:
+                _mark_texture_unavailable(material, query, f"Texture search failed: {exc}")
+                self.last_results.append(
+                    {
+                        "material_id": material.id,
+                        "query": query,
+                        "selected": None,
+                        "summary": f"Texture search failed: {exc}",
+                    }
+                )
+        return ir
+
+    def _select_with_vision(
+        self,
+        ir: GenerationIR,
+        material_id: str,
+        query: str,
+        candidates: list[TextureCandidate],
+    ) -> dict[str, Any] | None:
+        image_paths = [candidate.local_path for candidate in candidates if candidate.local_path]
+        if not image_paths or not self.llm.config.supports_images:
+            return None
+        manifest = [
+            candidate.to_manifest(index + 1)
+            for index, candidate in enumerate(candidates)
+            if candidate.local_path
+        ]
+        object_ids = [
+            obj.id
+            for obj in ir.scene.objects
+            if material_id in obj.material_ids or any(part.material_id == material_id for part in obj.parts)
+        ]
+        system = (
+            "You are a strict visual texture selector for a Blender scene-generation pipeline. "
+            "Pick a texture only if the image itself is a suitable surface material for the requested material. "
+            "Reject images dominated by objects, people, text, logos, screenshots, strong perspective scenery, or a mismatch with the requested surface. "
+            "Return only JSON with keys: passed, selected_index, summary, concerns."
+        )
+        user = f"""
+Material id: {material_id}
+Texture search query: {query}
+Intended scene objects using this material: {object_ids}
+
+Candidate manifest, in the same order as the attached images:
+{json.dumps(manifest, indent=2)}
+
+Choose the best candidate for use as an image texture in Blender. The texture does not have to be perfectly seamless, but it should visibly represent the requested material and work on object surfaces. Set passed=false if none are appropriate.
+"""
+        try:
+            data = self.llm.json_multimodal(system, user, image_paths)
+        except Exception:
+            return None
+        if not data.get("passed"):
+            return None
+        try:
+            selected_index = int(data.get("selected_index", 0))
+        except (TypeError, ValueError):
+            return None
+        if selected_index < 1 or selected_index > len(candidates):
+            return None
+        candidate = candidates[selected_index - 1]
+        if not candidate.local_path:
+            return None
+        return {"candidate": candidate, "summary": str(data.get("summary") or "Vision approved texture candidate.")}
+
+
 class CoderAgent:
     def __init__(self, config: HarnessConfig, rag: LocalRAG):
         self.llm = LLMClient(config.coder)
@@ -148,6 +292,8 @@ class CoderAgent:
             "Use data API where possible, stable ll3m custom properties, modular factory functions, and explicit collections. "
             "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
             "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
+            "When MaterialSpec.texture_source has approved_by_vision=true and local_path is present, load that absolute image path with bpy.data.images.load and wire it into the material shader as an image texture, keeping base_color as a fallback/tint. "
+            "If texture_source is absent, approved_by_vision is false, or local_path is empty, do not create an image texture node for that material; use the base_color, roughness, metallic, and simple procedural shader settings only. "
             "For Blender 4.5, prefer BLENDER_EEVEE_NEXT or WORKBENCH after checking available render engine enum values from scene.render.bl_rna.properties['engine']; never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
@@ -178,6 +324,9 @@ Script requirements:
 - Create every MaterialSpec using a Blender material name equal to MaterialSpec.id and set material['ll3m_id'] to that same id.
 - Keep object names stable and human-readable.
 - Create robust materials by setting mat.diffuse_color and locating shader nodes by node.type, not localized node names.
+- For each MaterialSpec with texture_source.approved_by_vision=true and texture_source.local_path, treat local_path as an absolute path and load it with bpy.data.images.load. Set image colorspace to sRGB when available, add ShaderNodeTexImage, and connect Color to the Principled Base Color.
+- Make the image texture visibly map onto generated geometry: either create a UV map for mesh surfaces or connect Texture Coordinate Generated/Object output through Mapping into the image texture. Do not connect UV coordinates on a mesh that has no UV map.
+- If texture_source.approved_by_vision is false or no local_path is present, skip image texture nodes for that material and create a clean non-image material from base_color and shader parameters.
 - Set bpy.context.scene.camera to the main generated camera.
 - Set render engines defensively by checking scene.render.bl_rna.properties['engine'].enum_items; Blender 4.5 uses BLENDER_EEVEE_NEXT rather than legacy BLENDER_EEVEE. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
 - Set frame_start/frame_end/fps if animation exists.
@@ -229,6 +378,7 @@ class RefinerAgent:
             "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
+            "If a material has a vision-approved texture_source.local_path in the IR, preserve or add the image texture node so the downloaded surface remains visible. "
             "Keep the script concise and complete. Remove long comments, scratch reasoning, and abandoned implementation notes. "
             "Return only the full corrected Python script."
         )
@@ -556,6 +706,9 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
                     "roughness": material.roughness,
                     "alpha": material.alpha,
                     "texture_hints": material.texture_hints,
+                    "needs_texture": material.needs_texture,
+                    "texture_query": material.texture_query,
+                    "texture_source": _texture_source(material.texture_source),
                 }
                 for material in scene.materials
             ],
@@ -687,6 +840,25 @@ def _transform(value: Any) -> dict[str, Any] | None:
     )
 
 
+def _texture_source(value: TextureSourceSpec | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return _drop_none(
+        {
+            "source": value.source,
+            "title": value.title,
+            "page_url": value.page_url,
+            "image_url": value.image_url,
+            "download_url": value.download_url,
+            "local_path": value.local_path,
+            "license": value.license,
+            "tags": value.tags,
+            "approved_by_vision": value.approved_by_vision,
+            "vision_summary": value.vision_summary,
+        }
+    )
+
+
 def _drop_none(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _drop_none(item) for key, item in value.items() if item is not None}
@@ -697,6 +869,83 @@ def _drop_none(value: Any) -> Any:
 
 def _value(value: Any) -> Any:
     return getattr(value, "value", value)
+
+
+def _material_should_search_texture(material: Any) -> bool:
+    if getattr(material, "texture_source", None):
+        return False
+    if getattr(material, "needs_texture", False):
+        return True
+    if getattr(material, "texture_query", None):
+        return True
+    text = " ".join(
+        [
+            str(getattr(material, "id", "")),
+            str(getattr(material, "description", "")),
+            " ".join(getattr(material, "texture_hints", []) or []),
+        ]
+    ).lower()
+    if any(token in text for token in ("plain", "solid color", "pure color", "flat color", "smooth ceramic", "glossy ceramic")):
+        return False
+    natural_or_patterned = {
+        "bark",
+        "brick",
+        "concrete",
+        "fabric",
+        "grain",
+        "grass",
+        "grunge",
+        "leather",
+        "marble",
+        "plank",
+        "rust",
+        "stone",
+        "tabletop",
+        "wall",
+        "wood",
+        "wooden",
+        "woven",
+    }
+    return any(re.search(rf"\b{re.escape(token)}\b", text) for token in natural_or_patterned)
+
+
+def _material_texture_query(material: Any) -> str:
+    if getattr(material, "texture_query", None):
+        return str(material.texture_query)
+    hints = getattr(material, "texture_hints", []) or []
+    if hints:
+        return " ".join(str(item) for item in hints[:4])
+    return str(getattr(material, "description", "") or getattr(material, "id", "") or "material texture")
+
+
+def _mark_texture_unavailable(material: Any, query: str, summary: str) -> None:
+    material.needs_texture = False
+    material.texture_query = query
+    material.texture_source = TextureSourceSpec(
+        source="freestocktextures",
+        title=None,
+        page_url=None,
+        image_url=None,
+        download_url=None,
+        local_path=None,
+        license=FREE_STOCK_TEXTURES_LICENSE,
+        tags=[],
+        approved_by_vision=False,
+        vision_summary=f"{summary} Falling back to non-image material from base_color and shader parameters.",
+    )
+
+
+def _safe_path_token(value: str) -> str:
+    token = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value).strip("._")
+    return token or "material"
+
+
+def _absolute_existing_path(value: str) -> str:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return str(path)
+    resolved = path.resolve()
+    return str(resolved) if resolved.exists() else value
 
 
 def _issue_query(reports: list[ValidationReport], execution_error: str | None) -> str:
@@ -770,6 +1019,32 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
             continue
         raw = str(relation.get("relation_type", "near")).strip().lower().replace("-", "_").replace(" ", "_")
         relation["relation_type"] = relation_aliases.get(raw, raw if raw in valid_relations else "near")
+    for material in scene.get("materials", []) or []:
+        if not isinstance(material, dict):
+            continue
+        if "needs_texture" in material:
+            material["needs_texture"] = _coerce_bool(material.get("needs_texture"))
+        elif material.get("texture_query"):
+            material["needs_texture"] = True
+        if material.get("needs_texture") and not material.get("texture_query"):
+            hints = material.get("texture_hints") or []
+            if isinstance(hints, list) and hints:
+                material["texture_query"] = " ".join(str(item) for item in hints[:4])
+            else:
+                material["texture_query"] = str(material.get("description") or material.get("id") or "material texture")
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "y", "on", "needed", "required"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "none", "null", "not_needed"}:
+        return False
+    return bool(value)
 
 
 def _promote_animation_end_effectors(data: dict[str, Any]) -> None:
@@ -1350,7 +1625,9 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "id": "material_id",
         "description": "material description",
         "base_color": [0.5, 0.5, 0.5, 1.0],
-        "texture_hints": []
+        "texture_hints": [],
+        "needs_texture": false,
+        "texture_query": null
       }}
     ],
     "environment": {{
