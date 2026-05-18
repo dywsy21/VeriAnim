@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from .config import HarnessConfig
-from .ir import AnimationAction, GenerationIR, RelationType, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
+from .ir import AnimationAction, GenerationIR, RelationType, RenderSpec, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_json
 from .llm import LLMClient, extract_code_block
 from .rag import LocalRAG
 from .serde import from_dict
@@ -605,6 +605,8 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
         "notes": ir.notes,
     }
     if ir.animation:
+        render = ir.animation.render or RenderSpec()
+        verifier = ir.animation.verifier
         data["animation"] = {
             "duration_frames": ir.animation.duration_frames,
             "fps": ir.animation.fps,
@@ -612,12 +614,12 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
             "events": [_compact_animation_event(event) for event in ir.animation.events],
             "camera_events": [_compact_animation_event(event) for event in ir.animation.camera_events],
             "render": {
-                "resolution": ir.animation.render.resolution,
-                "engine": _value(ir.animation.render.engine),
+                "resolution": render.resolution,
+                "engine": _value(render.engine),
             },
             "verifier": {
-                "sampled_frames": ir.animation.verifier.sampled_frames,
-                "pass_criteria": ir.animation.verifier.pass_criteria,
+                "sampled_frames": verifier.sampled_frames if verifier else [],
+                "pass_criteria": verifier.pass_criteria if verifier else [],
             },
         }
     return _drop_none(data)
