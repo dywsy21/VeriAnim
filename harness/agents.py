@@ -48,6 +48,7 @@ class PlannerAgent:
             "Animation events must be structurally verifiable: use translate, rotate, scale, follow_path, appear, disappear, camera_move, or camera_orbit; include start_transform, at least one intermediate path.keyframe or path point, end_transform, sampled frames covering start/middle/end, temporal questions, and pass criteria. "
             "For signal or material color changes, do not use one vague color-change event. Model separate colored visible parts such as red_light and green_light, then use disappear/appear events with explicit path.keyframes value.visible or value.alpha. "
             "For pick, grasp, carry, lift, or place animations, model the gripper/end-effector as its own ObjectSpec when possible, and put that object id in target_ids for the package lift/transfer events so contact continuity can be verified. "
+            "For slanted ramps, inclined planes, hinges, brackets, and structural supports, use attached_to or touching relations rather than on_top_of unless the surfaces are horizontal and directly stacked. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
@@ -1022,6 +1023,14 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
             continue
         raw = str(relation.get("relation_type", "near")).strip().lower().replace("-", "_").replace(" ", "_")
         relation["relation_type"] = relation_aliases.get(raw, raw if raw in valid_relations else "near")
+        relation_text = " ".join(
+            str(relation.get(key, ""))
+            for key in ("id", "description", "subject_id", "object_id")
+        ).lower()
+        if relation["relation_type"] == "on_top_of" and "ramp" in relation_text and any(
+            token in relation_text for token in ("leg", "support", "bracket", "incline", "slanted")
+        ):
+            relation["relation_type"] = "attached_to"
     _normalize_view_type_fields(scene)
     for material in scene.get("materials", []) or []:
         if not isinstance(material, dict):
