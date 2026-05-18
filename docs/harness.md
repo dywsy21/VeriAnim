@@ -76,6 +76,15 @@ Leave these empty when the global provider environment variables are sufficient.
 Set them when, for example, coder uses OpenAI, vision uses an OpenRouter VLM, and
 video uses a DashScope/Qwen Omni endpoint.
 
+External texture search is controlled by:
+
+- `LL3M_TEXTURE_SEARCH_ENABLED` (default `true`)
+- `LL3M_TEXTURE_SEARCH_CANDIDATE_LIMIT` (default `4`)
+- `LL3M_TEXTURE_SEARCH_TIMEOUT_SECONDS` (default `20`)
+
+The texture selector reuses the configured VISION model, so
+`LL3M_VISION_SUPPORTS_IMAGES` must remain enabled for automatic texture approval.
+
 The default video model hint is `dashscope/qwen-omni-turbo`. Replace it with the
 LiteLLM model name that matches your deployed Qwen Omni or other video-capable
 endpoint.
@@ -105,16 +114,25 @@ provider capability/configuration problems are visible in the run.
    - Converts prompt into `GenerationIR`.
    - Includes screenshot and video verification plans.
 
-2. `CoderAgent`
+2. `MaterialAgent`
+   - Runs after planning and before coding.
+   - Uses planner-provided `MaterialSpec.needs_texture` and `texture_query`
+     values to search FreeStockTextures public pages for external image
+     textures when a material benefits from natural grain or surface detail.
+   - Downloads a small candidate set, asks the configured VISION model to
+     approve suitability, and writes only approved `texture_source` assets back
+     into the IR. Plain materials such as a solid-color mug remain procedural.
+
+3. `CoderAgent`
    - Uses RAG notes from `docs/rag`.
    - Generates one Blender 4.5.4 Python script.
 
-3. `BlenderRuntime`
+4. `BlenderRuntime`
    - Executes generated code through the existing Blender addon socket server.
    - Runs deterministic validation inside Blender.
    - Renders screenshot views and animation sampled frames.
 
-4. `VisionVerifierAgent`
+5. `VisionVerifierAgent`
    - Sends labeled screenshots to a multimodal model through LiteLLM.
    - Produces `ValidationReport`.
    - Acts as a blocking gate in the refinement loop. If it reports visual
@@ -122,12 +140,12 @@ provider capability/configuration problems are visible in the run.
      camera coverage, or semantic mismatch, the script is refined and the scene
      is rendered again.
 
-5. `VideoVerifierAgent`
+6. `VideoVerifierAgent`
    - Sends ordered sampled frames plus video metadata to a temporal/multimodal
      model through LiteLLM.
    - Produces `ValidationReport`.
 
-6. `RefinerAgent`
+7. `RefinerAgent`
    - Repairs the Blender Python script from execution errors and validation
      reports.
 

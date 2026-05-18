@@ -93,6 +93,9 @@ class HarnessConfig:
     render_width: int
     render_height: int
     render_gif_each_round: bool
+    texture_search_enabled: bool
+    texture_search_candidate_limit: int
+    texture_search_timeout_seconds: int
     tui_initial_animation: bool
     tui_skip_vision: bool
     tui_skip_video: bool
@@ -124,6 +127,9 @@ class HarnessConfig:
             render_width=_env_int("LL3M_RENDER_WIDTH", 1280),
             render_height=_env_int("LL3M_RENDER_HEIGHT", 720),
             render_gif_each_round=_env_bool("LL3M_RENDER_GIF_EACH_ROUND", True),
+            texture_search_enabled=_env_bool("LL3M_TEXTURE_SEARCH_ENABLED", True),
+            texture_search_candidate_limit=max(1, _env_int("LL3M_TEXTURE_SEARCH_CANDIDATE_LIMIT", 4)),
+            texture_search_timeout_seconds=max(3, _env_int("LL3M_TEXTURE_SEARCH_TIMEOUT_SECONDS", 20)),
             tui_initial_animation=_env_bool("LL3M_TUI_INITIAL_ANIMATION", False),
             tui_skip_vision=_env_bool("LL3M_TUI_SKIP_VISION", False),
             tui_skip_video=_env_bool("LL3M_TUI_SKIP_VIDEO", False),
