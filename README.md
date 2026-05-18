@@ -8,8 +8,9 @@ on top of the original LL3M client. New functionality includes:
 - Verifier-gated refinement loops: scene generation keeps refining until every
   enabled deterministic and visual verifier passes, and animation generation can
   be gated by sampled-frame/video verification.
-- A structured scene/animation IR for object decomposition, spatial relations,
-  screenshot plans, and animation events.
+- A structured scene/animation IR v0.2 for object decomposition, spatial
+  relations, relation verification methods, screenshot plans, material texture
+  policy, and animation visibility requirements.
 - Blender 4.5.4 LTS oriented API/RAG notes and an expanded Blender addon with
   structured scene inspection, validation, screenshot rendering, and animation
   sampling commands.

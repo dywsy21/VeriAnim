@@ -387,6 +387,9 @@ def _view_dicts(ir: GenerationIR) -> list[dict[str, Any]]:
             "frame": view.frame,
             "crop_hint": view.crop_hint,
             "required": view.required,
+            "min_subject_pixel_fraction": view.min_subject_pixel_fraction,
+            "must_show_full_targets": view.must_show_full_targets,
+            "purpose": view.purpose,
         }
         for view in views
     ]
@@ -573,6 +576,20 @@ def aggregate_minmax(objs):
 def center(mm):
     return (mm[0] + mm[1]) * 0.5
 
+def aabb_axis_gap(a, b, axis):
+    index = {{"x": 0, "y": 1, "z": 2}}[axis]
+    if a[1][index] < b[0][index]:
+        return b[0][index] - a[1][index]
+    if b[1][index] < a[0][index]:
+        return a[0][index] - b[1][index]
+    return 0.0
+
+def aabb_distance(a, b):
+    dx = aabb_axis_gap(a, b, "x")
+    dy = aabb_axis_gap(a, b, "y")
+    dz = aabb_axis_gap(a, b, "z")
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
 objects = {{}}
 material_specs = {{item.get("id"): item for item in IR["scene"].get("materials", []) if item.get("id")}}
 
@@ -655,6 +672,20 @@ for relation in IR["scene"].get("relations", []):
     oc = center(ob)
     tol = float(relation.get("tolerance", 0.05))
     rtype = relation["relation_type"]
+    method = relation.get("verification_method") or "auto"
+    if method == "visual_only":
+        continue
+    if method == "distance":
+        max_dist = relation.get("max_distance") or 2.0
+        dist = (sc - oc).length
+        if dist > max_dist:
+            issue("RELATION_DISTANCE_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist}})
+        continue
+    if method == "attachment" or rtype in {{"attached_to", "touching"}}:
+        dist = aabb_distance(sb, ob)
+        if dist > max(tol, 0.18):
+            issue("RELATION_ATTACHMENT_FAILED", f"'{{sid}}' is not visibly attached to or touching '{{oid}}'.", "major", sid, relation["id"], {{"bbox_distance": dist}})
+        continue
     if rtype == "on_top_of":
         overlap_x = min(sb[1].x, ob[1].x) - max(sb[0].x, ob[0].x)
         overlap_y = min(sb[1].y, ob[1].y) - max(sb[0].y, ob[0].y)

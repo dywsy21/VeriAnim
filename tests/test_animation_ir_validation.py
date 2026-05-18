@@ -57,6 +57,31 @@ class AnimationIRValidationTest(unittest.TestCase):
         self.assertIn("UNKNOWN_CAMERA_ANIMATION_SUBJECT", codes)
         self.assertIn("MISSING_CAMERA_ORBIT_TARGET", codes)
 
+    def test_texture_policy_conflict_is_invalid(self) -> None:
+        data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
+        material = data["scene"]["materials"][0]
+        material["texture_policy"] = "solid_only"
+        material["needs_texture"] = True
+        material["texture_query"] = "wood grain"
+
+        report = from_dict(GenerationIR, data).validate()
+        codes = {issue.code for issue in report.issues}
+
+        self.assertFalse(report.passed)
+        self.assertIn("TEXTURE_POLICY_CONFLICT", codes)
+
+    def test_relation_verification_method_mismatch_is_invalid(self) -> None:
+        data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
+        relation = data["scene"]["relations"][0]
+        relation["relation_type"] = "left_of"
+        relation["verification_method"] = "bbox_contact"
+
+        report = from_dict(GenerationIR, data).validate()
+        codes = {issue.code for issue in report.issues}
+
+        self.assertFalse(report.passed)
+        self.assertIn("RELATION_METHOD_MISMATCH", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

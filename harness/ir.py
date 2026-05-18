@@ -18,7 +18,7 @@ Vec2 = tuple[float, float]
 Vec3 = tuple[float, float, float]
 RGBA = tuple[float, float, float, float]
 
-IR_VERSION = "0.1"
+IR_VERSION = "0.2"
 
 
 class Severity(str, Enum):
@@ -74,6 +74,22 @@ class RelationType(str, Enum):
     NOT_INTERSECTING = "not_intersecting"
     ATTACHED_TO = "attached_to"
     SAME_HEIGHT_AS = "same_height_as"
+
+
+class RelationVerificationMethod(str, Enum):
+    AUTO = "auto"
+    BBOX_CONTACT = "bbox_contact"
+    BBOX_ORDER = "bbox_order"
+    DISTANCE = "distance"
+    ATTACHMENT = "attachment"
+    VISUAL_ONLY = "visual_only"
+
+
+class TexturePolicy(str, Enum):
+    AUTO = "auto"
+    REQUIRED = "required"
+    FORBIDDEN = "forbidden"
+    SOLID_ONLY = "solid_only"
 
 
 class EnvironmentType(str, Enum):
@@ -237,6 +253,7 @@ class MaterialSpec:
     roughness: float | None = None
     alpha: float | None = None
     texture_hints: list[str] = field(default_factory=list)
+    texture_policy: TexturePolicy = TexturePolicy.AUTO
     needs_texture: bool = False
     texture_query: str | None = None
     texture_source: TextureSourceSpec | None = None
@@ -292,6 +309,9 @@ class SpatialRelationSpec:
     max_distance: float | None = None
     offset: Vec3 | None = None
     axis: str | None = None
+    verification_method: RelationVerificationMethod = RelationVerificationMethod.AUTO
+    contact_points: list[Vec3] = field(default_factory=list)
+    expected_clearance: float | None = None
     visual_priority: Importance = Importance.REQUIRED
 
 
@@ -331,6 +351,8 @@ class CameraSpec:
     focal_length_mm: float | None = None
     coverage: str | None = None
     frame_range: tuple[int, int] | None = None
+    min_subject_pixel_fraction: float | None = None
+    allow_subject_crop: bool = False
 
 
 @dataclass(slots=True)
@@ -353,6 +375,9 @@ class ScreenshotViewSpec:
     frame: int | None = None
     crop_hint: str | None = None
     required: bool = True
+    min_subject_pixel_fraction: float | None = None
+    must_show_full_targets: bool = False
+    purpose: str | None = None
 
 
 @dataclass(slots=True)
@@ -390,6 +415,9 @@ class VideoVerifierSpec:
     questions: list[str] = field(default_factory=list)
     pass_criteria: list[str] = field(default_factory=list)
     max_rounds: int = 6
+    require_subject_visibility: bool = True
+    require_final_state_visibility: bool = True
+    min_subject_pixel_fraction: float | None = None
 
 
 @dataclass(slots=True)
@@ -432,6 +460,7 @@ class AnimationEventSpec:
     interpolation: Interpolation = Interpolation.EASE_IN_OUT
     required: bool = True
     expected_visual_result: str | None = None
+    visibility_requirements: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
 
 
@@ -576,6 +605,28 @@ class GenerationIR:
                         )
                     )
 
+        for material in self.scene.materials:
+            if material.texture_policy in {TexturePolicy.FORBIDDEN, TexturePolicy.SOLID_ONLY} and (
+                material.needs_texture or material.texture_query or material.texture_source
+            ):
+                issues.append(
+                    ValidationIssue(
+                        code="TEXTURE_POLICY_CONFLICT",
+                        message=f"Material '{material.id}' forbids image textures but requests one.",
+                        severity=Severity.MAJOR,
+                        target_id=material.id,
+                    )
+                )
+            if material.texture_policy == TexturePolicy.REQUIRED and not (material.needs_texture or material.texture_query or material.texture_source):
+                issues.append(
+                    ValidationIssue(
+                        code="TEXTURE_POLICY_REQUIRES_TEXTURE",
+                        message=f"Material '{material.id}' requires an image texture but has no texture query or source.",
+                        severity=Severity.MAJOR,
+                        target_id=material.id,
+                    )
+                )
+
         for relation in self.scene.relations:
             if relation.subject_id not in object_id_set:
                 issues.append(
@@ -583,6 +634,19 @@ class GenerationIR:
                         code="UNKNOWN_RELATION_SUBJECT",
                         message=f"Relation '{relation.id}' references unknown subject '{relation.subject_id}'.",
                         severity=Severity.CRITICAL,
+                        relation_id=relation.id,
+                    )
+                )
+            if relation.verification_method == RelationVerificationMethod.BBOX_CONTACT and relation.relation_type not in {
+                RelationType.ON_TOP_OF,
+                RelationType.TOUCHING,
+                RelationType.ATTACHED_TO,
+            }:
+                issues.append(
+                    ValidationIssue(
+                        code="RELATION_METHOD_MISMATCH",
+                        message=f"Relation '{relation.id}' uses bbox_contact for non-contact relation '{relation.relation_type.value}'.",
+                        severity=Severity.MINOR,
                         relation_id=relation.id,
                     )
                 )
@@ -795,7 +859,6 @@ def _validate_animation_event(
                 frame=event.start_frame,
             )
         )
-
     if event.start_frame < 1 or event.end_frame <= event.start_frame:
         issues.append(
             ValidationIssue(

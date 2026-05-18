@@ -18,6 +18,49 @@ The IR must make generation inspectable and repairable.
   issues against the same ids.
 - It keeps animation events modular so failures can be repaired locally.
 
+## Component Design Audit
+
+The IR is split by responsibility rather than by prompt phrasing:
+
+- `SourcePrompt` preserves user intent and hard constraints. It should not be
+  used as the executable plan because motion language can leak into static
+  scene generation.
+- `SceneSpec` is the static contract. It owns objects, materials, environment,
+  cameras, and spatial relations so the harness can validate the scene before
+  adding animation.
+- `ObjectSpec` and `ObjectPartSpec` make entities addressable. The recent
+  gripper and windmill tests show why parts that need independent motion or
+  verification should be promoted to root objects; parts are descriptive, root
+  objects are controllable.
+- `MaterialSpec` is intentionally separate from objects so texture resolution
+  can happen before code generation. `texture_policy` is now explicit because
+  "solid color" and "no image textures" are user constraints, not model
+  preferences.
+- `SpatialRelationSpec` is a semantic relation plus a verification strategy.
+  This avoids forcing every relation through one bbox rule; horizontal support,
+  hinge attachment, slanted ramp support, inside/contains, and visual-only
+  occluded contacts need different checks.
+- `EnvironmentSpec`, `CameraSpec`, and `ScreenshotPlan` are first-class because
+  visual verification is only as good as the rendered evidence. Lighting,
+  framing, relation close-ups, and target size are not cosmetic; they determine
+  whether the verifier can make a grounded judgment.
+- `VerificationPlan` keeps deterministic, visual, and video gates explicit.
+  Deterministic checks catch measurable failures; visual/video checks catch
+  semantic layout, occlusion, lighting, and temporal visibility failures.
+- `AnimationSpec` extends a validated `SceneSpec`. It should never replace the
+  scene plan. Its events reference stable scene ids and encode start, middle,
+  end, expected visual result, and visibility requirements so animation repair
+  can be local.
+- `PipelineStageSpec` records the progressive contract: static scene first,
+  animation extension second. This is the architectural guardrail that prevents
+  the static stage from inserting keyframes or the animation stage from
+  rebuilding the whole scene.
+
+The main boundary exposed by recent tests is that LLMs often generate plausible
+natural-language plans with underspecified verification semantics. IR v0.2
+therefore adds explicit texture policy, relation verification method, camera
+framing requirements, screenshot purpose, and video visibility requirements.
+
 ## Top-Level Object
 
 `GenerationIR` is the top-level object.
@@ -33,7 +76,7 @@ Optional:
   generation.
 - `project_id`: caller-provided id for logging and artifacts.
 - `notes`: free-form planner notes.
-- `version`: IR version. Current version is `0.1`.
+- `version`: IR version. Current version is `0.2`.
 - `stages`: progressive generation plan. For animation tasks this should be
   `static_scene` followed by `animation_extension`.
 
@@ -124,6 +167,11 @@ into `scene` and `animation`.
 - `base_color`: RGBA tuple.
 - `metallic`, `roughness`, `alpha`: Blender-style material hints.
 - `texture_hints`: natural language texture hints.
+- `texture_policy`: `auto`, `required`, `forbidden`, or `solid_only`.
+  This is the high-level policy; `needs_texture` is the operational decision.
+  Use `solid_only` for plain procedural colors and `forbidden` when the user
+  explicitly disallows external image textures. Use `required` only when an
+  image texture or provided `texture_source` is essential to the prompt.
 - `needs_texture`: planner decision for whether the harness should search for
   an external image texture before code generation. Use this for natural,
   patterned, grainy, or irregular surfaces such as wood, stone, concrete,
@@ -178,11 +226,27 @@ procedural material internals, but should keep these ids stable.
 - `min_distance`, `max_distance`: distance bounds where applicable.
 - `offset`: expected relative offset.
 - `axis`: optional relation axis, usually `x`, `y`, or `z`.
+- `verification_method`: deterministic validation strategy. Use `auto` for the
+  default relation check, `bbox_contact` for horizontal support/contact,
+  `bbox_order` for axis ordering, `distance` for near/far, `attachment` for
+  hinges/connectors/brackets/supports, and `visual_only` when non-axis-aligned
+  or occluded geometry should be judged from screenshots instead of bbox
+  support math.
+- `contact_points`: optional approximate contact points for future
+  geometry-aware checks.
+- `expected_clearance`: expected gap or clearance, normally `0.0` for contact.
 - `visual_priority`: whether the relation must be obvious in screenshots.
 
 Deterministic verification should measure these with Blender world-space
 bounding boxes. Vision verification should judge whether the relation is visible
 and semantically clear.
+
+Recent medium-animation tests exposed the main relation-design risk: a single
+semantic enum is not enough to choose a reliable deterministic check. A slanted
+ramp supported by legs is structurally attached/touching, not a horizontal
+`on_top_of` stack. The planner should therefore specify both `relation_type`
+and `verification_method`, and the screenshot plan should include views that
+make visually checked relations inspectable.
 
 ## Environment
 
@@ -214,6 +278,10 @@ and semantically clear.
 - `focal_length_mm`: focal length hint.
 - `coverage`: natural language framing requirement.
 - `frame_range`: optional animation frame range for animated camera use.
+- `min_subject_pixel_fraction`: optional lower bound for target subject size in
+  the rendered image. This prevents objects from passing while too tiny to
+  inspect.
+- `allow_subject_crop`: whether target objects may be cropped by this camera.
 
 `RenderSpec`
 
@@ -243,6 +311,10 @@ and semantically clear.
 - `frame`: optional animation frame for sampled-frame checks.
 - `crop_hint`: optional crop instruction for close-ups.
 - `required`: whether missing this view blocks verification.
+- `min_subject_pixel_fraction`: optional framing requirement for this view.
+- `must_show_full_targets`: whether target objects should be fully visible.
+- `purpose`: why the view exists, such as `overall inspection`,
+  `contact verification`, `support check`, or `animation final state`.
 
 The planner should create views deliberately. A static scene should usually have
 front, side, top, three-quarter, and relation close-up views. A visual verifier
@@ -306,6 +378,9 @@ matching object or relation ids.
 - `interpolation`: interpolation hint.
 - `required`: whether failure blocks pass.
 - `expected_visual_result`: what the video verifier should see.
+- `visibility_requirements`: per-event visibility constraints. Use this to
+  state which subjects, contact points, and final placements must remain visible
+  in the GIF/video and sampled frames.
 - `constraints`: event-specific constraints.
 
 `MotionPathSpec`
@@ -396,6 +471,13 @@ python -m harness.runner --ir examples/animation_ir/translate_ball_to_box.json -
 - `pass_criteria`: conditions for pass.
 - `max_rounds`: maximum video-refinement rounds. Default implementation
   uses 6 so temporal/video verification can drive repeated animation repairs.
+- `require_subject_visibility`: every required animated subject must be visible
+  enough to judge at relevant sampled frames.
+- `require_final_state_visibility`: final placement/contact states must be
+  visible in the GIF/video and sampled frames, not merely implied by transform
+  traces.
+- `min_subject_pixel_fraction`: optional minimum visible subject size for
+  temporal verification.
 
 The video verifier should receive both visual artifacts and deterministic
 metadata:
@@ -439,7 +521,9 @@ All verifiers should return `ValidationReport`.
 - Duplicate object ids.
 - Empty object ids.
 - Unknown material references.
+- Material texture-policy conflicts.
 - Unknown relation subjects or objects.
+- Relation verification-method mismatches.
 - Unknown camera targets.
 - Unknown screenshot targets, cameras, or relations.
 - Invalid animation duration or fps.

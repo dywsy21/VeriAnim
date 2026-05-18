@@ -12,8 +12,10 @@ from .ir import (
     AnimationAction,
     GenerationIR,
     RelationType,
+    RelationVerificationMethod,
     RenderSpec,
     Severity,
+    TexturePolicy,
     TextureSourceSpec,
     ValidationIssue,
     ValidationReport,
@@ -46,9 +48,12 @@ class PlannerAgent:
             "Add visual pass criteria that require no floating, detached, or misaligned parts unless explicitly requested. "
             "When animation is requested, include AnimationSpec and video verifier settings. "
             "Animation events must be structurally verifiable: use translate, rotate, scale, follow_path, appear, disappear, camera_move, or camera_orbit; include start_transform, at least one intermediate path.keyframe or path point, end_transform, sampled frames covering start/middle/end, temporal questions, and pass criteria. "
+            "For every required animation event, include visibility_requirements that say which subjects, contact points, and final placements must remain visible in the GIF and sampled frames. "
             "For signal or material color changes, do not use one vague color-change event. Model separate colored visible parts such as red_light and green_light, then use disappear/appear events with explicit path.keyframes value.visible or value.alpha. "
             "For pick, grasp, carry, lift, or place animations, model the gripper/end-effector as its own ObjectSpec when possible, and put that object id in target_ids for the package lift/transfer events so contact continuity can be verified. "
             "For slanted ramps, inclined planes, hinges, brackets, and structural supports, use attached_to or touching relations rather than on_top_of unless the surfaces are horizontal and directly stacked. "
+            "Set relation.verification_method explicitly when geometry needs special treatment: bbox_contact for horizontal support, attachment for hinges/connectors, distance for near/far, visual_only for slanted/occluded contacts that require screenshot judgment. "
+            "Set material.texture_policy to solid_only or forbidden when the user asks for plain/solid/no image textures; set required only when an image texture is essential. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
@@ -607,6 +612,17 @@ Original prompt:
 AnimationSpec:
 {json.dumps(ir.to_dict().get("animation", {}), indent=2)[:12000]}
 
+Video visibility requirements:
+{json.dumps({
+    "require_subject_visibility": ir.animation.verifier.require_subject_visibility,
+    "require_final_state_visibility": ir.animation.verifier.require_final_state_visibility,
+    "min_subject_pixel_fraction": ir.animation.verifier.min_subject_pixel_fraction,
+    "event_visibility_requirements": {
+        event.id: event.visibility_requirements
+        for event in [*ir.animation.events, *ir.animation.camera_events]
+    },
+}, indent=2)[:6000]}
+
         Preview GIF/video path:
 {preview_video_path or "None"}
 
@@ -698,6 +714,9 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
                     "max_distance": relation.max_distance,
                     "offset": relation.offset,
                     "axis": relation.axis,
+                    "verification_method": _value(relation.verification_method),
+                    "contact_points": relation.contact_points,
+                    "expected_clearance": relation.expected_clearance,
                 }
                 for relation in scene.relations
             ],
@@ -710,6 +729,7 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
                     "roughness": material.roughness,
                     "alpha": material.alpha,
                     "texture_hints": material.texture_hints,
+                    "texture_policy": _value(material.texture_policy),
                     "needs_texture": material.needs_texture,
                     "texture_query": material.texture_query,
                     "texture_source": _texture_source(material.texture_source),
@@ -748,6 +768,8 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
                     "target_object_ids": camera.target_object_ids,
                     "focal_length_mm": camera.focal_length_mm,
                     "coverage": camera.coverage,
+                    "min_subject_pixel_fraction": camera.min_subject_pixel_fraction,
+                    "allow_subject_crop": camera.allow_subject_crop,
                 }
                 for camera in scene.cameras
             ],
@@ -777,6 +799,9 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
             "verifier": {
                 "sampled_frames": verifier.sampled_frames if verifier else [],
                 "pass_criteria": verifier.pass_criteria if verifier else [],
+                "require_subject_visibility": verifier.require_subject_visibility if verifier else True,
+                "require_final_state_visibility": verifier.require_final_state_visibility if verifier else True,
+                "min_subject_pixel_fraction": verifier.min_subject_pixel_fraction if verifier else None,
             },
         }
     return _drop_none(data)
@@ -814,6 +839,7 @@ def _compact_animation_event(event: Any) -> dict[str, Any]:
             "interpolation": _value(event.interpolation),
             "required": event.required,
             "expected_visual_result": event.expected_visual_result,
+            "visibility_requirements": event.visibility_requirements,
             "constraints": event.constraints,
         }
     )
@@ -878,6 +904,11 @@ def _value(value: Any) -> Any:
 def _material_should_search_texture(material: Any) -> bool:
     if getattr(material, "texture_source", None):
         return False
+    policy = _value(getattr(material, "texture_policy", "auto"))
+    if policy in {"forbidden", "solid_only"}:
+        return False
+    if policy == "required":
+        return True
     if getattr(material, "needs_texture", False):
         return True
     if getattr(material, "texture_query", None):
@@ -966,6 +997,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
     scene = data.get("scene") if isinstance(data, dict) else None
     if not isinstance(scene, dict):
         return
+    data["version"] = "0.2"
     _promote_animation_end_effectors(data)
     valid_categories = {
         "generic",
@@ -1043,17 +1075,49 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
             token in relation_text for token in ("leg", "support", "bracket", "incline", "slanted")
         ):
             relation["relation_type"] = "attached_to"
+            relation["verification_method"] = "visual_only"
+        method = str(relation.get("verification_method", "auto")).strip().lower().replace("-", "_").replace(" ", "_")
+        method_aliases = {
+            "bbox": "bbox_contact",
+            "contact": "bbox_contact",
+            "geometric_contact": "bbox_contact",
+            "order": "bbox_order",
+            "spatial_order": "bbox_order",
+            "visual": "visual_only",
+            "vision": "visual_only",
+        }
+        valid_methods = {item.value for item in RelationVerificationMethod}
+        relation["verification_method"] = method_aliases.get(method, method if method in valid_methods else "auto")
     _normalize_view_type_fields(scene)
     for material in scene.get("materials", []) or []:
         if not isinstance(material, dict):
             continue
         if force_plain_materials:
+            material["texture_policy"] = "solid_only"
             material["needs_texture"] = False
             material["texture_query"] = None
+            continue
+        policy = str(material.get("texture_policy", "auto")).strip().lower().replace("-", "_").replace(" ", "_")
+        policy_aliases = {
+            "none": "forbidden",
+            "no_texture": "forbidden",
+            "no_textures": "forbidden",
+            "plain": "solid_only",
+            "solid": "solid_only",
+            "solid_color": "solid_only",
+        }
+        valid_policies = {item.value for item in TexturePolicy}
+        material["texture_policy"] = policy_aliases.get(policy, policy if policy in valid_policies else "auto")
+        if material["texture_policy"] in {"forbidden", "solid_only"}:
+            material["needs_texture"] = False
+            material["texture_query"] = None
+            material["texture_source"] = None
             continue
         if "needs_texture" in material:
             material["needs_texture"] = _coerce_bool(material.get("needs_texture"))
         elif material.get("texture_query"):
+            material["needs_texture"] = True
+        if material["texture_policy"] == "required":
             material["needs_texture"] = True
         if material.get("needs_texture") and not material.get("texture_query"):
             hints = material.get("texture_hints") or []
@@ -1247,6 +1311,11 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
                 for field_name in ("location", "rotation_euler", "scale"):
                     if field_name in transform:
                         transform[field_name] = _normalize_vec3(transform[field_name])
+        if not isinstance(event.get("visibility_requirements"), list):
+            event["visibility_requirements"] = [
+                "Animated subjects must be visible at the event start, at an intermediate sampled frame, and at the event end.",
+                "Required contact, attachment, or final placement must be visible enough for video verification.",
+            ]
 
 
 def _ensure_visibility_keyframes(event: dict[str, Any], action: str) -> None:
@@ -1481,6 +1550,8 @@ def _normalize_animation_verifier(ir: GenerationIR) -> None:
     _normalize_animation_interaction_targets(ir)
     verifier = ir.animation.verifier
     verifier.enabled = True
+    verifier.require_subject_visibility = True
+    verifier.require_final_state_visibility = True
     duration = max(1, int(ir.animation.duration_frames))
     frames = {1, duration, max(1, duration // 2)}
     for event in [*ir.animation.events, *ir.animation.camera_events]:
@@ -1499,6 +1570,7 @@ def _normalize_animation_verifier(ir: GenerationIR) -> None:
             "Sampled frames show visible temporal change for every required animation event.",
             "Animated objects remain visible and preserve required scene relationships unless the event intentionally changes them.",
             "Motion direction, timing, and final state match the AnimationSpec.",
+            "Every required animated subject remains visible enough to verify start, middle, and final states.",
         ]
 
 
@@ -1614,6 +1686,10 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "expected_visual_result": "object_id visibly moves from the start location through the midpoint to the end location",
         "constraints": [
           "Start, middle, and end states must be visible in sampled frames."
+        ],
+        "visibility_requirements": [
+          "object_id is visible at the start, midpoint, and final sampled frame.",
+          "The final placement/contact state is not cropped, hidden, or occluded."
         ]
       }
     ],
@@ -1624,6 +1700,9 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
       "model_hint": "qwen3.5-omni",
       "sampled_frames": [1, 60, 120],
       "require_preview_video": false,
+      "require_subject_visibility": true,
+      "require_final_state_visibility": true,
+      "min_subject_pixel_fraction": 0.04,
       "questions": [
         "Does object_id visibly change over the ordered sampled frames?",
         "Does object_id move from the expected start state through the midpoint to the expected end state?",
@@ -1678,6 +1757,9 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "description": "semantic relation",
         "required": true,
         "tolerance": 0.05,
+        "verification_method": "bbox_contact",
+        "contact_points": [],
+        "expected_clearance": 0.0,
         "visual_priority": "required"
       }}
     ],
@@ -1687,6 +1769,7 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "description": "material description",
         "base_color": [0.5, 0.5, 0.5, 1.0],
         "texture_hints": [],
+        "texture_policy": "auto",
         "needs_texture": false,
         "texture_query": null
       }}
@@ -1713,7 +1796,9 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "view_type": "three_quarter",
         "description": "main inspection view",
         "target_object_ids": ["stable_object_id"],
-        "coverage": "all primary objects visible"
+        "coverage": "all primary objects visible",
+        "min_subject_pixel_fraction": 0.08,
+        "allow_subject_crop": false
       }}
     ],
     "style": {{
@@ -1731,6 +1816,8 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
             "description": "overall scene view",
             "target_object_ids": ["stable_object_id"],
             "relation_ids": [],
+            "purpose": "overall inspection",
+            "must_show_full_targets": true,
             "required": true
           }},
           {{
@@ -1739,6 +1826,8 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
             "description": "close view for required contact, support, and attachment relations",
             "target_object_ids": ["stable_object_id"],
             "relation_ids": ["relation_id"],
+            "purpose": "contact and attachment verification",
+            "must_show_full_targets": false,
             "required": true
           }},
           {{
@@ -1747,6 +1836,8 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
             "description": "side view that makes vertical support and floating parts visible",
             "target_object_ids": ["stable_object_id"],
             "relation_ids": ["relation_id"],
+            "purpose": "support and floating-object verification",
+            "must_show_full_targets": true,
             "required": true
           }}
         ],
@@ -1779,7 +1870,7 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
     "units": "meters"
   }},
 {animation_block}
-  "version": "0.1",
+  "version": "0.2",
   "project_id": null,
   "notes": "planner notes"
 }}"""

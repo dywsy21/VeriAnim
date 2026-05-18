@@ -111,19 +111,20 @@ provider capability/configuration problems are visible in the run.
 ## Pipeline
 
 1. `PlannerAgent`
-   - Converts prompt into `GenerationIR`.
+   - Converts prompt into `GenerationIR` (IR v0.2).
    - Includes screenshot and video verification plans.
 
 2. `MaterialAgent`
    - Runs after planning and before coding.
-   - Uses planner-provided `MaterialSpec.needs_texture` and `texture_query`
-     values to search FreeStockTextures public pages for external image
+   - Uses planner-provided `MaterialSpec.texture_policy`, `needs_texture`, and
+     `texture_query` values to search FreeStockTextures public pages for external image
      textures when a material benefits from natural grain or surface detail.
    - Downloads a small candidate set, asks the configured VISION model to
      approve suitability, and writes only approved `texture_source` assets back
      into the IR. If no candidate passes, the material is explicitly marked as
      not using an image texture and falls back to `base_color` plus shader
-     parameters. Plain materials such as a solid-color mug remain procedural.
+     parameters. `texture_policy=solid_only` or `forbidden` is treated as a hard
+     no-texture constraint.
 
 3. `CoderAgent`
    - Uses RAG notes from `docs/rag`.
@@ -180,6 +181,9 @@ that plan before rendering:
   geometry.
 - Relation-focused views inherit the subject/object ids of the relation when
   the planner did not provide explicit targets.
+- IR v0.2 views can also state `purpose`, `must_show_full_targets`, and
+  `min_subject_pixel_fraction`, so the screenshot plan records why a view is
+  needed and whether cropping is acceptable.
 - Small scenes use a tighter camera radius so tabletop objects are large enough
   for the verifier to inspect contacts, attachments, and floating parts.
 
@@ -220,6 +224,13 @@ not force a left/right relation unless the prompt explicitly says left or right.
 It treats that relationship as symmetric `near` plus any existing
 `not_intersecting` constraints.
 
+IR v0.2 separates relation semantics from relation checking with
+`SpatialRelationSpec.verification_method`. Horizontal support can use
+`bbox_contact`; hinges and connectors can use `attachment`; slanted or occluded
+contacts can use `visual_only` plus required relation-focused screenshots. This
+prevents cases like slanted ramp supports from being misjudged by a horizontal
+bottom-vs-top bbox rule.
+
 ## Animation Verification
 
 Animation generation uses the same verifier-gated loop as static scenes, with
@@ -227,6 +238,9 @@ extra temporal checks:
 
 - The planner emits `AnimationSpec` events with object ids, frame ranges,
   actions, optional start/end transforms, and sampled frame requirements.
+- IR v0.2 events also carry `visibility_requirements`; the video verifier
+  treats `require_subject_visibility` and `require_final_state_visibility` as
+  blocking requirements instead of relying on transform traces alone.
 - The harness normalizes animation verifier settings so every animation run has
   start, midpoint, end, and event-boundary frames.
 - `CoderAgent` is instructed to create simple explicit keyframes first:
