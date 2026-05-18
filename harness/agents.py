@@ -1784,16 +1784,45 @@ def _sanitize_generated_blender_code(code: str) -> str:
         'bpy.types.Scene.bl_rna.properties["render_engine"]': 'bpy.context.scene.render.bl_rna.properties["engine"]',
         "bpy.data.worlds['World']": "bpy.context.scene.world",
         'bpy.data.worlds["World"]': "bpy.context.scene.world",
+        "bpy.context.object": "bpy.context.view_layer.objects.active",
+        "bpy.context.active_object": "bpy.context.view_layer.objects.active",
         ".easing = 'EASE_IN_OUT'": ".easing = 'SINE'",
         '.easing = "EASE_IN_OUT"': '.easing = "SINE"',
     }
     for bad, good in replacements.items():
         code = code.replace(bad, good)
+    code = _patch_cone_diameter_keywords(code)
+    code = _patch_fcurve_interpolation_assignments(code)
     code = _patch_common_blender_api_hallucinations(code)
     code = _patch_direct_action_fcurve_loops(code)
     code = _patch_common_ir_id_drift(code)
     code = _append_active_camera_fallback(code)
     return code
+
+
+def _patch_cone_diameter_keywords(code: str) -> str:
+    code = re.sub(r"\bdiameter1\s*=\s*([^,\n)]+)", r"radius1=(\1) * 0.5", code)
+    code = re.sub(r"\bdiameter2\s*=\s*([^,\n)]+)", r"radius2=(\1) * 0.5", code)
+    return code
+
+
+def _patch_fcurve_interpolation_assignments(code: str) -> str:
+    return re.sub(
+        r"^([ \t]*)(fcurve|fc|curve)\.interpolation\s*=\s*([^\n#]+)(.*)$",
+        _fcurve_interpolation_replacement,
+        code,
+        flags=re.MULTILINE,
+    )
+
+
+def _fcurve_interpolation_replacement(match: re.Match[str]) -> str:
+    indent, fcurve_name, value, comment = match.groups()
+    return "\n".join(
+        [
+            f"{indent}for _ll3m_kp in {fcurve_name}.keyframe_points:{comment}",
+            f"{indent}    _ll3m_kp.interpolation = {value.strip()}",
+        ]
+    )
 
 
 def _patch_common_blender_api_hallucinations(code: str) -> str:
