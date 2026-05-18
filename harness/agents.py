@@ -591,7 +591,9 @@ class VideoVerifierAgent:
             "You are a temporal verifier for Blender animations. "
             "Return only JSON with keys: passed, summary, issues. "
             "Judge action order, motion path, smoothness, object interactions, physical plausibility, and camera visibility. "
-            "Do not pass animations where required motion is absent, reversed, hidden, too subtle to see, or where contact, attachment, or object continuity breaks between frames."
+            "Do not pass animations where required motion is absent, reversed, hidden, too subtle to see, or where contact, attachment, or object continuity breaks between frames. "
+            "Every required animated subject must be visible enough to verify at its start, during its motion, and at its required final state; fail if an object leaves the camera view before its final state can be judged. "
+            "Do not infer success from transform traces alone when the video/GIF or sampled frames do not visibly show the final state."
         )
         frame_manifest = [
             {"index": index + 1, "path": str(path), "name": path.name}
@@ -618,6 +620,7 @@ Deterministic animation report:
 
 The attached video/GIF is the primary evidence. The attached images are ordered sampled frames for reference.
 Verify whether the requested animation is visually and temporally correct.
+Fail if a required moving subject, contact point, or final placement is hidden, cropped out, or occluded in the relevant sampled frame or GIF segment.
 If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
 """
         try:
@@ -1737,6 +1740,10 @@ def _sanitize_generated_blender_code(code: str) -> str:
         'bpy.types.Scene.bl_rna.properties["render_engine"].enum_items': 'bpy.context.scene.render.bl_rna.properties["engine"].enum_items',
         "bpy.types.Scene.bl_rna.properties['render_engine']": "bpy.context.scene.render.bl_rna.properties['engine']",
         'bpy.types.Scene.bl_rna.properties["render_engine"]': 'bpy.context.scene.render.bl_rna.properties["engine"]',
+        "bpy.data.worlds['World']": "bpy.context.scene.world",
+        'bpy.data.worlds["World"]': "bpy.context.scene.world",
+        ".easing = 'EASE_IN_OUT'": ".easing = 'SINE'",
+        '.easing = "EASE_IN_OUT"': '.easing = "SINE"',
     }
     for bad, good in replacements.items():
         code = code.replace(bad, good)
