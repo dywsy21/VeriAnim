@@ -388,7 +388,7 @@ class InteractiveHarnessSession:
                 sampled_frames, preview_video = self.blender.render_animation_samples(
                     self.ir,
                     self.store.root / "animation" / label,
-                    render_gif=True,
+                    render_gif=self.config.render_gif_each_round,
                 )
                 self._latest_screenshots = [*self._latest_screenshots, *sampled_frames]
                 self._emit(
@@ -413,7 +413,7 @@ class InteractiveHarnessSession:
         sampled_frames, gif_path = self.blender.render_animation_samples(
             self.ir,
             self.store.root / "animation" / "final",
-            render_gif=True,
+            render_gif=self.config.render_gif_each_round,
         )
         self._emit(
             "render",
