@@ -1022,6 +1022,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
             continue
         raw = str(relation.get("relation_type", "near")).strip().lower().replace("-", "_").replace(" ", "_")
         relation["relation_type"] = relation_aliases.get(raw, raw if raw in valid_relations else "near")
+    _normalize_view_type_fields(scene)
     for material in scene.get("materials", []) or []:
         if not isinstance(material, dict):
             continue
@@ -1048,6 +1049,34 @@ def _coerce_bool(value: Any) -> bool:
     if text in {"0", "false", "no", "n", "off", "none", "null", "not_needed"}:
         return False
     return bool(value)
+
+
+def _normalize_view_type_fields(scene: dict[str, Any]) -> None:
+    aliases = {
+        "close-up": "close_up",
+        "closeup": "close_up",
+        "close_up": "close_up",
+        "relation-close-up": "relation_close_up",
+        "relation_closeup": "relation_close_up",
+        "relation close up": "relation_close_up",
+        "three-quarter": "three_quarter",
+        "three quarter": "three_quarter",
+        "3/4": "three_quarter",
+    }
+    valid = {"front", "back", "left", "right", "top", "bottom", "three_quarter", "close_up", "relation_close_up", "free"}
+    candidates: list[Any] = []
+    candidates.extend(scene.get("cameras", []) or [])
+    verifier = scene.get("verifier")
+    if isinstance(verifier, dict):
+        screenshot_plan = verifier.get("screenshot_plan")
+        if isinstance(screenshot_plan, dict):
+            candidates.extend(screenshot_plan.get("views", []) or [])
+    for item in candidates:
+        if not isinstance(item, dict) or "view_type" not in item:
+            continue
+        raw = str(item.get("view_type") or "three_quarter").strip().lower()
+        normalized = aliases.get(raw, raw.replace("-", "_").replace(" ", "_"))
+        item["view_type"] = normalized if normalized in valid else "three_quarter"
 
 
 def _promote_animation_end_effectors(data: dict[str, Any]) -> None:
@@ -1159,6 +1188,10 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
     animation = data.get("animation") if isinstance(data, dict) else None
     if not isinstance(animation, dict):
         return
+    if not isinstance(animation.get("render"), dict):
+        animation.pop("render", None)
+    if not isinstance(animation.get("verifier"), dict):
+        animation.pop("verifier", None)
     for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
         if not isinstance(event, dict):
             continue
