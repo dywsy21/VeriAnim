@@ -424,6 +424,18 @@ class VideoVerifierAgent:
                 VerificationMode.VIDEO,
                 [ValidationIssue(code="NO_SAMPLED_FRAMES", message="No sampled animation frames were produced.")],
             )
+        if not preview_video_path or not preview_video_path.exists():
+            return ValidationReport.failed(
+                VerificationMode.VIDEO,
+                [
+                    ValidationIssue(
+                        code="NO_PREVIEW_VIDEO",
+                        message="No GIF/video preview was produced for video verification.",
+                        severity=Severity.MAJOR,
+                    )
+                ],
+                "Video verifier requires a GIF/video preview.",
+            )
 
         system = (
             "You are a temporal verifier for Blender animations. "
@@ -442,7 +454,7 @@ Original prompt:
 AnimationSpec:
 {json.dumps(ir.to_dict().get("animation", {}), indent=2)[:12000]}
 
-Preview video path for metadata only:
+        Preview GIF/video path:
 {preview_video_path or "None"}
 
 Sampled frame order:
@@ -454,14 +466,12 @@ Transform trace:
 Deterministic animation report:
 {report_to_json(deterministic_report)}
 
-The attached images are ordered sampled frames. Verify whether the requested animation is visually and temporally correct.
+The attached video/GIF is the primary evidence. The attached images are ordered sampled frames for reference.
+Verify whether the requested animation is visually and temporally correct.
 If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
 """
         try:
-            if preview_video_path and preview_video_path.exists():
-                data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
-            else:
-                data = self.llm.json_multimodal(system, user, sampled_frame_paths)
+            data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
         except Exception as exc:
             return ValidationReport.failed(
                 VerificationMode.VIDEO,

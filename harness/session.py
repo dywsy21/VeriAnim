@@ -384,11 +384,11 @@ class InteractiveHarnessSession:
             self._emit_report(anim_report)
 
             if not self.skip_video and self.ir.animation.verifier.enabled:
-                self._emit("render", "Rendering animation sampled frames")
+                self._emit("render", "Rendering animation sampled frames and GIF")
                 sampled_frames, preview_video = self.blender.render_animation_samples(
                     self.ir,
                     self.store.root / "animation" / label,
-                    render_gif=self.config.render_gif_each_round,
+                    render_gif=True,
                 )
                 self._latest_screenshots = [*self._latest_screenshots, *sampled_frames]
                 self._emit(
@@ -398,7 +398,7 @@ class InteractiveHarnessSession:
                     paths=[str(path) for path in sampled_frames],
                     preview=str(preview_video) if preview_video else None,
                 )
-                self._emit("video", f"Running video verifier on {len(sampled_frames)} frames")
+                self._emit("video", f"Running video verifier on GIF/video plus {len(sampled_frames)} sampled frames")
                 video_report = self.video.verify(self.ir, sampled_frames, preview_video, anim_report, transform_trace)
                 reports.append(video_report)
                 self.store.write_json(f"reports/{label}_animation_video.json", report_to_dict(video_report))
