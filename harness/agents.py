@@ -988,6 +988,18 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         "tableware": "prop",
     }
     valid_roles = {"primary", "secondary", "background", "support", "decoration", "camera_target", "collider"}
+    prompt_text = str((data.get("prompt") or {}).get("text", "")).lower()
+    force_plain_materials = any(
+        token in prompt_text
+        for token in (
+            "no image textures",
+            "no external textures",
+            "without image textures",
+            "solid-color",
+            "solid color",
+            "plain materials",
+        )
+    )
     for obj in scene.get("objects", []) or []:
         if not isinstance(obj, dict):
             continue
@@ -1034,6 +1046,10 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
     _normalize_view_type_fields(scene)
     for material in scene.get("materials", []) or []:
         if not isinstance(material, dict):
+            continue
+        if force_plain_materials:
+            material["needs_texture"] = False
+            material["texture_query"] = None
             continue
         if "needs_texture" in material:
             material["needs_texture"] = _coerce_bool(material.get("needs_texture"))

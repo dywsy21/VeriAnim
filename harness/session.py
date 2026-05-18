@@ -167,7 +167,7 @@ class InteractiveHarnessSession:
             for material in ir.scene.materials
             if material.needs_texture or material.texture_query
         ]
-        if not wanted and not self.config.texture_search_enabled:
+        if not wanted or not self.config.texture_search_enabled:
             return ir
         self._emit("materials", "Resolving external material textures", material_ids=wanted)
         resolved = self.materials.resolve(ir, self.store.root / "textures")
