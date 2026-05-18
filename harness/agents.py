@@ -1461,10 +1461,67 @@ def _sanitize_generated_blender_code(code: str) -> str:
     }
     for bad, good in replacements.items():
         code = code.replace(bad, good)
+    code = _patch_common_blender_api_hallucinations(code)
     code = _patch_direct_action_fcurve_loops(code)
     code = _patch_common_ir_id_drift(code)
     code = _append_active_camera_fallback(code)
     return code
+
+
+def _patch_common_blender_api_hallucinations(code: str) -> str:
+    """Keep generated code running when models use plausible but invalid bpy APIs."""
+
+    if "bpy.data.remove(" in code:
+        helper = '''
+def ll3m_remove_datablock(data_block):
+    """Remove Blender datablocks through the owning collection API when possible."""
+    if data_block is None:
+        return
+    collection_name = getattr(data_block, "id_type", "").lower() + "s"
+    collection = getattr(bpy.data, collection_name, None)
+    if collection is not None and hasattr(collection, "remove"):
+        try:
+            collection.remove(data_block)
+            return
+        except Exception:
+            pass
+    if hasattr(data_block, "user_clear"):
+        try:
+            data_block.user_clear()
+        except Exception:
+            pass
+'''.lstrip()
+        if "def ll3m_remove_datablock(" not in code:
+            code = helper + "\n" + code
+        code = re.sub(r"\bbpy\.data\.remove\(", "ll3m_remove_datablock(", code)
+
+    code = re.sub(
+        r"^([ \t]*)([\w.]+collection[\w.]*|master_collection|scene_coll)\.name\s*=\s*([^\n]+)$",
+        r"\1# LL3M sanitizer: collection.name assignment removed (read-only for scene master collection)",
+        code,
+        flags=re.MULTILINE,
+    )
+    code = re.sub(
+        r"^([ \t]*)([A-Za-z_][\w.]*\.objects)\.unlink\(([^)\n]+)\)$",
+        _safe_collection_unlink_replacement,
+        code,
+        flags=re.MULTILINE,
+    )
+    return code
+
+
+def _safe_collection_unlink_replacement(match: re.Match[str]) -> str:
+    indent, objects_expr, obj_expr = match.groups()
+    collection_expr = objects_expr[: -len(".objects")]
+    return "\n".join(
+        [
+            f"{indent}try:",
+            f"{indent}    if {obj_expr} in {collection_expr}.objects[:]:",
+            f"{indent}        {objects_expr}.unlink({obj_expr})",
+            f"{indent}except Exception:",
+            f"{indent}    pass",
+        ]
+    )
 
 
 def _append_active_camera_fallback(code: str) -> str:
