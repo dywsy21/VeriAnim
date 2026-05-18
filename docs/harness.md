@@ -121,7 +121,9 @@ provider capability/configuration problems are visible in the run.
      textures when a material benefits from natural grain or surface detail.
    - Downloads a small candidate set, asks the configured VISION model to
      approve suitability, and writes only approved `texture_source` assets back
-     into the IR. Plain materials such as a solid-color mug remain procedural.
+     into the IR. If no candidate passes, the material is explicitly marked as
+     not using an image texture and falls back to `base_color` plus shader
+     parameters. Plain materials such as a solid-color mug remain procedural.
 
 3. `CoderAgent`
    - Uses RAG notes from `docs/rag`.

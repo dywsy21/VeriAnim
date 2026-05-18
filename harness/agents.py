@@ -201,6 +201,7 @@ class MaterialAgent:
                         }
                     )
                 else:
+                    _mark_texture_unavailable(material, query, "No candidate passed vision suitability check.")
                     self.last_results.append(
                         {
                             "material_id": material.id,
@@ -210,6 +211,7 @@ class MaterialAgent:
                         }
                     )
             except Exception as exc:
+                _mark_texture_unavailable(material, query, f"Texture search failed: {exc}")
                 self.last_results.append(
                     {
                         "material_id": material.id,
@@ -290,6 +292,7 @@ class CoderAgent:
             "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
             "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
             "When MaterialSpec.texture_source has approved_by_vision=true and local_path is present, load that absolute image path with bpy.data.images.load and wire it into the material shader as an image texture, keeping base_color as a fallback/tint. "
+            "If texture_source is absent, approved_by_vision is false, or local_path is empty, do not create an image texture node for that material; use the base_color, roughness, metallic, and simple procedural shader settings only. "
             "For Blender 4.5, prefer BLENDER_EEVEE_NEXT or WORKBENCH after checking available render engine enum values from scene.render.bl_rna.properties['engine']; never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
@@ -322,6 +325,7 @@ Script requirements:
 - Create robust materials by setting mat.diffuse_color and locating shader nodes by node.type, not localized node names.
 - For each MaterialSpec with texture_source.approved_by_vision=true and texture_source.local_path, treat local_path as an absolute path and load it with bpy.data.images.load. Set image colorspace to sRGB when available, add ShaderNodeTexImage, and connect Color to the Principled Base Color.
 - Make the image texture visibly map onto generated geometry: either create a UV map for mesh surfaces or connect Texture Coordinate Generated/Object output through Mapping into the image texture. Do not connect UV coordinates on a mesh that has no UV map.
+- If texture_source.approved_by_vision is false or no local_path is present, skip image texture nodes for that material and create a clean non-image material from base_color and shader parameters.
 - Set bpy.context.scene.camera to the main generated camera.
 - Set render engines defensively by checking scene.render.bl_rna.properties['engine'].enum_items; Blender 4.5 uses BLENDER_EEVEE_NEXT rather than legacy BLENDER_EEVEE. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
 - Set frame_start/frame_end/fps if animation exists.
@@ -909,6 +913,23 @@ def _material_texture_query(material: Any) -> str:
     if hints:
         return " ".join(str(item) for item in hints[:4])
     return str(getattr(material, "description", "") or getattr(material, "id", "") or "material texture")
+
+
+def _mark_texture_unavailable(material: Any, query: str, summary: str) -> None:
+    material.needs_texture = False
+    material.texture_query = query
+    material.texture_source = TextureSourceSpec(
+        source="freestocktextures",
+        title=None,
+        page_url=None,
+        image_url=None,
+        download_url=None,
+        local_path=None,
+        license=FREE_STOCK_TEXTURES_LICENSE,
+        tags=[],
+        approved_by_vision=False,
+        vision_summary=f"{summary} Falling back to non-image material from base_color and shader parameters.",
+    )
 
 
 def _safe_path_token(value: str) -> str:
