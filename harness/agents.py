@@ -601,6 +601,8 @@ class VideoVerifierAgent:
             "Return only JSON with keys: passed, summary, issues. "
             "Judge action order, motion path, smoothness, object interactions, physical plausibility, and camera visibility. "
             "Do not pass animations where required motion is absent, reversed, hidden, too subtle to see, or where contact, attachment, or object continuity breaks between frames. "
+            "Inspect geometry strictly: fail if objects float above supports, sink into platforms, visibly intersect when they should rest on top, pass through each other, or if a bridge/ramp/door does not visibly connect to its target support before another object uses it. "
+            "For vehicles or objects crossing a bridge/ramp/platform, fail if wheels/body penetrate the surface, hover without contact, or the path crosses a visible gap that has not been bridged. "
             "Every required animated subject must be visible enough to verify at its start, during its motion, and at its required final state; fail if an object leaves the camera view before its final state can be judged. "
             "Do not infer success from transform traces alone when the video/GIF or sampled frames do not visibly show the final state."
         )
@@ -641,6 +643,7 @@ Deterministic animation report:
 The attached video/GIF is the primary evidence. The attached images are ordered sampled frames for reference.
 Verify whether the requested animation is visually and temporally correct.
 Fail if a required moving subject, contact point, or final placement is hidden, cropped out, or occluded in the relevant sampled frame or GIF segment.
+Fail on visible floating, sinking, object penetration, unsupported motion across gaps, or broken bridge/ramp/platform contact even if the transform trace reaches the expected coordinates.
 If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
 """
         try:

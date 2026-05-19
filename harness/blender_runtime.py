@@ -916,6 +916,12 @@ def bbox_gap(a, b):
             gaps.append(0.0)
     return (gaps[0] ** 2 + gaps[1] ** 2 + gaps[2] ** 2) ** 0.5
 
+def xy_overlap(a, b):
+    return (
+        min(a[1].x, b[1].x) - max(a[0].x, b[0].x),
+        min(a[1].y, b[1].y) - max(a[0].y, b[0].y),
+    )
+
 def gripper_subset(objs):
     grippers = [
         obj for obj in objs
@@ -936,7 +942,63 @@ def target_haystack(target_id):
 
 def is_static_destination_target(target_id):
     haystack = target_haystack(target_id)
-    return any(token in haystack for token in ("platform", "table", "conveyor", "belt", "surface", "floor", "output"))
+    return any(token in haystack for token in ("platform", "table", "conveyor", "belt", "surface", "floor", "output", "marker", "landing", "bridge", "ramp"))
+
+def motion_support_targets(event):
+    text = " ".join([
+        str(event.get("id", "")),
+        str(event.get("description", "")),
+        str(event.get("expected_visual_result", "")),
+        " ".join(event.get("constraints", []) or []),
+    ]).lower()
+    if not any(token in text for token in ("drive", "drives", "cross", "roll", "rolls", "slide", "slides", "move", "moves", "travel")):
+        return []
+    return [target for target in (event.get("target_ids", []) or []) if target and is_static_destination_target(target)]
+
+def frames_for_motion_support(event, target_id, frames):
+    haystack = target_haystack(target_id)
+    end_frame = int(event.get("end_frame", frames[-1] if frames else 1))
+    if any(token in haystack for token in ("marker", "landing", "output", "destination", "right platform")):
+        return [end_frame]
+    if any(token in haystack for token in ("bridge", "drawbridge", "ramp", "belt", "conveyor")):
+        return [frame for frame in frames if int(event.get("start_frame", 1)) < frame < end_frame]
+    return [end_frame]
+
+def check_supported_by(subject_id, subject_objs, target_id, target_objs, frame, event_id):
+    sb = aggregate_minmax(subject_objs)
+    tb = aggregate_minmax(target_objs)
+    if not sb or not tb:
+        return
+    overlap_x, overlap_y = xy_overlap(sb, tb)
+    z_gap = sb[0].z - tb[1].z
+    if overlap_x <= 0 or overlap_y <= 0:
+        issue(
+            "ANIMATION_SUPPORT_OVERLAP_FAILED",
+            f"Event '{{event_id}}' expects '{{subject_id}}' to be supported by '{{target_id}}', but their x/y footprints do not overlap.",
+            "major",
+            subject_id,
+            frame,
+            {{"target_id": target_id, "overlap_x": overlap_x, "overlap_y": overlap_y, "z_gap": z_gap}},
+        )
+        return
+    if z_gap > 0.18:
+        issue(
+            "ANIMATION_FLOATING_OVER_SUPPORT",
+            f"Event '{{event_id}}' has '{{subject_id}}' floating above '{{target_id}}'.",
+            "major",
+            subject_id,
+            frame,
+            {{"target_id": target_id, "z_gap": z_gap}},
+        )
+    elif z_gap < -0.05:
+        issue(
+            "ANIMATION_PENETRATES_SUPPORT",
+            f"Event '{{event_id}}' has '{{subject_id}}' visibly penetrating '{{target_id}}'.",
+            "major",
+            subject_id,
+            frame,
+            {{"target_id": target_id, "z_gap": z_gap}},
+        )
 
 def frames_for_interaction_target(event, target_id, frames):
     if not is_static_destination_target(target_id):
@@ -1051,6 +1113,21 @@ for event in events:
                             frame,
                             {{"target_id": target_id, "gap": gap}},
                         )
+
+    support_targets = motion_support_targets(event)
+    if support_targets:
+        frames = sorted(set([int(event.get("start_frame", 1)), int((event.get("start_frame", 1) + event.get("end_frame", 1)) / 2), int(event.get("end_frame", 1))]))
+        for sid in event.get("subject_ids", []):
+            subj_objs = find_objects(sid)
+            if not subj_objs:
+                continue
+            for target_id in support_targets:
+                target_objs = find_objects(target_id)
+                if not target_objs:
+                    continue
+                for frame in frames_for_motion_support(event, target_id, frames):
+                    bpy.context.scene.frame_set(frame)
+                    check_supported_by(sid, subj_objs, target_id, target_objs, frame, str(event.get("id")))
 
 report = {{"passed": not issues, "issues": issues, "summary": "Animation deterministic validation passed." if not issues else "Animation deterministic validation found issues."}}
 print("{ANIMATION_MARKER}" + json.dumps({{"report": report, "trace": trace}}))
