@@ -159,9 +159,10 @@ passes. The loop has safety caps to avoid infinite runs:
 - `LL3M_MAX_REFINEMENT_ROUNDS` for the baseline deterministic loop.
 - `LL3M_MAX_VISUAL_REFINEMENT_ROUNDS` for visual-verifier-gated scene repair.
 - `LL3M_MAX_VIDEO_REFINEMENT_ROUNDS` for video-verifier-gated animation repair.
-- `LL3M_RENDER_GIF_EACH_ROUND` to render a complete GIF during every video
-  verification pass. Keep this `false` for sampled-frame verifiers; set it
-  `true` only when the configured video model directly reads GIF/video input.
+- `LL3M_RENDER_GIF_EACH_ROUND` to render a complete GIF and MP4 preview during
+  every video verification pass. Keep this `false` for sampled-frame-only
+  experiments; set it `true` when the configured video model directly reads
+  video input.
 
 The IR can also set `scene.verifier.visual.max_rounds` and
 `animation.verifier.max_rounds`; the harness uses the largest applicable cap.
@@ -261,16 +262,19 @@ extra temporal checks:
   the union bounding box across all sampled frames. This is important: if the
   camera re-centers on the moving object every frame, the visual verifier cannot
   see the motion.
-- `VideoVerifierAgent` receives the ordered sampled frames, the animation spec,
-  and the deterministic transform trace. It fails absent, reversed, hidden, or
-  physically implausible motion.
+- `VideoVerifierAgent` receives an MP4/GIF preview, the ordered sampled frames,
+  the animation spec, and the deterministic transform trace. Before using
+  sampled frames, it sends a video-only capability probe. If the configured
+  model cannot see the video/GIF attachment, animation verification fails with
+  `VIDEO_INPUT_UNSUPPORTED` instead of silently falling back to screenshot-only
+  validation.
 - If animation verification fails, the sampled frames are included in the
   multimodal refiner prompt so the coding model can see the temporal error it
   needs to repair.
 - Every passed animation run writes a complete final GIF to
-  `animation/final/animation.gif`. Validation rounds render only sampled frames
-  by default to avoid multiplying render time by the number of refinement
-  rounds.
+  `animation/final/animation.gif` and, when `ffmpeg` is available, an MP4
+  preview to `animation/final/animation.mp4`. Validation rounds also produce
+  previews when `LL3M_RENDER_GIF_EACH_ROUND=true`.
 
 The static vision verifier and video verifier have separate responsibilities.
 For animation runs, the static verifier judges object presence, support/contact

@@ -409,7 +409,7 @@ class InteractiveHarnessSession:
             self._emit_report(anim_report)
 
             if not self.skip_video and self.ir.animation.verifier.enabled:
-                self._emit("render", "Rendering animation sampled frames and GIF")
+                self._emit("render", "Rendering animation sampled frames, GIF, and MP4 preview")
                 sampled_frames, preview_video = self.blender.render_animation_samples(
                     self.ir,
                     self.store.root / "animation" / label,
@@ -419,7 +419,7 @@ class InteractiveHarnessSession:
                 self._emit(
                     "render",
                     f"Rendered {len(sampled_frames)} animation frames"
-                    + (f" and GIF {preview_video}" if preview_video else ""),
+                    + (f" and preview video {preview_video}" if preview_video else ""),
                     paths=[str(path) for path in sampled_frames],
                     preview=str(preview_video) if preview_video else None,
                 )
@@ -434,17 +434,25 @@ class InteractiveHarnessSession:
     def _render_final_animation_gif(self) -> None:
         if not self.store or not self.ir or not self.ir.animation:
             return
-        self._emit("render", "Rendering final full animation GIF")
-        sampled_frames, gif_path = self.blender.render_animation_samples(
+        self._emit("render", "Rendering final full animation GIF and MP4 preview")
+        sampled_frames, preview_path = self.blender.render_animation_samples(
             self.ir,
             self.store.root / "animation" / "final",
             render_gif=self.config.render_gif_each_round,
         )
+        final_dir = self.store.root / "animation" / "final"
+        gif_path = final_dir / "animation.gif"
+        mp4_path = final_dir / "animation.mp4"
         self._emit(
             "render",
-            f"Rendered final animation GIF {gif_path}" if gif_path else "Final animation GIF render produced no GIF",
+            (
+                f"Rendered final animation GIF {gif_path if gif_path.exists() else 'missing'}"
+                + (f" and MP4 {mp4_path}" if mp4_path.exists() else "")
+            )
+            if preview_path
+            else "Final animation render produced no preview",
             paths=[str(path) for path in sampled_frames],
-            preview=str(gif_path) if gif_path else None,
+            preview=str(preview_path) if preview_path else None,
         )
 
     def _emit_report(self, report: ValidationReport) -> None:

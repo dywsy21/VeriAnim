@@ -592,6 +592,9 @@ class VideoVerifierAgent:
                 ],
                 "Video verifier requires a GIF/video preview.",
             )
+        probe_report = self._probe_video_input(preview_video_path)
+        if probe_report is not None:
+            return probe_report
 
         system = (
             "You are a temporal verifier for Blender animations. "
@@ -655,6 +658,46 @@ If deterministic transform trace and images disagree, explain the mismatch and f
                 "Video verifier response could not be parsed.",
             )
         return _report_from_model(data, VerificationMode.VIDEO)
+
+    def _probe_video_input(self, preview_video_path: Path) -> ValidationReport | None:
+        system = "You are a strict video-input capability probe. Return only JSON."
+        user = """
+The only attachment is supposed to be a video or animated GIF. No still images are attached.
+Return JSON with keys: can_see_video, summary.
+Set can_see_video=true only if you can actually inspect temporal video/GIF content.
+Set can_see_video=false if no video is attached, the attachment is unsupported, or you can only see a static image.
+"""
+        try:
+            data = self.llm.json_video(system, user, preview_video_path, image_paths=[])
+        except Exception as exc:
+            return ValidationReport.failed(
+                VerificationMode.VIDEO,
+                [
+                    ValidationIssue(
+                        code="VIDEO_INPUT_PROBE_FAILED",
+                        message=f"Could not confirm video input support: {exc}",
+                        severity=Severity.MAJOR,
+                    )
+                ],
+                "Video verifier could not confirm that the model received the video.",
+            )
+        if data.get("can_see_video") is True:
+            return None
+        return ValidationReport.failed(
+            VerificationMode.VIDEO,
+            [
+                ValidationIssue(
+                    code="VIDEO_INPUT_UNSUPPORTED",
+                    message=(
+                        "The configured video verifier did not receive or cannot inspect the video/GIF input. "
+                        "Refusing to validate animation from sampled still images alone."
+                    ),
+                    severity=Severity.CRITICAL,
+                    evidence={"probe_response": data, "preview_video_path": str(preview_video_path)},
+                )
+            ],
+            str(data.get("summary") or "Video input was not visible to the verifier model."),
+        )
 
 
 def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:

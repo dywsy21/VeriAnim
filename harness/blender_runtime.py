@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Any
 
 from blender.client import BlenderClient
@@ -188,8 +190,17 @@ class BlenderRuntime:
                 if render_gif
                 else None
             )
+            mp4_path = (
+                _write_animation_mp4(
+                    gif_frame_paths,
+                    output_dir / "animation.mp4",
+                    fps=max(1, int(ir.animation.fps)),
+                )
+                if render_gif
+                else None
+            )
             if paths:
-                return paths, gif_path
+                return paths, mp4_path or gif_path
         structured = BlenderClient.render_animation_preview(
             str(output_dir),
             frames=frames,
@@ -305,6 +316,37 @@ def _write_animation_gif(frame_paths: list[Path], output_path: Path, *, fps: int
         loop=0,
         optimize=False,
     )
+    return output_path if output_path.exists() else None
+
+
+def _write_animation_mp4(frame_paths: list[Path], output_path: Path, *, fps: int) -> Path | None:
+    if not frame_paths or not shutil.which("ffmpeg"):
+        return None
+    frame_dir = frame_paths[0].parent
+    if not all(path.parent == frame_dir for path in frame_paths):
+        return None
+    first = frame_paths[0].name
+    if not first.startswith("frame_") or not first.endswith(".png"):
+        return None
+    pattern = str(frame_dir / "frame_%04d.png")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        "ffmpeg",
+        "-y",
+        "-framerate",
+        str(max(1, fps)),
+        "-i",
+        pattern,
+        "-vf",
+        "scale=640:-2,format=yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    try:
+        subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True, timeout=120)
+    except Exception:
+        return None
     return output_path if output_path.exists() else None
 
 
