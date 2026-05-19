@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import sys
+from typing import Iterator
 
 from .config import HarnessConfig
 from .ir import GenerationIR, report_to_dict
@@ -70,18 +73,69 @@ def main(argv: list[str] | None = None) -> int:
     config = HarnessConfig.from_env()
     runner = HarnessRunner(config)
     try:
-        output_dir = runner.run(
-            prompt=args.text,
-            ir_path=args.ir,
-            include_animation=args.animation,
-            skip_vision=args.skip_vision,
-            skip_video=args.skip_video,
-        )
+        with _runner_lock(config.runs_dir):
+            output_dir = runner.run(
+                prompt=args.text,
+                ir_path=args.ir,
+                include_animation=args.animation,
+                skip_vision=args.skip_vision,
+                skip_video=args.skip_video,
+            )
         print(f"[Harness] Finished. Artifacts: {output_dir}")
         return 0
     except Exception as exc:
         print(f"[Harness] Failed: {exc}", file=sys.stderr)
         return 1
+
+
+@contextmanager
+def _runner_lock(runs_dir: Path) -> Iterator[None]:
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = runs_dir / ".harness_runner.lock"
+    _clear_stale_lock(lock_path)
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        detail = lock_path.read_text(encoding="utf-8", errors="replace") if lock_path.exists() else ""
+        raise RuntimeError(
+            "Another harness run is already active. Stop it or remove the stale lock before starting a new run. "
+            f"Lock: {lock_path}\n{detail}"
+        ) from exc
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"pid": os.getpid(), "argv": sys.argv}, indent=2))
+        yield
+    finally:
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _clear_stale_lock(lock_path: Path) -> None:
+    if not lock_path.exists():
+        return
+    try:
+        data = json.loads(lock_path.read_text(encoding="utf-8"))
+        pid = int(data.get("pid", 0))
+    except Exception:
+        return
+    if pid and _pid_is_alive(pid):
+        return
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 if __name__ == "__main__":
