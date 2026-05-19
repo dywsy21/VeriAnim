@@ -11,7 +11,7 @@ def _load_dotenv() -> None:
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(override=True)
+        load_dotenv(override=False)
     except Exception:
         # Keep imports usable before optional dependencies are installed.
         env_path = Path(".env")
