@@ -11,7 +11,7 @@ def _load_dotenv() -> None:
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(override=False)
+        load_dotenv(override=_env_bool("LL3M_DOTENV_OVERRIDE", True))
     except Exception:
         # Keep imports usable before optional dependencies are installed.
         env_path = Path(".env")
