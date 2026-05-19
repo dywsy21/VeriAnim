@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 from typing import Any
 
 from .config import HarnessConfig
@@ -663,12 +665,31 @@ If deterministic transform trace and images disagree, explain the mismatch and f
         return _report_from_model(data, VerificationMode.VIDEO)
 
     def _probe_video_input(self, preview_video_path: Path) -> ValidationReport | None:
-        system = "You are a strict video-input capability probe. Return only JSON."
+        local_frame_count = _preview_video_frame_count(preview_video_path)
+        if local_frame_count is not None and local_frame_count < 2:
+            return ValidationReport.failed(
+                VerificationMode.VIDEO,
+                [
+                    ValidationIssue(
+                        code="PREVIEW_VIDEO_NOT_TEMPORAL",
+                        message=(
+                            "The animation preview exists but appears to contain fewer than two frames. "
+                            "Refusing to validate animation from a non-temporal preview."
+                        ),
+                        severity=Severity.CRITICAL,
+                        evidence={"preview_video_path": str(preview_video_path), "frame_count": local_frame_count},
+                    )
+                ],
+                "Animation preview is not a usable temporal video/GIF.",
+            )
+
+        system = "You are a strict video-attachment accessibility probe. Return only JSON."
         user = """
 The only attachment is supposed to be a video or animated GIF. No still images are attached.
-Return JSON with keys: can_see_video, summary.
-Set can_see_video=true only if you can actually inspect temporal video/GIF content.
-Set can_see_video=false if no video is attached, the attachment is unsupported, or you can only see a static image.
+Return JSON with keys: can_see_video, attachment_readable, summary.
+Set can_see_video=true if you can access the attached MP4/GIF as video frames, even if the motion is subtle, unclear, or the clip appears mostly static.
+Set can_see_video=false only if no video attachment is present, the attachment cannot be opened, or the format is unsupported.
+Do not judge whether the animation is correct in this probe.
 """
         try:
             data = self.llm.json_video(system, user, preview_video_path, image_paths=[])
@@ -684,7 +705,7 @@ Set can_see_video=false if no video is attached, the attachment is unsupported, 
                 ],
                 "Video verifier could not confirm that the model received the video.",
             )
-        if data.get("can_see_video") is True:
+        if data.get("can_see_video") is True or data.get("attachment_readable") is True:
             return None
         return ValidationReport.failed(
             VerificationMode.VIDEO,
@@ -701,6 +722,66 @@ Set can_see_video=false if no video is attached, the attachment is unsupported, 
             ],
             str(data.get("summary") or "Video input was not visible to the verifier model."),
         )
+
+
+def _preview_video_frame_count(preview_video_path: Path) -> int | None:
+    """Best-effort temporal sanity check before asking a video model."""
+
+    suffix = preview_video_path.suffix.lower()
+    if suffix in {".mp4", ".mov", ".m4v", ".webm", ".avi"}:
+        return _ffprobe_frame_count(preview_video_path)
+    if suffix == ".gif":
+        try:
+            from PIL import Image, ImageSequence
+
+            with Image.open(preview_video_path) as image:
+                return sum(1 for _ in ImageSequence.Iterator(image))
+        except Exception:
+            return None
+    return None
+
+
+def _ffprobe_frame_count(video_path: Path) -> int | None:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-count_frames",
+                "-show_entries",
+                "stream=nb_read_frames,nb_frames",
+                "-of",
+                "json",
+                str(video_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    for stream in data.get("streams", []):
+        for key in ("nb_read_frames", "nb_frames"):
+            value = stream.get(key)
+            if value and str(value).upper() != "N/A":
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    continue
+    return None
 
 
 def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
