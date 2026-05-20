@@ -2202,13 +2202,22 @@ def _report_from_model(data: dict[str, Any], mode: VerificationMode) -> Validati
         issues.append(
             ValidationIssue(
                 code=str(item.get("code") or "MODEL_REPORTED_ISSUE"),
-                message=str(item.get("message") or item.get("problem") or "Model reported an issue."),
+                message=str(
+                    item.get("message")
+                    or item.get("problem")
+                    or item.get("description")
+                    or item.get("concern")
+                    or item.get("detail")
+                    or item.get("details")
+                    or item.get("reason")
+                    or "Model reported an issue."
+                ),
                 severity=_severity(item.get("severity", "major")),
                 target_id=item.get("target_id") or item.get("object"),
                 relation_id=item.get("relation_id"),
                 frame=item.get("frame"),
                 suggested_fix=item.get("suggested_fix"),
-                evidence=item.get("evidence") or {},
+                evidence=item.get("evidence") or {k: v for k, v in item.items() if k not in {"code", "message", "severity"}},
             )
         )
     passed = bool(data.get("passed", data.get("pass", not issues)))
