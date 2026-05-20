@@ -2047,6 +2047,7 @@ def _sanitize_generated_blender_code(code: str) -> str:
     code = _patch_cone_diameter_keywords(code)
     code = _patch_fcurve_interpolation_assignments(code)
     code = _patch_common_blender_api_hallucinations(code)
+    code = _patch_mode_set_context(code)
     code = _patch_direct_action_fcurve_loops(code)
     code = _patch_common_ir_id_drift(code)
     code = _append_active_camera_fallback(code)
@@ -2118,6 +2119,35 @@ def ll3m_remove_datablock(data_block):
         flags=re.MULTILINE,
     )
     return code
+
+
+def _patch_mode_set_context(code: str) -> str:
+    """Make generated edit/object mode switches tolerate missing active context."""
+
+    if "bpy.ops.object.mode_set(" not in code:
+        return code
+    helper = '''
+def ll3m_safe_mode_set(mode):
+    """Switch object mode only after ensuring Blender has an active object."""
+    view_layer = bpy.context.view_layer
+    obj = view_layer.objects.active
+    if obj is None or obj.name not in view_layer.objects:
+        selected = [candidate for candidate in bpy.context.selected_objects if candidate.name in view_layer.objects]
+        obj = selected[0] if selected else next((candidate for candidate in bpy.context.scene.objects if candidate.type == "MESH"), None)
+        if obj is not None:
+            view_layer.objects.active = obj
+            obj.select_set(True)
+    if obj is None:
+        return False
+    try:
+        bpy.ops.object.mode_set(mode=mode)
+        return True
+    except Exception:
+        return False
+'''.lstrip()
+    if "def ll3m_safe_mode_set(" not in code:
+        code = helper + "\n" + code
+    return re.sub(r"\bbpy\.ops\.object\.mode_set\(", "ll3m_safe_mode_set(", code)
 
 
 def _safe_collection_unlink_replacement(match: re.Match[str]) -> str:
