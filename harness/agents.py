@@ -707,6 +707,11 @@ Do not judge whether the animation is correct in this probe.
             )
         if data.get("can_see_video") is True or data.get("attachment_readable") is True:
             return None
+        if local_frame_count is not None and local_frame_count >= 2:
+            retry_data = self._retry_video_input_probe(preview_video_path, local_frame_count)
+            if retry_data.get("can_see_video") is True or retry_data.get("attachment_readable") is True:
+                return None
+            data = {"first_probe": data, "retry_probe": retry_data, "local_frame_count": local_frame_count}
         return ValidationReport.failed(
             VerificationMode.VIDEO,
             [
@@ -722,6 +727,20 @@ Do not judge whether the animation is correct in this probe.
             ],
             str(data.get("summary") or "Video input was not visible to the verifier model."),
         )
+
+    def _retry_video_input_probe(self, preview_video_path: Path, local_frame_count: int) -> dict[str, Any]:
+        system = "Return only JSON. You are checking whether an attached MP4/GIF can be opened."
+        user = f"""
+The attachment is a locally verified temporal preview with {local_frame_count} video frames.
+Return JSON with keys: can_see_video, attachment_readable, summary.
+Set can_see_video=true if you can access any frames from the attached MP4/GIF.
+Set attachment_readable=true if the file opens as video or animated GIF.
+Do not decide whether the animation is correct; only report whether the attachment is readable.
+"""
+        try:
+            return self.llm.json_video(system, user, preview_video_path, image_paths=[])
+        except Exception as exc:
+            return {"can_see_video": False, "attachment_readable": False, "summary": f"Retry probe failed: {exc}"}
 
 
 def _preview_video_frame_count(preview_video_path: Path) -> int | None:
