@@ -1,6 +1,6 @@
 # Local Harness Implementation
 
-The local harness is separate from the original cloud-client flow in `main.py`.
+The local harness is separate from the original LL3M cloud-client flow.
 Use it with:
 
 ```bash

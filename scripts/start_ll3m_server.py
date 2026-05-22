@@ -27,7 +27,7 @@ def _load_project_env() -> None:
 
 
 _load_project_env()
-PORT = int(os.environ.get("LL3M_BLENDER_PORT", "18888"))
+PORT = int(os.environ.get("LL3M_BLENDER_PORT", "8888"))
 
 spec = importlib.util.spec_from_file_location("ll3m_blender_addon", ADDON_PATH)
 if spec is None or spec.loader is None:

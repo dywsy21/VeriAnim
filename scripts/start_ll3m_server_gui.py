@@ -28,7 +28,7 @@ def _load_project_env() -> None:
 
 
 _load_project_env()
-PORT = int(os.environ.get("LL3M_BLENDER_PORT", "18888"))
+PORT = int(os.environ.get("LL3M_BLENDER_PORT", "8888"))
 
 try:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
