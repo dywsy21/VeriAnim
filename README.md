@@ -152,7 +152,7 @@ Each run writes artifacts under `runs/`, including:
 Run the current unit tests with:
 
 ```bash
-python -m unittest discover -s tests
+make test
 ```
 
 Quickly check whether the default Blender socket port can bind inside Blender:
@@ -161,10 +161,25 @@ Quickly check whether the default Blender socket port can bind inside Blender:
 blender --background --python scripts/blender_socket_bind_smoke.py
 ```
 
+Run local non-Blender checks with:
+
+```bash
+make check
+```
+
+The runner also performs startup checks before a normal run. To check only
+configuration and Blender connectivity:
+
+```bash
+python -m harness.runner --text "a blue mug" --preflight-only
+```
+
 ## Troubleshooting
 
 - If the runner cannot connect to Blender, verify the addon server is running on
   `localhost:8888` or set `LL3M_BLENDER_PORT` consistently in `.env`.
+- If you intentionally use a custom local LLM gateway or a nonstandard provider
+  setup, pass `--skip-preflight` after verifying the configuration yourself.
 - If LiteLLM reports missing credentials, fill the provider key for the model
   prefix you selected in `.env`.
 - If a provider rejects streaming or JSON response format, set the affected

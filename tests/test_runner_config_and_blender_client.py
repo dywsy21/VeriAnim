@@ -11,6 +11,7 @@ from unittest import mock
 from blender.client import BlenderClient
 from harness.blender_runtime import BlenderRuntime
 from harness.config import HarnessConfig
+from harness.preflight import format_issue, has_errors, run_preflight
 from harness.runner import _runner_lock
 
 
@@ -61,6 +62,66 @@ class ConfigEnvTest(unittest.TestCase):
             config = HarnessConfig.from_env()
 
         self.assertEqual(config.blender_port, 8888)
+
+
+class PreflightTest(unittest.TestCase):
+    def test_preflight_reports_blender_and_missing_key_errors(self) -> None:
+        env = {
+            "LL3M_DOTENV_OVERRIDE": "false",
+            "OPENAI_API_KEY": "",
+            "LITELLM_API_KEY": "",
+            "LL3M_PLANNER_API_KEY": "",
+            "LL3M_CODER_API_KEY": "",
+            "LL3M_REFINER_API_KEY": "",
+            "LL3M_VISION_API_KEY": "",
+            "LL3M_PLANNER_MODEL": "openai/test-planner",
+            "LL3M_CODER_MODEL": "openai/test-coder",
+            "LL3M_REFINER_MODEL": "openai/test-refiner",
+            "LL3M_VISION_MODEL": "openai/test-vision",
+            "LL3M_RUNS_DIR": tempfile.mkdtemp(),
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            config = HarnessConfig.from_env()
+            with mock.patch(
+                "harness.preflight.BlenderClient.get_scene_info",
+                return_value={"status": "error", "message": "connection refused"},
+            ):
+                issues = run_preflight(
+                    config,
+                    prompt="scene",
+                    ir_path=None,
+                    include_animation=False,
+                    skip_vision=False,
+                    skip_video=True,
+                )
+
+        messages = "\n".join(format_issue(issue) for issue in issues)
+        self.assertTrue(has_errors(issues))
+        self.assertIn("Could not reach Blender addon server", messages)
+        self.assertIn("No API key found for planner", messages)
+
+    def test_preflight_accepts_successful_blender_and_provider_key(self) -> None:
+        env = {
+            "LL3M_DOTENV_OVERRIDE": "false",
+            "OPENAI_API_KEY": "test-key",
+            "LL3M_RUNS_DIR": tempfile.mkdtemp(),
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            config = HarnessConfig.from_env()
+            with mock.patch(
+                "harness.preflight.BlenderClient.get_scene_info",
+                return_value={"status": "success", "result": {"name": "Scene"}},
+            ):
+                issues = run_preflight(
+                    config,
+                    prompt="scene",
+                    ir_path=None,
+                    include_animation=False,
+                    skip_vision=False,
+                    skip_video=True,
+                )
+
+        self.assertFalse(has_errors(issues), [format_issue(issue) for issue in issues])
 
 
 class FakeSocket:
