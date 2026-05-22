@@ -8,6 +8,7 @@ import json
 import traceback
 import io
 import os
+import queue
 from contextlib import redirect_stderr, redirect_stdout
 from mathutils import Vector
 from bpy.props import IntProperty, BoolProperty
@@ -32,6 +33,7 @@ class LL3MAgentServer:
         self.running = False
         self.socket = None
         self.server_thread = None
+        self.command_queue = queue.Queue()
 
     def start(self):
         if self.running and self.socket:
@@ -105,20 +107,25 @@ class LL3MAgentServer:
                     try:
                         command = json.loads(buffer.decode('utf-8'))
                         buffer = b''
+                        if getattr(bpy.app, "background", False):
+                            response_queue = queue.Queue(maxsize=1)
+                            self.command_queue.put((command, response_queue))
+                            try:
+                                response = response_queue.get(timeout=3600)
+                            except queue.Empty:
+                                response = {"status": "error", "message": "Timed out waiting for Blender command execution"}
+                            self._send_response(client, response)
+                            continue
                         def execute_wrapper():
                             try:
                                 response = self.execute_command(command)
-                                response_json = json.dumps(response)
-                                try:
-                                    client.sendall(response_json.encode('utf-8'))
-                                except:
-                                    print("Failed to send response - client disconnected")
+                                self._send_response(client, response)
                             except Exception as e:
                                 print(f"Error executing command: {e}")
                                 traceback.print_exc()
                                 try:
                                     error_response = {"status": "error", "message": str(e)}
-                                    client.sendall(json.dumps(error_response).encode('utf-8'))
+                                    self._send_response(client, error_response)
                                 except:
                                     pass
                             return None
@@ -136,6 +143,29 @@ class LL3MAgentServer:
             except:
                 pass
             print("Client handler stopped")
+
+    def _send_response(self, client, response):
+        response_json = json.dumps(response)
+        try:
+            client.sendall(response_json.encode('utf-8'))
+        except:
+            print("Failed to send response - client disconnected")
+
+    def process_pending_commands(self, limit=100):
+        processed = 0
+        while processed < limit:
+            try:
+                command, response_queue = self.command_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                response = self.execute_command(command)
+            except Exception as e:
+                traceback.print_exc()
+                response = {"status": "error", "message": str(e)}
+            response_queue.put(response)
+            processed += 1
+        return processed
 
     def execute_command(self, command):
         try:

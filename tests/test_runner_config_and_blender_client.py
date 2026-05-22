@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import queue
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,6 +14,22 @@ from harness.blender_runtime import BlenderRuntime
 from harness.config import HarnessConfig
 from harness.preflight import format_issue, has_errors, run_preflight
 from harness.runner import _runner_lock
+
+
+def run_server_pending_commands(server: object) -> int:
+    processed = 0
+    while processed < 100:
+        try:
+            command, response_queue = server.command_queue.get_nowait()
+        except queue.Empty:
+            break
+        try:
+            response = server.execute_command(command)
+        except Exception as exc:
+            response = {"status": "error", "message": str(exc)}
+        response_queue.put(response)
+        processed += 1
+    return processed
 
 
 class RunnerLockTest(unittest.TestCase):
@@ -215,6 +232,25 @@ class BlenderRuntimeStatusTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.message, "bad")
         self.assertEqual(result.traceback, "Traceback...\nValueError: bad")
+
+
+class BackgroundCommandQueueTest(unittest.TestCase):
+    def test_background_command_queue_returns_execute_response(self) -> None:
+        class FakeServer:
+            def __init__(self) -> None:
+                self.command_queue: queue.Queue[tuple[dict[str, str], queue.Queue[dict[str, object]]]] = queue.Queue()
+
+            def execute_command(self, command: dict[str, str]) -> dict[str, object]:
+                return {"status": "success", "result": {"ok": True, "echo": command["type"]}}
+
+        server = FakeServer()
+        response_queue: queue.Queue[dict[str, object]] = queue.Queue(maxsize=1)
+        server.command_queue.put(({"type": "execute_code"}, response_queue))
+
+        processed = run_server_pending_commands(server)
+
+        self.assertEqual(processed, 1)
+        self.assertEqual(response_queue.get_nowait(), {"status": "success", "result": {"ok": True, "echo": "execute_code"}})
 
 
 if __name__ == "__main__":
