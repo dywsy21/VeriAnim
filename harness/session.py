@@ -282,6 +282,11 @@ class InteractiveHarnessSession:
                 self._render_final_animation_gif()
                 return True
 
+            if _has_unrecoverable_verifier_config_issue(reports):
+                self._emit("warn", "Verifier loop stopped because the configured verifier model cannot accept required media inputs")
+                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                return False
+
             if round_index >= max_rounds:
                 self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
                 self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
@@ -439,12 +444,12 @@ class InteractiveHarnessSession:
             self.store.write_json(f"reports/{label}_animation_trace.json", transform_trace)
             self._emit_report(anim_report)
 
-            if not self.skip_video and self.ir.animation.verifier.enabled:
-                self._emit("render", "Rendering animation sampled frames, GIF, and MP4 preview")
+            if self.ir.animation.verifier.enabled:
+                self._emit("render", "Rendering animation sampled frames" + (", GIF, and MP4 preview" if not self.skip_video else ""))
                 sampled_frames, preview_video = self.blender.render_animation_samples(
                     self.ir,
                     self.store.root / "animation" / label,
-                    render_gif=self.config.render_gif_each_round,
+                    render_gif=not self.skip_video and self.config.render_gif_each_round,
                 )
                 self._latest_screenshots = [*self._latest_screenshots, *sampled_frames]
                 self._emit(
@@ -454,6 +459,10 @@ class InteractiveHarnessSession:
                     paths=[str(path) for path in sampled_frames],
                     preview=str(preview_video) if preview_video else None,
                 )
+            else:
+                sampled_frames = []
+                preview_video = None
+            if not self.skip_video and self.ir.animation.verifier.enabled:
                 self._emit("video", f"Running video verifier on GIF/video plus {len(sampled_frames)} sampled frames")
                 video_report = self.video.verify(self.ir, sampled_frames, preview_video, anim_report, transform_trace)
                 reports.append(video_report)
@@ -526,6 +535,11 @@ def _failure_signature(reports: list[ValidationReport], execution_error: str | N
         sort_keys=True,
         ensure_ascii=False,
     )
+
+
+def _has_unrecoverable_verifier_config_issue(reports: list[ValidationReport]) -> bool:
+    unrecoverable_codes = {"VISION_INPUT_UNSUPPORTED", "VIDEO_INPUT_UNSUPPORTED"}
+    return any(issue.code in unrecoverable_codes for report in reports for issue in report.issues)
 
 
 def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:

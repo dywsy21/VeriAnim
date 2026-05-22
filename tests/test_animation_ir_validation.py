@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 
 from harness.ir import GenerationIR
+from harness.blender_runtime import _relation_frame_overrides, _view_dicts
 from harness.serde import from_dict
 
 
@@ -81,6 +82,15 @@ class AnimationIRValidationTest(unittest.TestCase):
 
         self.assertFalse(report.passed)
         self.assertIn("RELATION_METHOD_MISMATCH", codes)
+
+    def test_animation_final_relation_uses_end_frame_for_verification_views(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+
+        self.assertEqual(_relation_frame_overrides(ir), {"ball_final_near_box": 120})
+
+        views = {view["id"]: view for view in _view_dicts(ir)}
+        self.assertEqual(views["three_quarter"]["frame"], 120)
+        self.assertEqual(views["top_path"]["frame"], 120)
 
 
 if __name__ == "__main__":

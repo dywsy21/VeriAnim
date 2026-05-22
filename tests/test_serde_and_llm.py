@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import unittest
 
+from harness.agents import _is_multimodal_input_unsupported, _sanitize_planner_data
 from harness.ir import GenerationIR
 from harness.llm import LLMError, extract_json_object
 from harness.serde import IRDecodeError, from_dict
@@ -54,6 +55,15 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         with self.assertRaisesRegex(IRDecodeError, r"RelationType at GenerationIR\.scene\.relations\[0\]\.relation_type"):
             from_dict(GenerationIR, broken)
 
+    def test_planner_sanitizer_normalizes_relation_visual_priority_alias(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["relations"][0]["visual_priority"] = "normal"
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertEqual(ir.scene.relations[0].visual_priority.value, "preferred")
+
 
 class ExtractJsonObjectTest(unittest.TestCase):
     def test_extracts_plain_json(self) -> None:
@@ -75,6 +85,11 @@ class ExtractJsonObjectTest(unittest.TestCase):
     def test_raises_when_no_json_object_exists(self) -> None:
         with self.assertRaises(LLMError):
             extract_json_object("no structured object here")
+
+    def test_detects_text_only_multimodal_backend_error(self) -> None:
+        exc = RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")
+
+        self.assertTrue(_is_multimodal_input_unsupported(exc))
 
 
 if __name__ == "__main__":

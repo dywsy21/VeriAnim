@@ -313,6 +313,7 @@ class SpatialRelationSpec:
     contact_points: list[Vec3] = field(default_factory=list)
     expected_clearance: float | None = None
     visual_priority: Importance = Importance.REQUIRED
+    frame: int | None = None
 
 
 @dataclass(slots=True)
