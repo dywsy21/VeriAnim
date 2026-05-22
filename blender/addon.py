@@ -8,7 +8,7 @@ import json
 import traceback
 import io
 import os
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from mathutils import Vector
 from bpy.props import IntProperty, BoolProperty
 
@@ -692,10 +692,31 @@ class LL3MAgentServer:
 
     def execute_code(self, code):
         namespace = {"__name__": "__main__", "bpy": bpy}
-        capture_buffer = io.StringIO()
-        with redirect_stdout(capture_buffer):
-            exec(code, namespace)
-        return {"executed": True, "result": capture_buffer.getvalue()}
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
+        try:
+            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                exec(code, namespace)
+        except Exception as exc:
+            tb = traceback.format_exc()
+            return {
+                "executed": False,
+                "ok": False,
+                "stdout": stdout_buffer.getvalue(),
+                "stderr": stderr_buffer.getvalue(),
+                "traceback": tb,
+                "message": str(exc),
+                "result": stdout_buffer.getvalue(),
+            }
+        return {
+            "executed": True,
+            "ok": True,
+            "stdout": stdout_buffer.getvalue(),
+            "stderr": stderr_buffer.getvalue(),
+            "traceback": None,
+            "message": None,
+            "result": stdout_buffer.getvalue(),
+        }
 
     def save_scene_copy(self, params):
         """

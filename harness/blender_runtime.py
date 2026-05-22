@@ -44,6 +44,8 @@ class BlenderRunResult:
     message: str | None
     stdout: str
     raw: dict[str, Any] | Any
+    stderr: str = ""
+    traceback: str | None = None
 
 
 class BlenderRuntime:
@@ -69,9 +71,12 @@ class BlenderRuntime:
             headless_enabled=self.config.headless_rendering,
             fallback_to_socket=True,
         )
+        execution = _execution_payload(result)
         stdout = _stdout(result)
-        ok, message = _infer_ok(result, stdout)
-        return BlenderRunResult(ok=ok, message=message, stdout=stdout, raw=result)
+        stderr = _payload_text(execution, "stderr")
+        traceback_text = _payload_text(execution, "traceback") or None
+        ok, message = _infer_ok(result, execution)
+        return BlenderRunResult(ok=ok, message=message, stdout=stdout, stderr=stderr, traceback=traceback_text, raw=result)
 
     def get_scene_graph(self) -> dict[str, Any]:
         result = BlenderClient.get_scene_graph(
@@ -220,12 +225,24 @@ class BlenderRuntime:
         return [], None
 
 
+def _execution_payload(result: dict[str, Any] | Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    inner = result.get("result")
+    if isinstance(inner, dict):
+        return inner
+    return result
+
+
 def _stdout(result: dict[str, Any] | Any) -> str:
     if isinstance(result, dict):
-        inner = result.get("result")
-        if isinstance(inner, dict):
+        inner = _execution_payload(result)
+        if inner:
+            if isinstance(inner.get("stdout"), str):
+                return inner["stdout"]
             value = inner.get("result")
-            return value if isinstance(value, str) else json.dumps(value, default=str)
+            if value is not None:
+                return value if isinstance(value, str) else json.dumps(value, default=str)
         if isinstance(inner, str):
             return inner
         if result.get("message"):
@@ -233,14 +250,29 @@ def _stdout(result: dict[str, Any] | Any) -> str:
     return str(result)
 
 
-def _infer_ok(result: dict[str, Any] | Any, stdout: str) -> tuple[bool, str | None]:
+def _payload_text(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def _infer_ok(result: dict[str, Any] | Any, execution: dict[str, Any]) -> tuple[bool, str | None]:
     if isinstance(result, dict) and str(result.get("status", "")).lower() == "error":
-        return False, str(result.get("message") or stdout)
+        return False, str(result.get("message") or _stdout(result))
+    if "ok" in execution:
+        ok = bool(execution.get("ok"))
+        if ok:
+            return True, None
+        message = execution.get("message") or execution.get("traceback") or execution.get("stderr") or execution.get("stdout")
+        return False, str(message or "Blender execution failed.")
+    if "executed" in execution:
+        ok = bool(execution.get("executed"))
+        if ok:
+            return True, None
+        message = execution.get("message") or execution.get("result")
+        return False, str(message or "Blender execution failed.")
+    stdout = _stdout(result)
     if REPORT_MARKER in stdout or ANIMATION_MARKER in stdout or SCREENSHOT_MARKER in stdout:
         return True, None
-    lowered = stdout.lower()
-    if any(token in lowered for token in ("traceback", "exception", "error:", "failed")):
-        return False, stdout
     return True, None
 
 
