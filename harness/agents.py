@@ -1947,13 +1947,13 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "required_features": [],
         "optional_features": [],
         "forbidden_features": [],
-        "collision": {
+        "collision": {{
           "proxy_type": "bbox",
           "role": "kinematic",
           "margin": 0.02,
           "enabled": true,
           "group": null
-        },
+        }},
         "material_ids": ["material_id"],
         "visual_check_prompts": []
       }}

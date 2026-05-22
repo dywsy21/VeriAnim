@@ -1243,8 +1243,33 @@ def audit_global_nonpenetration():
         )
 
 def frames_for_interaction_target(event, target_id, frames):
+    contact_frames = []
+    for constraint in event.get("contact_constraints", []) or []:
+        ctype = str(constraint.get("constraint_type", ""))
+        if ctype not in ("touching", "attachment", "carry_contact"):
+            continue
+        subject_id = constraint.get("subject_id")
+        object_id = constraint.get("object_id")
+        event_subjects = set(event.get("subject_ids", []) or [])
+        if target_id not in (subject_id, object_id) and not (event_subjects & {{subject_id, object_id}}):
+            continue
+        for frame in contact_constraint_frames(constraint):
+            if frame in frames:
+                contact_frames.append(frame)
+    if contact_frames:
+        return sorted(set(contact_frames))
     if not is_static_destination_target(target_id):
-        return frames
+        text = " ".join([
+            str(event.get("id", "")),
+            str(event.get("description", "")),
+            str(event.get("expected_visual_result", "")),
+            " ".join(event.get("constraints", []) or []),
+        ]).lower()
+        if any(token in text for token in ("approach", "descend", "move down", "moves down", "contact the top", "pick")):
+            return [int(event.get("end_frame", frames[-1] if frames else 1))]
+        if any(token in text for token in ("carry", "carried", "grasp", "grasped", "transfer", "lift")):
+            return frames
+        return []
     text = " ".join([
         str(event.get("id", "")),
         str(event.get("description", "")),
@@ -1394,7 +1419,18 @@ def _animation_render_script(
     width: int,
     height: int,
 ) -> str:
-    target_ids = [obj.id for obj in ir.scene.objects]
+    target_ids: list[str] = []
+    if ir.animation:
+        for event in [*ir.animation.events, *ir.animation.camera_events]:
+            target_ids.extend(event.subject_ids)
+            target_ids.extend(event.target_ids)
+            for constraint in event.contact_constraints:
+                target_ids.extend([constraint.subject_id, constraint.object_id])
+        for constraint in ir.animation.contact_constraints:
+            target_ids.extend([constraint.subject_id, constraint.object_id])
+    if not target_ids:
+        target_ids = [obj.id for obj in ir.scene.objects]
+    target_ids = list(dict.fromkeys(target_ids))
     return f"""
 import json, math, os
 import bpy
@@ -1497,6 +1533,13 @@ for attr in ("use_volume_custom_range", "volumetric_light_clamp", "volumetric_sa
         original_eevee_settings[attr] = getattr(scene.eevee, attr)
     except Exception:
         pass
+original_light_energy = {{obj.name: obj.data.energy for obj in bpy.data.objects if obj.type == "LIGHT" and hasattr(obj.data, "energy")}}
+original_world_strength = None
+world = scene.world
+if world and world.use_nodes:
+    for _node in world.node_tree.nodes:
+        if _node.type == "BACKGROUND" and len(_node.inputs) > 1:
+            original_world_strength = _node.inputs[1].default_value
 for mat in bpy.data.materials:
     try:
         original_material_colors[mat.name] = tuple(mat.diffuse_color)
@@ -1602,6 +1645,29 @@ try:
     scene.eevee.volumetric_light_clamp = 1.0
 except Exception:
     pass
+for obj in bpy.data.objects:
+    if obj.type == "LIGHT" and hasattr(obj.data, "energy"):
+        light_type = getattr(obj.data, "type", "")
+        limit = 250.0
+        if light_type == "SUN":
+            limit = 1.0
+        elif light_type == "POINT":
+            limit = 90.0
+        elif light_type == "SPOT":
+            limit = 120.0
+        elif light_type == "AREA":
+            limit = 300.0
+        try:
+            obj.data.energy = min(float(obj.data.energy), limit)
+        except Exception:
+            pass
+if world and world.use_nodes:
+    for node in world.node_tree.nodes:
+        if node.type == "BACKGROUND" and len(node.inputs) > 1:
+            try:
+                node.inputs[1].default_value = min(float(node.inputs[1].default_value), 0.35)
+            except Exception:
+                pass
 apply_inspection_materials()
 for obj in bpy.data.objects:
     try:
@@ -1690,6 +1756,18 @@ finally:
                     obj.visible_camera = original_object_visibility[obj.name]["visible_camera"]
             except Exception:
                 pass
+        if obj.name in original_light_energy and obj.type == "LIGHT" and hasattr(obj.data, "energy"):
+            try:
+                obj.data.energy = original_light_energy[obj.name]
+            except Exception:
+                pass
+    if original_world_strength is not None and world and world.use_nodes:
+        for node in world.node_tree.nodes:
+            if node.type == "BACKGROUND" and len(node.inputs) > 1:
+                try:
+                    node.inputs[1].default_value = original_world_strength
+                except Exception:
+                    pass
     for mat in bpy.data.materials:
         if mat.name in original_material_colors:
             try:
