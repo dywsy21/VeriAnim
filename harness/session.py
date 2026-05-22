@@ -11,7 +11,7 @@ from typing import Any, Callable
 from .agents import CoderAgent, MaterialAgent, PlannerAgent, RefinerAgent, VideoVerifierAgent, VisionVerifierAgent
 from .artifacts import ArtifactStore
 from .blender_runtime import BlenderRuntime
-from .config import HarnessConfig
+from .config import AgentModelConfig, HarnessConfig
 from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_dict
 from .rag import LocalRAG
 
@@ -24,6 +24,21 @@ class HarnessEvent:
 
 
 EventCallback = Callable[[HarnessEvent], None]
+
+
+def _agent_model_record(config: AgentModelConfig) -> dict[str, Any]:
+    return {
+        "name": config.name,
+        "model": config.model,
+        "api_base": config.api_base,
+        "api_version": config.api_version,
+        "custom_llm_provider": config.custom_llm_provider,
+        "temperature": config.temperature,
+        "max_tokens": config.max_tokens,
+        "timeout_seconds": config.timeout_seconds,
+        "stream": config.stream,
+        "supports_images": config.supports_images,
+    }
 
 
 class InteractiveHarnessSession:
@@ -65,6 +80,7 @@ class InteractiveHarnessSession:
 
     def start(self, prompt: str) -> Path:
         self.store = ArtifactStore.create(self.config.runs_dir)
+        self._write_agent_model_manifest()
         self.turn_index = 0
         self._last_executed_code = None
         self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
@@ -90,6 +106,7 @@ class InteractiveHarnessSession:
 
     def start_from_ir(self, ir: GenerationIR) -> Path:
         self.store = ArtifactStore.create(self.config.runs_dir)
+        self._write_agent_model_manifest()
         self.turn_index = 0
         self._last_executed_code = None
         self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
@@ -130,6 +147,20 @@ class InteractiveHarnessSession:
         self.code = self.refiner.add_animation(ir=full_ir, code=base_code, scene_graph=scene_graph)
         self.store.write_text("code/generated_animation_stage.py", self.code)
         self._execute_validate_refine(reason="animation_stage")
+
+    def _write_agent_model_manifest(self) -> None:
+        if not self.store:
+            return
+        self.store.write_json(
+            "agent_models.json",
+            {
+                "planner": _agent_model_record(self.config.planner),
+                "coder": _agent_model_record(self.config.coder),
+                "refiner": _agent_model_record(self.config.refiner),
+                "vision": _agent_model_record(self.config.vision),
+                "video": _agent_model_record(self.config.video),
+            },
+        )
 
     def apply_user_request(self, request: str) -> Path:
         if not self.has_scene or not self.store or not self.ir or not self.code:
