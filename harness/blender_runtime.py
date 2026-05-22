@@ -916,6 +916,21 @@ def bbox_gap(a, b):
             gaps.append(0.0)
     return (gaps[0] ** 2 + gaps[1] ** 2 + gaps[2] ** 2) ** 0.5
 
+def bbox_overlaps(a, b):
+    return (
+        min(a[1].x, b[1].x) - max(a[0].x, b[0].x),
+        min(a[1].y, b[1].y) - max(a[0].y, b[0].y),
+        min(a[1].z, b[1].z) - max(a[0].z, b[0].z),
+    )
+
+def penetration_depth(a, b):
+    overlaps = bbox_overlaps(a, b)
+    if overlaps[0] <= 0 or overlaps[1] <= 0 or overlaps[2] <= 0:
+        return 0.0, overlaps, None
+    depths = [float(overlaps[0]), float(overlaps[1]), float(overlaps[2])]
+    axis_index = min(range(3), key=lambda index: depths[index])
+    return depths[axis_index], overlaps, ("x", "y", "z")[axis_index]
+
 def xy_overlap(a, b):
     return (
         min(a[1].x, b[1].x) - max(a[0].x, b[0].x),
@@ -998,6 +1013,233 @@ def check_supported_by(subject_id, subject_objs, target_id, target_objs, frame, 
             subject_id,
             frame,
             {{"target_id": target_id, "z_gap": z_gap}},
+        )
+
+def collision_spec(object_id):
+    for obj_spec in IR.get("scene", {{}}).get("objects", []):
+        if obj_spec.get("id") == object_id:
+            collision = obj_spec.get("collision") or {{}}
+            if collision.get("enabled", True) is False:
+                return None
+            return collision
+    return {{}}
+
+def collision_object_ids():
+    ids = []
+    for obj_spec in IR.get("scene", {{}}).get("objects", []):
+        object_id = obj_spec.get("id")
+        if not object_id:
+            continue
+        collision = collision_spec(object_id)
+        if collision is None:
+            continue
+        if str(collision.get("role", "")).lower() == "trigger":
+            continue
+        ids.append(object_id)
+    return ids
+
+def pair_key(a, b):
+    return tuple(sorted((str(a), str(b))))
+
+def globally_allowed_overlap_pairs():
+    allowed = set()
+    for relation in IR.get("scene", {{}}).get("relations", []):
+        rtype = str(relation.get("relation_type", ""))
+        if rtype in ("attached_to", "touching", "inside", "contains"):
+            allowed.add(pair_key(relation.get("subject_id"), relation.get("object_id")))
+    for constraint in anim.get("contact_constraints", []) or []:
+        ctype = str(constraint.get("constraint_type", ""))
+        if ctype in ("attachment", "touching", "carry_contact", "inside"):
+            allowed.add(pair_key(constraint.get("subject_id"), constraint.get("object_id")))
+    for event in events:
+        for constraint in event.get("contact_constraints", []) or []:
+            ctype = str(constraint.get("constraint_type", ""))
+            if ctype in ("attachment", "touching", "carry_contact", "inside"):
+                allowed.add(pair_key(constraint.get("subject_id"), constraint.get("object_id")))
+    return allowed
+
+def contact_constraint_frames(constraint):
+    start = int(constraint.get("start_frame", 1))
+    end = int(constraint.get("end_frame", start))
+    frames = {{start, end, int((start + end) / 2)}}
+    for frame in (anim.get("verifier", {{}}).get("sampled_frames", []) or []):
+        frame = int(frame)
+        if start <= frame <= end:
+            frames.add(frame)
+    return sorted(frame for frame in frames if 1 <= frame <= duration)
+
+def check_contact_constraint(constraint):
+    severity = "major" if constraint.get("required", True) else "minor"
+    subject_id = constraint.get("subject_id")
+    object_id = constraint.get("object_id")
+    subject_objs = find_objects(subject_id)
+    object_objs = find_objects(object_id)
+    if not subject_objs or not object_objs:
+        return
+    ctype = str(constraint.get("constraint_type", "nonpenetration"))
+    max_penetration = float(constraint.get("max_penetration", 0.02))
+    max_gap = constraint.get("max_gap")
+    if max_gap is None:
+        max_gap = 0.10 if ctype in ("touching", "attachment", "carry_contact") else 0.08
+    max_gap = float(max_gap)
+    for frame in contact_constraint_frames(constraint):
+        bpy.context.scene.frame_set(frame)
+        sb = aggregate_minmax(subject_objs)
+        ob = aggregate_minmax(object_objs)
+        if not sb or not ob:
+            continue
+        depth, overlaps, axis = penetration_depth(sb, ob)
+        gap = bbox_gap(sb, ob)
+        overlap_x, overlap_y = xy_overlap(sb, ob)
+        z_gap = sb[0].z - ob[1].z
+        if ctype == "nonpenetration":
+            if depth > max_penetration:
+                issue(
+                    "CONTACT_CONSTRAINT_PENETRATION",
+                    f"Contact constraint '{{constraint.get('id')}}' has '{{subject_id}}' penetrating '{{object_id}}'.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "penetration_depth": depth, "axis": axis, "overlaps": list(overlaps), "max_penetration": max_penetration}},
+                )
+        elif ctype == "support":
+            if overlap_x <= 0 or overlap_y <= 0:
+                issue(
+                    "CONTACT_CONSTRAINT_SUPPORT_OVERLAP_FAILED",
+                    f"Contact constraint '{{constraint.get('id')}}' expects '{{subject_id}}' supported by '{{object_id}}', but x/y footprints do not overlap.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "overlap_x": overlap_x, "overlap_y": overlap_y, "z_gap": z_gap}},
+                )
+            elif z_gap > max_gap:
+                issue(
+                    "CONTACT_CONSTRAINT_FLOATING",
+                    f"Contact constraint '{{constraint.get('id')}}' has '{{subject_id}}' floating above '{{object_id}}'.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "z_gap": z_gap, "max_gap": max_gap}},
+                )
+            elif z_gap < -max_penetration:
+                issue(
+                    "CONTACT_CONSTRAINT_SUPPORT_PENETRATION",
+                    f"Contact constraint '{{constraint.get('id')}}' has '{{subject_id}}' penetrating its support '{{object_id}}'.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "z_gap": z_gap, "max_penetration": max_penetration}},
+                )
+        elif ctype in ("touching", "attachment", "carry_contact"):
+            if gap > max_gap:
+                issue(
+                    "CONTACT_CONSTRAINT_GAP",
+                    f"Contact constraint '{{constraint.get('id')}}' expects '{{subject_id}}' to stay connected to '{{object_id}}', but the objects are separated.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "gap": gap, "max_gap": max_gap}},
+                )
+            if depth > max_penetration:
+                issue(
+                    "CONTACT_CONSTRAINT_CONTACT_PENETRATION",
+                    f"Contact constraint '{{constraint.get('id')}}' has excessive penetration between '{{subject_id}}' and '{{object_id}}'.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "penetration_depth": depth, "axis": axis, "overlaps": list(overlaps), "max_penetration": max_penetration}},
+                )
+        elif ctype == "inside":
+            max_escape = float(constraint.get("max_gap", 0.02) or 0.02)
+            escapes = {{
+                "min_x": ob[0].x - sb[0].x,
+                "max_x": sb[1].x - ob[1].x,
+                "min_y": ob[0].y - sb[0].y,
+                "max_y": sb[1].y - ob[1].y,
+                "min_z": ob[0].z - sb[0].z,
+                "max_z": sb[1].z - ob[1].z,
+            }}
+            escaped = {{axis_name: value for axis_name, value in escapes.items() if value > max_escape}}
+            if escaped:
+                issue(
+                    "CONTACT_CONSTRAINT_INSIDE_FAILED",
+                    f"Contact constraint '{{constraint.get('id')}}' expects '{{subject_id}}' to remain inside '{{object_id}}'.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "escaped": escaped, "max_escape": max_escape}},
+                )
+
+def animation_audit_frames():
+    frames = set(anim.get("verifier", {{}}).get("sampled_frames", []) or [])
+    for event in events:
+        start = int(event.get("start_frame", 1))
+        end = int(event.get("end_frame", start))
+        frames.update([start, end, int((start + end) / 2)])
+    if duration:
+        step = 1 if duration <= 180 else max(1, int(duration / 180))
+        frames.update(range(1, duration + 1, step))
+        frames.add(duration)
+    return sorted(int(frame) for frame in frames if 1 <= int(frame) <= duration)
+
+def audit_global_nonpenetration():
+    object_ids = collision_object_ids()
+    allowed = globally_allowed_overlap_pairs()
+    if len(object_ids) < 2:
+        return
+    violations = {{}}
+    for frame in animation_audit_frames():
+        bpy.context.scene.frame_set(frame)
+        bboxes = {{}}
+        for object_id in object_ids:
+            objs = find_objects(object_id)
+            bbox = aggregate_minmax(objs)
+            if bbox:
+                bboxes[object_id] = bbox
+        for index, subject_id in enumerate(object_ids):
+            for object_id in object_ids[index + 1:]:
+                if pair_key(subject_id, object_id) in allowed:
+                    continue
+                if subject_id not in bboxes or object_id not in bboxes:
+                    continue
+                max_penetration = max(
+                    float((collision_spec(subject_id) or {{}}).get("margin", 0.02)),
+                    float((collision_spec(object_id) or {{}}).get("margin", 0.02)),
+                    0.02,
+                )
+                depth, overlaps, axis = penetration_depth(bboxes[subject_id], bboxes[object_id])
+                if depth > max_penetration:
+                    key = pair_key(subject_id, object_id)
+                    existing = violations.get(key)
+                    if existing is None:
+                        violations[key] = {{
+                            "subject_id": subject_id,
+                            "object_id": object_id,
+                            "frames": [],
+                            "worst_frame": frame,
+                            "penetration_depth": depth,
+                            "axis": axis,
+                            "overlaps": list(overlaps),
+                            "max_penetration": max_penetration,
+                        }}
+                    existing = violations[key]
+                    existing["frames"].append(frame)
+                    if depth > existing["penetration_depth"]:
+                        existing["worst_frame"] = frame
+                        existing["penetration_depth"] = depth
+                        existing["axis"] = axis
+                        existing["overlaps"] = list(overlaps)
+    for data in violations.values():
+        frames = sorted(set(int(frame) for frame in data.pop("frames", [])))
+        data["frames"] = frames[:24]
+        data["frame_count"] = len(frames)
+        issue(
+            "ANIMATION_GLOBAL_PENETRATION",
+            f"Objects '{{data['subject_id']}}' and '{{data['object_id']}}' penetrate during animation.",
+            "major",
+            data["subject_id"],
+            data["worst_frame"],
+            data,
         )
 
 def frames_for_interaction_target(event, target_id, frames):
@@ -1128,6 +1370,15 @@ for event in events:
                 for frame in frames_for_motion_support(event, target_id, frames):
                     bpy.context.scene.frame_set(frame)
                     check_supported_by(sid, subj_objs, target_id, target_objs, frame, str(event.get("id")))
+
+for constraint in anim.get("contact_constraints", []) or []:
+    check_contact_constraint(constraint)
+
+for event in events:
+    for constraint in event.get("contact_constraints", []) or []:
+        check_contact_constraint(constraint)
+
+audit_global_nonpenetration()
 
 report = {{"passed": not issues, "issues": issues, "summary": "Animation deterministic validation passed." if not issues else "Animation deterministic validation found issues."}}
 print("{ANIMATION_MARKER}" + json.dumps({{"report": report, "trace": trace}}))

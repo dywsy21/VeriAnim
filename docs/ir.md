@@ -32,6 +32,10 @@ The IR is split by responsibility rather than by prompt phrasing:
   gripper and windmill tests show why parts that need independent motion or
   verification should be promoted to root objects; parts are descriptive, root
   objects are controllable.
+- `CollisionProxySpec` gives each controllable object a simple physical proxy.
+  This borrows the stable object identity of scene graphs/USD and the proxy
+  idea used in dynamic scene graphs, but keeps the representation small enough
+  for an LLM planner to emit and for Blender validation to audit.
 - `MaterialSpec` is intentionally separate from objects so texture resolution
   can happen before code generation. `texture_policy` is now explicit because
   "solid color" and "no image textures" are user constraints, not model
@@ -51,6 +55,13 @@ The IR is split by responsibility rather than by prompt phrasing:
   scene plan. Its events reference stable scene ids and encode start, middle,
   end, expected visual result, and visibility requirements so animation repair
   can be local.
+- `ContactConstraintSpec` is the animation counterpart to spatial relations.
+  Instead of relying on natural-language instructions such as "do not pass
+  through the table", it records frame windows for nonpenetration, support,
+  attachment, carried contact, and containment. This is inspired by behavior
+  markup and spacetime constraints, but differs by being repair-oriented:
+  failed constraints produce object ids, frames, and measured evidence for the
+  refiner.
 - `PipelineStageSpec` records the progressive contract: static scene first,
   animation extension second. This is the architectural guardrail that prevents
   the static stage from inserting keyframes or the animation stage from
@@ -59,7 +70,15 @@ The IR is split by responsibility rather than by prompt phrasing:
 The main boundary exposed by recent tests is that LLMs often generate plausible
 natural-language plans with underspecified verification semantics. IR v0.2
 therefore adds explicit texture policy, relation verification method, camera
-framing requirements, screenshot purpose, and video visibility requirements.
+framing requirements, screenshot purpose, video visibility requirements,
+collision proxies, and contact constraints.
+
+Compared with prior scene or animation IRs, this IR is not primarily an asset
+interchange format like USD/BIFS, not only a text-to-layout scene graph, and not
+only a behavior script. Its distinguishing property is that it is LLM-facing,
+executable, and verifier-facing at the same time: the same ids and constraints
+are used by planner prompts, code generation, deterministic Blender audits,
+vision/video verification, and repair prompts.
 
 ## Top-Level Object
 
@@ -146,6 +165,8 @@ into `scene` and `animation`.
 - `dimensions`: approximate or bounded object size.
 - `placement`: local/global placement hints.
 - `material_ids`: references to `MaterialSpec`.
+- `collision`: `CollisionProxySpec` used for deterministic contact and
+  penetration checks.
 - `generation_notes`: extra instructions for the code generator.
 - `visual_check_prompts`: object-specific questions for the vision verifier.
 
@@ -157,6 +178,37 @@ into `scene` and `animation`.
 - `material_id`: optional material reference.
 - `expected_count`: expected number of repeated parts.
 - `dimension`: optional size bounds for the part.
+
+## Collision Proxies
+
+`CollisionProxySpec`
+
+- `proxy_type`: `auto`, `bbox`, `sphere`, `capsule`, `convex_hull`, `mesh`, or
+  `compound`. The current deterministic validator uses world-space aggregate
+  bounding boxes as the first implementation, but the proxy type tells the
+  planner/coder what physical simplification is intended and leaves room for
+  BVH or convex checks later.
+- `role`: `active`, `passive`, `kinematic`, `carried`, `support`, or `trigger`.
+  Triggers are ignored by global penetration audits. Supports and carried
+  objects should usually also appear in explicit contact constraints.
+- `dimensions`: optional proxy-specific dimensions when they differ from the
+  visual object dimensions.
+- `margin`: allowed penetration tolerance in meters. This should be small, for
+  example `0.01` to `0.03`, for hard props.
+- `enabled`: set false only for purely visual effects, transparent guides, or
+  background decoration that should not participate in collision audits.
+- `group`: optional future grouping hint.
+- `notes`: free-form physical simplification notes.
+
+Planner guidance:
+
+- Give every required, movable, support, container, or obstacle object a
+  collision proxy.
+- Use `sphere` for balls, `capsule` for limbs/cylinders, `bbox` for boxes and
+  platforms, and `compound` for objects whose visible parts form separated
+  supports.
+- Disable collision for smoke, light cones, labels, purely decorative decals,
+  or distant background geometry.
 
 ## Materials
 
@@ -363,6 +415,8 @@ matching object or relation ids.
 - `loop`: whether the animation should loop.
 - `render`: animation render settings.
 - `verifier`: video verifier settings.
+- `contact_constraints`: global animation contact constraints that apply across
+  events or final states.
 
 `AnimationEventSpec`
 
@@ -382,6 +436,38 @@ matching object or relation ids.
   state which subjects, contact points, and final placements must remain visible
   in the GIF/video and sampled frames.
 - `constraints`: event-specific constraints.
+- `contact_constraints`: event-scoped `ContactConstraintSpec` entries. Use
+  these when a constraint only applies during one event window.
+
+`ContactConstraintSpec`
+
+- `id`: stable constraint id.
+- `constraint_type`: `nonpenetration`, `support`, `touching`, `attachment`,
+  `carry_contact`, or `inside`.
+- `subject_id`: constrained object.
+- `object_id`: reference/support/container/object to avoid.
+- `start_frame`, `end_frame`: inclusive frame window.
+- `required`: whether failure blocks pass. Optional constraints report as lower
+  severity in deterministic validation.
+- `max_penetration`: allowed bbox penetration in meters.
+- `max_gap`: allowed separation for support/contact, or escape tolerance for
+  `inside`.
+- `min_overlap`: optional footprint overlap requirement for future stricter
+  checks.
+- `axis`: optional axis hint, `x`, `y`, or `z`.
+- `description`: human-readable intent for the coder and verifier.
+
+Recommended use:
+
+- `nonpenetration`: moving object must not pass through obstacle, wall, table,
+  container side, another actor, or final target.
+- `support`: object must rest on a platform/floor/surface without floating or
+  sinking.
+- `touching` / `attachment`: hinge, connector, bracket, hand contact, or object
+  that must remain connected.
+- `carry_contact`: gripper, hand, crane hook, or tray must remain close to the
+  carried object during the carry window.
+- `inside`: object must remain within a basket, box, drawer, pipe, or boundary.
 
 `MotionPathSpec`
 
@@ -439,6 +525,9 @@ For every required event:
 - `animation.verifier.questions` must ask temporal questions about visible
   motion, final state, and camera coverage.
 - `animation.verifier.pass_criteria` must state objective pass conditions.
+- Motions that can collide, carry, rest, enter containers, or pass close to
+  obstacles should include explicit `contact_constraints`; natural-language
+  event constraints alone are not enough.
 
 The repository includes repeatable fixtures:
 
@@ -535,6 +624,39 @@ All verifiers should return `ValidationReport`.
 - Video verifier settings missing sampled start/middle/end frames, temporal
   questions, or pass criteria.
 - Camera events whose subjects do not reference known camera ids.
+- Collision proxies with invalid margins or dimensions.
+- Contact constraints with unknown object ids, invalid frame ranges, negative
+  gap/penetration tolerances, invalid axes, or self-contact.
 
 This is not a substitute for Blender execution or visual/video verification. It
 only ensures that the IR itself is internally coherent before generation starts.
+
+## Penetration Validation
+
+The first collision-aware deterministic pass is deliberately conservative and
+explainable:
+
+- It samples every event boundary, event midpoint, requested verifier sample,
+  and every frame for animations up to 180 frames. Longer animations are
+  subsampled to roughly 180 audit frames.
+- It aggregates all mesh-like descendants for each `ll3m_id` into a world-space
+  bbox.
+- It checks explicit `ContactConstraintSpec` windows for penetration, floating,
+  missing support footprint overlap, detached contact, and failed containment.
+- It runs a global nonpenetration audit across collision-enabled scene objects.
+  Relation/contact pairs such as `attached_to`, `touching`, `inside`, and
+  `carry_contact` are exempted from global overlap because they are governed by
+  their explicit constraints.
+- Explicit contact failures report a stable code, object ids, frame,
+  penetration depth, axis, overlap vector, and configured tolerance. Global
+  penetration failures are aggregated to one report per object pair with the
+  worst frame, worst depth, sampled failing frames, and frame count, so repair
+  prompts stay compact.
+
+This will not catch every curved mesh intersection, and bbox checks can be
+stricter than visual reality for concave or compound objects. The practical
+benefit is that the common failure mode in current GIFs, obvious object
+interpenetration or floating during animation, is now a deterministic repair
+signal before the video model is asked to judge the result. Future upgrades can
+replace selected proxies with Blender `BVHTree` or convex-hull checks without
+changing the high-level IR contract.

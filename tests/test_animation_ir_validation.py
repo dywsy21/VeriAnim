@@ -82,6 +82,74 @@ class AnimationIRValidationTest(unittest.TestCase):
         self.assertFalse(report.passed)
         self.assertIn("RELATION_METHOD_MISMATCH", codes)
 
+    def test_contact_constraints_are_structurally_valid(self) -> None:
+        data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
+        data["scene"]["objects"][0]["collision"] = {
+            "proxy_type": "sphere",
+            "role": "active",
+            "margin": 0.02,
+            "enabled": True,
+        }
+        data["scene"]["objects"][1]["collision"] = {
+            "proxy_type": "bbox",
+            "role": "passive",
+            "margin": 0.02,
+            "enabled": True,
+        }
+        data["animation"]["contact_constraints"] = [
+            {
+                "id": "ball_box_nonpenetration",
+                "constraint_type": "nonpenetration",
+                "subject_id": "ball",
+                "object_id": "box",
+                "start_frame": 1,
+                "end_frame": 120,
+                "max_penetration": 0.02,
+                "description": "The ball must not pass through the box.",
+            }
+        ]
+
+        report = from_dict(GenerationIR, data).validate()
+
+        self.assertTrue(report.passed, report.to_dict() if hasattr(report, "to_dict") else report)
+
+    def test_contact_constraint_unknown_object_and_bad_frames_are_invalid(self) -> None:
+        data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
+        data["animation"]["events"][0]["contact_constraints"] = [
+            {
+                "id": "bad_contact",
+                "constraint_type": "support",
+                "subject_id": "ball",
+                "object_id": "missing_platform",
+                "start_frame": 0,
+                "end_frame": 200,
+                "max_gap": -0.1,
+            }
+        ]
+
+        report = from_dict(GenerationIR, data).validate()
+        codes = {issue.code for issue in report.issues}
+
+        self.assertFalse(report.passed)
+        self.assertIn("UNKNOWN_CONTACT_CONSTRAINT_OBJECT", codes)
+        self.assertIn("INVALID_CONTACT_CONSTRAINT_FRAME_RANGE", codes)
+        self.assertIn("INVALID_CONTACT_CONSTRAINT_GAP", codes)
+
+    def test_collision_proxy_invalid_margin_is_invalid(self) -> None:
+        data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
+        data["scene"]["objects"][0]["collision"] = {
+            "proxy_type": "sphere",
+            "role": "active",
+            "margin": -0.01,
+            "enabled": True,
+        }
+
+        report = from_dict(GenerationIR, data).validate()
+        codes = {issue.code for issue in report.issues}
+
+        self.assertFalse(report.passed)
+        self.assertIn("INVALID_COLLISION_MARGIN", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

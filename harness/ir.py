@@ -85,6 +85,34 @@ class RelationVerificationMethod(str, Enum):
     VISUAL_ONLY = "visual_only"
 
 
+class CollisionProxyType(str, Enum):
+    AUTO = "auto"
+    BBOX = "bbox"
+    SPHERE = "sphere"
+    CAPSULE = "capsule"
+    CONVEX_HULL = "convex_hull"
+    MESH = "mesh"
+    COMPOUND = "compound"
+
+
+class CollisionRole(str, Enum):
+    ACTIVE = "active"
+    PASSIVE = "passive"
+    KINEMATIC = "kinematic"
+    CARRIED = "carried"
+    SUPPORT = "support"
+    TRIGGER = "trigger"
+
+
+class ContactConstraintType(str, Enum):
+    NONPENETRATION = "nonpenetration"
+    SUPPORT = "support"
+    TOUCHING = "touching"
+    ATTACHMENT = "attachment"
+    CARRY_CONTACT = "carry_contact"
+    INSIDE = "inside"
+
+
 class TexturePolicy(str, Enum):
     AUTO = "auto"
     REQUIRED = "required"
@@ -278,6 +306,17 @@ class PlacementSpec:
 
 
 @dataclass(slots=True)
+class CollisionProxySpec:
+    proxy_type: CollisionProxyType = CollisionProxyType.AUTO
+    role: CollisionRole = CollisionRole.KINEMATIC
+    dimensions: DimensionSpec | None = None
+    margin: float = 0.02
+    enabled: bool = True
+    group: str | None = None
+    notes: str | None = None
+
+
+@dataclass(slots=True)
 class ObjectSpec:
     id: str
     description: str
@@ -292,6 +331,7 @@ class ObjectSpec:
     dimensions: DimensionSpec | None = None
     placement: PlacementSpec = field(default_factory=PlacementSpec)
     material_ids: list[str] = field(default_factory=list)
+    collision: CollisionProxySpec = field(default_factory=CollisionProxySpec)
     generation_notes: str | None = None
     visual_check_prompts: list[str] = field(default_factory=list)
 
@@ -446,6 +486,22 @@ class MotionPathSpec:
 
 
 @dataclass(slots=True)
+class ContactConstraintSpec:
+    id: str
+    constraint_type: ContactConstraintType
+    subject_id: str
+    object_id: str
+    start_frame: int
+    end_frame: int
+    required: bool = True
+    max_penetration: float = 0.02
+    max_gap: float | None = None
+    min_overlap: float | None = None
+    axis: str | None = None
+    description: str | None = None
+
+
+@dataclass(slots=True)
 class AnimationEventSpec:
     id: str
     action: AnimationAction
@@ -462,6 +518,7 @@ class AnimationEventSpec:
     expected_visual_result: str | None = None
     visibility_requirements: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
+    contact_constraints: list[ContactConstraintSpec] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -473,6 +530,7 @@ class AnimationSpec:
     loop: bool = False
     render: RenderSpec = field(default_factory=RenderSpec)
     verifier: VideoVerifierSpec = field(default_factory=VideoVerifierSpec)
+    contact_constraints: list[ContactConstraintSpec] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -604,6 +662,7 @@ class GenerationIR:
                             target_id=obj.id,
                         )
                     )
+            _validate_collision_proxy(obj, issues)
 
         for material in self.scene.materials:
             if material.texture_policy in {TexturePolicy.FORBIDDEN, TexturePolicy.SOLID_ONLY} and (
@@ -757,6 +816,14 @@ class GenerationIR:
                             frame=frame,
                         )
                     )
+            for constraint in self.animation.contact_constraints:
+                _validate_contact_constraint(
+                    constraint,
+                    issues=issues,
+                    object_id_set=object_id_set,
+                    duration_frames=self.animation.duration_frames,
+                    owner_id="AnimationSpec",
+                )
 
             for event in self.animation.events:
                 if event.action in camera_actions:
@@ -925,6 +992,14 @@ def _validate_animation_event(
 
     _validate_motion_path(event, issues)
     _validate_action_requirements(event, issues)
+    for constraint in event.contact_constraints:
+        _validate_contact_constraint(
+            constraint,
+            issues=issues,
+            object_id_set=object_id_set,
+            duration_frames=duration_frames,
+            owner_id=f"event '{event.id}'",
+        )
 
 
 def _missing_sampled_frames(event: AnimationEventSpec, sampled_frames: list[int]) -> list[str]:
@@ -937,6 +1012,143 @@ def _missing_sampled_frames(event: AnimationEventSpec, sampled_frames: list[int]
     if event.end_frame not in samples:
         missing.append("end")
     return missing
+
+
+def _validate_contact_constraint(
+    constraint: ContactConstraintSpec,
+    *,
+    issues: list[ValidationIssue],
+    object_id_set: set[str],
+    duration_frames: int,
+    owner_id: str,
+) -> None:
+    if not constraint.id:
+        issues.append(
+            ValidationIssue(
+                code="EMPTY_CONTACT_CONSTRAINT_ID",
+                message=f"{owner_id} contains a contact constraint with an empty id.",
+                severity=Severity.CRITICAL,
+                frame=constraint.start_frame,
+            )
+        )
+    if constraint.subject_id not in object_id_set:
+        issues.append(
+            ValidationIssue(
+                code="UNKNOWN_CONTACT_CONSTRAINT_SUBJECT",
+                message=f"Contact constraint '{constraint.id}' references unknown subject '{constraint.subject_id}'.",
+                severity=Severity.CRITICAL,
+                target_id=constraint.subject_id,
+                frame=constraint.start_frame,
+            )
+        )
+    if constraint.object_id not in object_id_set:
+        issues.append(
+            ValidationIssue(
+                code="UNKNOWN_CONTACT_CONSTRAINT_OBJECT",
+                message=f"Contact constraint '{constraint.id}' references unknown object '{constraint.object_id}'.",
+                severity=Severity.CRITICAL,
+                target_id=constraint.object_id,
+                frame=constraint.start_frame,
+            )
+        )
+    if constraint.subject_id == constraint.object_id:
+        issues.append(
+            ValidationIssue(
+                code="SELF_CONTACT_CONSTRAINT",
+                message=f"Contact constraint '{constraint.id}' cannot constrain an object against itself.",
+                severity=Severity.MAJOR,
+                target_id=constraint.subject_id,
+                frame=constraint.start_frame,
+            )
+        )
+    if constraint.start_frame < 1 or constraint.end_frame < constraint.start_frame or constraint.end_frame > duration_frames:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_CONTACT_CONSTRAINT_FRAME_RANGE",
+                message=f"Contact constraint '{constraint.id}' must stay within the animation frame range.",
+                severity=Severity.MAJOR,
+                frame=constraint.start_frame,
+                evidence={"start_frame": constraint.start_frame, "end_frame": constraint.end_frame, "duration": duration_frames},
+            )
+        )
+    if constraint.max_penetration < 0:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_CONTACT_CONSTRAINT_PENETRATION",
+                message=f"Contact constraint '{constraint.id}' max_penetration cannot be negative.",
+                severity=Severity.MAJOR,
+                frame=constraint.start_frame,
+            )
+        )
+    if constraint.max_gap is not None and constraint.max_gap < 0:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_CONTACT_CONSTRAINT_GAP",
+                message=f"Contact constraint '{constraint.id}' max_gap cannot be negative.",
+                severity=Severity.MAJOR,
+                frame=constraint.start_frame,
+            )
+        )
+    if constraint.min_overlap is not None and constraint.min_overlap < 0:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_CONTACT_CONSTRAINT_OVERLAP",
+                message=f"Contact constraint '{constraint.id}' min_overlap cannot be negative.",
+                severity=Severity.MAJOR,
+                frame=constraint.start_frame,
+            )
+        )
+    if constraint.axis is not None and constraint.axis not in {"x", "y", "z"}:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_CONTACT_CONSTRAINT_AXIS",
+                message=f"Contact constraint '{constraint.id}' axis must be x, y, or z.",
+                severity=Severity.MAJOR,
+                frame=constraint.start_frame,
+            )
+        )
+
+
+def _validate_collision_proxy(obj: ObjectSpec, issues: list[ValidationIssue]) -> None:
+    if obj.collision.margin < 0:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_COLLISION_MARGIN",
+                message=f"Object '{obj.id}' collision margin cannot be negative.",
+                severity=Severity.MAJOR,
+                target_id=obj.id,
+            )
+        )
+    if obj.collision.dimensions:
+        _validate_dimension_spec(
+            obj.collision.dimensions,
+            issues=issues,
+            code_prefix="COLLISION",
+            target_id=obj.id,
+        )
+
+
+def _validate_dimension_spec(
+    dimensions: DimensionSpec,
+    *,
+    issues: list[ValidationIssue],
+    code_prefix: str,
+    target_id: str,
+) -> None:
+    for field_name in ("size", "min_size", "max_size"):
+        value = getattr(dimensions, field_name)
+        if value is None:
+            continue
+        if len(value) != 3 or any(float(component) <= 0 for component in value):
+            issues.append(
+                ValidationIssue(
+                    code=f"INVALID_{code_prefix}_DIMENSION",
+                    message=f"Object '{target_id}' {field_name} must contain three positive dimensions.",
+                    severity=Severity.MAJOR,
+                    target_id=target_id,
+                    evidence={"field": field_name, "value": list(value)},
+                )
+            )
 
 
 def _static_scene_prompt(scene: SceneSpec) -> str:

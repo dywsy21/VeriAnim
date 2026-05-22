@@ -113,6 +113,9 @@ provider capability/configuration problems are visible in the run.
 1. `PlannerAgent`
    - Converts prompt into `GenerationIR` (IR v0.2).
    - Includes screenshot and video verification plans.
+   - Adds collision proxies for required physical objects and contact
+     constraints for animation windows that involve support, carrying,
+     containment, or nonpenetration.
 
 2. `MaterialAgent`
    - Runs after planning and before coding.
@@ -242,6 +245,10 @@ extra temporal checks:
 - IR v0.2 events also carry `visibility_requirements`; the video verifier
   treats `require_subject_visibility` and `require_final_state_visibility` as
   blocking requirements instead of relying on transform traces alone.
+- IR v0.2 objects also carry `collision` proxies, and animation specs/events
+  can carry `contact_constraints`. These make common animation failures such as
+  object penetration, floating supports, detached carried objects, and failed
+  containment measurable before the video verifier runs.
 - The harness normalizes animation verifier settings so every animation run has
   start, midpoint, end, and event-boundary frames.
 - `CoderAgent` is instructed to create simple explicit keyframes first:
@@ -251,6 +258,12 @@ extra temporal checks:
   boundaries, checks that required F-Curves exist, verifies that motion is not
   static, and compares final transforms against explicit `end_transform` values
   when present.
+- Deterministic animation validation now also runs collision-aware audits:
+  explicit contact constraints are checked at their start, midpoint, end, and
+  relevant sampled frames; then a global nonpenetration pass samples the
+  animation and reports one aggregated `ANIMATION_GLOBAL_PENETRATION` per
+  object pair with worst frame, object pair, penetration depth, overlap vector,
+  axis, tolerance, sampled failing frames, and failing frame count.
 - Pick-and-place style events are treated as interaction events, not just
   independent object motion. The planner is asked to expose a gripper or
   end-effector as an object id when possible and attach it through

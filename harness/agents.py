@@ -48,9 +48,11 @@ class PlannerAgent:
             "For each MaterialSpec decide whether an external image texture is needed. Set needs_texture=true and texture_query for natural, patterned, grainy, irregular, or surface-specific materials such as wood grain, stone, concrete, rusted metal, bark, fabric, leather, brick, grass, tabletop planks, and walls. Set needs_texture=false for intentionally plain or solid surfaces such as a pure-color mug, simple plastic toy, flat painted part, signal light, or clean ceramic. "
             "Plan at least three complementary screenshot views: an overall three-quarter view, a relation/contact close-up, and a side or top view that exposes support/contact. "
             "Add visual pass criteria that require no floating, detached, or misaligned parts unless explicitly requested. "
+            "For every required object, include a collision proxy unless it is purely visual: use bbox for box-like props, sphere/capsule for round or elongated props, compound for multi-part supports, and role support/passive/kinematic/active/carried as appropriate. "
             "When animation is requested, include AnimationSpec and video verifier settings. "
             "Animation events must be structurally verifiable: use translate, rotate, scale, follow_path, appear, disappear, camera_move, or camera_orbit; include start_transform, at least one intermediate path.keyframe or path point, end_transform, sampled frames covering start/middle/end, temporal questions, and pass criteria. "
             "For every required animation event, include visibility_requirements that say which subjects, contact points, and final placements must remain visible in the GIF and sampled frames. "
+            "For moving objects that push, carry, rest on, slide on, land in, pass near, or must not penetrate another object, add contact_constraints with frame windows: nonpenetration for forbidden intersections, support for resting on surfaces, touching/attachment for connectors, and carry_contact for carried objects. "
             "For signal or material color changes, do not use one vague color-change event. Model separate colored visible parts such as red_light and green_light, then use disappear/appear events with explicit path.keyframes value.visible or value.alpha. "
             "For pick, grasp, carry, lift, or place animations, model the gripper/end-effector as its own ObjectSpec when possible, and put that object id in target_ids for the package lift/transfer events so contact continuity can be verified. "
             "For slanted ramps, inclined planes, hinges, brackets, and structural supports, use attached_to or touching relations rather than on_top_of unless the surfaces are horizontal and directly stacked. "
@@ -89,6 +91,7 @@ Use Blender's Z-up coordinate system and meters.
             "Keep the revised IR concise and executable: at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
             "For each MaterialSpec decide whether an external image texture is needed. Use needs_texture=true and texture_query only for natural, patterned, grainy, irregular, or surface-specific materials; keep needs_texture=false for intentionally plain or solid-color surfaces. "
             "Animation events must stay structurally verifiable: include required start/end transforms, at least one intermediate keyframe or path point, sampled start/middle/end frames, temporal questions, and pass criteria. "
+            "Preserve or add collision proxies and contact_constraints when animation involves support, pushing, carrying, placement, or collision avoidance. "
             "For signal or material color changes, use separate colored visible parts and explicit appear/disappear visibility keyframes. "
             "For pick, grasp, carry, lift, or place animations, keep an explicit gripper/end-effector object id in target_ids for package motion events. "
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
@@ -836,6 +839,14 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
                     "required_features": obj.required_features,
                     "forbidden_features": obj.forbidden_features,
                     "dimensions": _dimension(obj.dimensions),
+                    "collision": {
+                        "proxy_type": _value(obj.collision.proxy_type),
+                        "role": _value(obj.collision.role),
+                        "dimensions": _dimension(obj.collision.dimensions),
+                        "margin": obj.collision.margin,
+                        "enabled": obj.collision.enabled,
+                        "group": obj.collision.group,
+                    },
                     "placement": {
                         "transform": _transform(obj.placement.transform),
                         "anchor": obj.placement.anchor,
@@ -938,6 +949,7 @@ def _compact_ir_for_coder(ir: GenerationIR) -> dict[str, Any]:
             "loop": ir.animation.loop,
             "events": [_compact_animation_event(event) for event in ir.animation.events],
             "camera_events": [_compact_animation_event(event) for event in ir.animation.camera_events],
+            "contact_constraints": [_compact_contact_constraint(constraint) for constraint in ir.animation.contact_constraints],
             "render": {
                 "resolution": render.resolution,
                 "engine": _value(render.engine),
@@ -987,6 +999,26 @@ def _compact_animation_event(event: Any) -> dict[str, Any]:
             "expected_visual_result": event.expected_visual_result,
             "visibility_requirements": event.visibility_requirements,
             "constraints": event.constraints,
+            "contact_constraints": [_compact_contact_constraint(constraint) for constraint in event.contact_constraints],
+        }
+    )
+
+
+def _compact_contact_constraint(constraint: Any) -> dict[str, Any]:
+    return _drop_none(
+        {
+            "id": constraint.id,
+            "constraint_type": _value(constraint.constraint_type),
+            "subject_id": constraint.subject_id,
+            "object_id": constraint.object_id,
+            "start_frame": constraint.start_frame,
+            "end_frame": constraint.end_frame,
+            "required": constraint.required,
+            "max_penetration": constraint.max_penetration,
+            "max_gap": constraint.max_gap,
+            "min_overlap": constraint.min_overlap,
+            "axis": constraint.axis,
+            "description": constraint.description,
         }
     )
 
@@ -1833,6 +1865,18 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "constraints": [
           "Start, middle, and end states must be visible in sampled frames."
         ],
+        "contact_constraints": [
+          {
+            "id": "event_nonpenetration",
+            "constraint_type": "nonpenetration",
+            "subject_id": "object_id",
+            "object_id": "other_object_id",
+            "start_frame": 1,
+            "end_frame": 120,
+            "max_penetration": 0.02,
+            "description": "object_id must not pass through other_object_id during this event"
+          }
+        ],
         "visibility_requirements": [
           "object_id is visible at the start, midpoint, and final sampled frame.",
           "The final placement/contact state is not cropped, hidden, or occluded."
@@ -1840,6 +1884,19 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
       }
     ],
     "camera_events": [],
+    "contact_constraints": [
+      {
+        "id": "final_support",
+        "constraint_type": "support",
+        "subject_id": "object_id",
+        "object_id": "support_object_id",
+        "start_frame": 120,
+        "end_frame": 120,
+        "max_penetration": 0.02,
+        "max_gap": 0.05,
+        "description": "object_id ends resting on support_object_id without floating or sinking"
+      }
+    ],
     "loop": false,
     "verifier": {
       "enabled": true,
@@ -1890,6 +1947,13 @@ def _planner_json_skeleton(include_animation: bool | None) -> str:
         "required_features": [],
         "optional_features": [],
         "forbidden_features": [],
+        "collision": {
+          "proxy_type": "bbox",
+          "role": "kinematic",
+          "margin": 0.02,
+          "enabled": true,
+          "group": null
+        },
         "material_ids": ["material_id"],
         "visual_check_prompts": []
       }}
