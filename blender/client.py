@@ -1,5 +1,7 @@
 import socket
 import json
+from typing import Any
+
 from .headless import execute_headless_blender, should_use_headless
 
 HOST = 'localhost'
@@ -49,7 +51,7 @@ class BlenderClient:
             self.sock.close()
             self.sock = None
 
-    def send_command(self, command) -> dict[str, str]:
+    def send_command(self, command) -> dict[str, Any]:
         """
         Send a command (dict) to the Blender server and receive the response.
         :param command: Dictionary representing the command to send.
@@ -70,7 +72,7 @@ class BlenderClient:
                     return response
                 except json.JSONDecodeError:
                     continue
-            return None
+            return {"status": "error", "message": "No response from Blender server"}
         except Exception as e:
             print(f"Error during send_command: {e}")
             return {"status": "error", "message": str(e)}

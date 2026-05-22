@@ -24,11 +24,11 @@ def _load_project_env() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ[key.strip()] = value.strip()
+        os.environ.setdefault(key.strip(), value.strip())
 
 
 _load_project_env()
-PORT = int(os.environ.get("LL3M_BLENDER_PORT", "18888"))
+PORT = int(os.environ.get("LL3M_BLENDER_PORT", "8888"))
 
 try:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)

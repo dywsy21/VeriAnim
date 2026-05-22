@@ -44,6 +44,8 @@ class BlenderRunResult:
     message: str | None
     stdout: str
     raw: dict[str, Any] | Any
+    stderr: str = ""
+    traceback: str | None = None
 
 
 class BlenderRuntime:
@@ -69,9 +71,12 @@ class BlenderRuntime:
             headless_enabled=self.config.headless_rendering,
             fallback_to_socket=True,
         )
+        execution = _execution_payload(result)
         stdout = _stdout(result)
-        ok, message = _infer_ok(result, stdout)
-        return BlenderRunResult(ok=ok, message=message, stdout=stdout, raw=result)
+        stderr = _payload_text(execution, "stderr")
+        traceback_text = _payload_text(execution, "traceback") or None
+        ok, message = _infer_ok(result, execution)
+        return BlenderRunResult(ok=ok, message=message, stdout=stdout, stderr=stderr, traceback=traceback_text, raw=result)
 
     def get_scene_graph(self) -> dict[str, Any]:
         result = BlenderClient.get_scene_graph(
@@ -220,12 +225,24 @@ class BlenderRuntime:
         return [], None
 
 
+def _execution_payload(result: dict[str, Any] | Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    inner = result.get("result")
+    if isinstance(inner, dict):
+        return inner
+    return result
+
+
 def _stdout(result: dict[str, Any] | Any) -> str:
     if isinstance(result, dict):
-        inner = result.get("result")
-        if isinstance(inner, dict):
+        inner = _execution_payload(result)
+        if inner:
+            if isinstance(inner.get("stdout"), str):
+                return inner["stdout"]
             value = inner.get("result")
-            return value if isinstance(value, str) else json.dumps(value, default=str)
+            if value is not None:
+                return value if isinstance(value, str) else json.dumps(value, default=str)
         if isinstance(inner, str):
             return inner
         if result.get("message"):
@@ -233,14 +250,29 @@ def _stdout(result: dict[str, Any] | Any) -> str:
     return str(result)
 
 
-def _infer_ok(result: dict[str, Any] | Any, stdout: str) -> tuple[bool, str | None]:
+def _payload_text(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def _infer_ok(result: dict[str, Any] | Any, execution: dict[str, Any]) -> tuple[bool, str | None]:
     if isinstance(result, dict) and str(result.get("status", "")).lower() == "error":
-        return False, str(result.get("message") or stdout)
+        return False, str(result.get("message") or _stdout(result))
+    if "ok" in execution:
+        ok = bool(execution.get("ok"))
+        if ok:
+            return True, None
+        message = execution.get("message") or execution.get("traceback") or execution.get("stderr") or execution.get("stdout")
+        return False, str(message or "Blender execution failed.")
+    if "executed" in execution:
+        ok = bool(execution.get("executed"))
+        if ok:
+            return True, None
+        message = execution.get("message") or execution.get("result")
+        return False, str(message or "Blender execution failed.")
+    stdout = _stdout(result)
     if REPORT_MARKER in stdout or ANIMATION_MARKER in stdout or SCREENSHOT_MARKER in stdout:
         return True, None
-    lowered = stdout.lower()
-    if any(token in lowered for token in ("traceback", "exception", "error:", "failed")):
-        return False, stdout
     return True, None
 
 
@@ -418,6 +450,7 @@ def _json(ir: GenerationIR) -> str:
 
 def _view_dicts(ir: GenerationIR) -> list[dict[str, Any]]:
     views = _normalized_screenshot_views(ir)
+    relation_frames = _relation_frame_overrides(ir)
     return [
         {
             "id": view.id,
@@ -426,7 +459,7 @@ def _view_dicts(ir: GenerationIR) -> list[dict[str, Any]]:
             "camera_id": view.camera_id,
             "target_object_ids": view.target_object_ids,
             "relation_ids": view.relation_ids,
-            "frame": view.frame,
+            "frame": view.frame if view.frame is not None else _view_relation_frame(view.relation_ids, relation_frames),
             "crop_hint": view.crop_hint,
             "required": view.required,
             "min_subject_pixel_fraction": view.min_subject_pixel_fraction,
@@ -435,6 +468,41 @@ def _view_dicts(ir: GenerationIR) -> list[dict[str, Any]]:
         }
         for view in views
     ]
+
+
+def _relation_frame_overrides(ir: GenerationIR) -> dict[str, int]:
+    if not ir.animation:
+        return {}
+    start_frame = 1
+    end_frame = int(ir.animation.duration_frames)
+    if ir.animation.events or ir.animation.camera_events:
+        start_frame = min(int(event.start_frame) for event in [*ir.animation.events, *ir.animation.camera_events])
+        end_frame = max(int(event.end_frame) for event in [*ir.animation.events, *ir.animation.camera_events])
+
+    overrides: dict[str, int] = {}
+    for relation in ir.scene.relations:
+        if relation.frame is not None:
+            overrides[relation.id] = int(relation.frame)
+            continue
+        text = " ".join(
+            part
+            for part in (
+                relation.id,
+                relation.description or "",
+            )
+            if part
+        ).lower()
+        tokens = text.replace("_", " ").replace("-", " ").split()
+        if any(token in tokens for token in ("final", "end", "ending", "ended", "last", "stop", "stopped")):
+            overrides[relation.id] = end_frame
+        elif any(token in tokens for token in ("initial", "start", "starting", "started", "first", "begin", "beginning")):
+            overrides[relation.id] = start_frame
+    return overrides
+
+
+def _view_relation_frame(relation_ids: list[str], relation_frames: dict[str, int]) -> int | None:
+    frames = {relation_frames[relation_id] for relation_id in relation_ids if relation_id in relation_frames}
+    return frames.pop() if len(frames) == 1 else None
 
 
 def _normalized_screenshot_views(ir: GenerationIR):
@@ -512,12 +580,14 @@ def _normalized_screenshot_views(ir: GenerationIR):
 
 
 def _scene_validation_script(ir: GenerationIR) -> str:
+    relation_frames = _relation_frame_overrides(ir)
     return f"""
 import json, math
 import bpy
 from mathutils import Vector
 
 IR = json.loads({_json(ir)!r})
+RELATION_FRAMES = json.loads({json.dumps(relation_frames)!r})
 issues = []
 
 def issue(code, message, severity="major", target_id=None, relation_id=None, evidence=None):
@@ -717,16 +787,32 @@ for relation in IR["scene"].get("relations", []):
     method = relation.get("verification_method") or "auto"
     if method == "visual_only":
         continue
+    relation_frame = RELATION_FRAMES.get(str(relation["id"]))
+    original_frame = bpy.context.scene.frame_current
+    if relation_frame is not None:
+        bpy.context.scene.frame_set(int(relation_frame))
+        sb = aggregate_minmax(subj)
+        ob = aggregate_minmax(obj)
+        if not sb or not ob:
+            issue("MISSING_BBOX", "Could not compute relation bounding boxes.", "major", sid, relation["id"], {{"frame": relation_frame}})
+            bpy.context.scene.frame_set(original_frame)
+            continue
+        sc = center(sb)
+        oc = center(ob)
     if method == "distance":
         max_dist = relation.get("max_distance") or 2.0
         dist = (sc - oc).length
         if dist > max_dist:
-            issue("RELATION_DISTANCE_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist}})
+            issue("RELATION_DISTANCE_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist, "frame": relation_frame}})
+        if relation_frame is not None:
+            bpy.context.scene.frame_set(original_frame)
         continue
     if method == "attachment" or rtype in {{"attached_to", "touching"}}:
         dist = aabb_distance(sb, ob)
         if dist > max(tol, 0.18):
-            issue("RELATION_ATTACHMENT_FAILED", f"'{{sid}}' is not visibly attached to or touching '{{oid}}'.", "major", sid, relation["id"], {{"bbox_distance": dist}})
+            issue("RELATION_ATTACHMENT_FAILED", f"'{{sid}}' is not visibly attached to or touching '{{oid}}'.", "major", sid, relation["id"], {{"bbox_distance": dist, "frame": relation_frame}})
+        if relation_frame is not None:
+            bpy.context.scene.frame_set(original_frame)
         continue
     if rtype == "on_top_of":
         overlap_x = min(sb[1].x, ob[1].x) - max(sb[0].x, ob[0].x)
@@ -740,27 +826,31 @@ for relation in IR["scene"].get("relations", []):
         if any(token in relation_text for token in ("above", "overhead", "hang", "hanging", "suspend", "suspended")):
             z_gap = sb[0].z - ob[1].z
             if overlap_x <= 0 or overlap_y <= 0 or sc.z <= oc.z + max(tol, 0.12):
-                issue("RELATION_ON_TOP_OF_FAILED", f"'{{sid}}' is not clearly above '{{oid}}'.", "major", sid, relation["id"], {{"z_gap": z_gap, "overlap_x": overlap_x, "overlap_y": overlap_y}})
+                issue("RELATION_ON_TOP_OF_FAILED", f"'{{sid}}' is not clearly above '{{oid}}'.", "major", sid, relation["id"], {{"z_gap": z_gap, "overlap_x": overlap_x, "overlap_y": overlap_y, "frame": relation_frame}})
+            if relation_frame is not None:
+                bpy.context.scene.frame_set(original_frame)
             continue
         support_z = ob[1].z
         if "floor" in relation_text and any(token in relation_text for token in ("room", "greenhouse", "enclosure", "interior")):
             support_z = ob[0].z
         z_gap = abs(sb[0].z - support_z)
         if overlap_x <= 0 or overlap_y <= 0 or z_gap > max(tol, 0.12):
-            issue("RELATION_ON_TOP_OF_FAILED", f"'{{sid}}' is not clearly on top of '{{oid}}'.", "major", sid, relation["id"], {{"z_gap": z_gap, "overlap_x": overlap_x, "overlap_y": overlap_y, "support_z": support_z}})
+            issue("RELATION_ON_TOP_OF_FAILED", f"'{{sid}}' is not clearly on top of '{{oid}}'.", "major", sid, relation["id"], {{"z_gap": z_gap, "overlap_x": overlap_x, "overlap_y": overlap_y, "support_z": support_z, "frame": relation_frame}})
     elif rtype == "left_of" and not (sc.x < oc.x - tol):
-        issue("RELATION_LEFT_OF_FAILED", f"'{{sid}}' is not left of '{{oid}}'.", "major", sid, relation["id"], {{"subject_x": sc.x, "object_x": oc.x}})
+        issue("RELATION_LEFT_OF_FAILED", f"'{{sid}}' is not left of '{{oid}}'.", "major", sid, relation["id"], {{"subject_x": sc.x, "object_x": oc.x, "frame": relation_frame}})
     elif rtype == "right_of" and not (sc.x > oc.x + tol):
-        issue("RELATION_RIGHT_OF_FAILED", f"'{{sid}}' is not right of '{{oid}}'.", "major", sid, relation["id"], {{"subject_x": sc.x, "object_x": oc.x}})
+        issue("RELATION_RIGHT_OF_FAILED", f"'{{sid}}' is not right of '{{oid}}'.", "major", sid, relation["id"], {{"subject_x": sc.x, "object_x": oc.x, "frame": relation_frame}})
     elif rtype == "near":
         max_dist = relation.get("max_distance") or 2.0
         dist = (sc - oc).length
         if dist > max_dist:
-            issue("RELATION_NEAR_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist}})
+            issue("RELATION_NEAR_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist, "frame": relation_frame}})
     elif rtype == "not_intersecting":
         overlap = (min(sb[1].x, ob[1].x) - max(sb[0].x, ob[0].x), min(sb[1].y, ob[1].y) - max(sb[0].y, ob[0].y), min(sb[1].z, ob[1].z) - max(sb[0].z, ob[0].z))
         if all(v > tol for v in overlap):
-            issue("RELATION_INTERSECTION_FAILED", f"'{{sid}}' appears to intersect '{{oid}}'.", "major", sid, relation["id"], {{"overlap": overlap}})
+            issue("RELATION_INTERSECTION_FAILED", f"'{{sid}}' appears to intersect '{{oid}}'.", "major", sid, relation["id"], {{"overlap": overlap, "frame": relation_frame}})
+    if relation_frame is not None:
+        bpy.context.scene.frame_set(original_frame)
 
 if IR["scene"].get("cameras") and not bpy.context.scene.camera:
     issue("MISSING_ACTIVE_CAMERA", "Scene has camera specs but no active camera.", "major")
@@ -772,13 +862,14 @@ print("{REPORT_MARKER}" + json.dumps(report))
 
 def _screenshot_script(ir: GenerationIR, output_dir: Path, width: int, height: int) -> str:
     views = _normalized_screenshot_views(ir)
+    relation_frames = _relation_frame_overrides(ir)
     view_dicts = [
         {
             "id": view.id,
             "view_type": view.view_type.value,
             "target_object_ids": view.target_object_ids,
             "relation_ids": view.relation_ids,
-            "frame": view.frame,
+            "frame": view.frame if view.frame is not None else _view_relation_frame(view.relation_ids, relation_frames),
         }
         for view in views
     ]

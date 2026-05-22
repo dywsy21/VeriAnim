@@ -23,11 +23,11 @@ def _load_project_env() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ[key.strip()] = value.strip()
+        os.environ.setdefault(key.strip(), value.strip())
 
 
 _load_project_env()
-PORT = int(os.environ.get("LL3M_BLENDER_PORT", "18888"))
+PORT = int(os.environ.get("LL3M_BLENDER_PORT", "8888"))
 
 spec = importlib.util.spec_from_file_location("ll3m_blender_addon", ADDON_PATH)
 if spec is None or spec.loader is None:
@@ -47,7 +47,8 @@ bpy.types.blendercustomagent_server.start()
 bpy.context.scene.blendercustomagent_port = PORT
 bpy.context.scene.blendercustomagent_server_running = bpy.types.blendercustomagent_server.running
 
-print(f"LL3M Blender server started on localhost:{PORT}")
+print(f"LL3M Blender server started on localhost:{PORT}", flush=True)
 
 while True:
-    time.sleep(1.0)
+    processed = bpy.types.blendercustomagent_server.process_pending_commands()
+    time.sleep(0.01 if processed else 0.05)

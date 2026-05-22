@@ -12,43 +12,63 @@ class IRDecodeError(ValueError):
     """Raised when LLM JSON cannot be mapped into the IR."""
 
 
-def from_dict(cls: type[Any], value: Any) -> Any:
+def from_dict(cls: type[Any], value: Any, *, strict: bool = True) -> Any:
     """Recursively build dataclasses/enums from plain JSON-compatible data."""
-    return _convert(cls, value)
+    return _convert(cls, value, strict=strict, path=_type_name(cls))
 
 
-def _convert(expected_type: Any, value: Any) -> Any:
+def _convert(expected_type: Any, value: Any, *, strict: bool, path: str) -> Any:
     if value is None:
+        if strict and not _allows_none(expected_type):
+            raise IRDecodeError(f"Unexpected null at {path}.")
         return None
 
     origin = get_origin(expected_type)
     args = get_args(expected_type)
 
     if origin in {Union, types.UnionType}:
-        return _convert_union(args, value)
+        return _convert_union(args, value, strict=strict, path=path)
 
     if origin is None and hasattr(expected_type, "__origin__"):
         origin = expected_type.__origin__
         args = getattr(expected_type, "__args__", ())
 
     if origin is list:
+        if not isinstance(value, list):
+            raise IRDecodeError(f"Expected list at {path}, got {type(value).__name__}.")
         inner = args[0] if args else Any
-        return [_convert(inner, item) for item in value]
+        return [_convert(inner, item, strict=strict, path=f"{path}[{index}]") for index, item in enumerate(value)]
 
     if origin is tuple:
+        if not isinstance(value, (list, tuple)):
+            raise IRDecodeError(f"Expected array at {path}, got {type(value).__name__}.")
         inner_types = args
         if len(inner_types) == 2 and inner_types[1] is Ellipsis:
-            return tuple(_convert(inner_types[0], item) for item in value)
+            return tuple(
+                _convert(inner_types[0], item, strict=strict, path=f"{path}[{index}]")
+                for index, item in enumerate(value)
+            )
+        if inner_types and len(value) != len(inner_types):
+            raise IRDecodeError(f"Expected {len(inner_types)} items at {path}, got {len(value)}.")
         return tuple(
-            _convert(inner_types[index], item) if index < len(inner_types) else item
+            _convert(inner_types[index], item, strict=strict, path=f"{path}[{index}]")
+            if index < len(inner_types)
+            else item
             for index, item in enumerate(value)
         )
 
     if origin is dict:
+        if not isinstance(value, dict):
+            raise IRDecodeError(f"Expected object at {path}, got {type(value).__name__}.")
         key_type = args[0] if args else Any
         value_type = args[1] if len(args) > 1 else Any
         return {
-            _convert(key_type, item_key): _convert(value_type, item_value)
+            _convert(key_type, item_key, strict=strict, path=f"{path}.<key>"): _convert(
+                value_type,
+                item_value,
+                strict=strict,
+                path=f"{path}.{item_key}",
+            )
             for item_key, item_value in value.items()
         }
 
@@ -60,37 +80,51 @@ def _convert(expected_type: Any, value: Any) -> Any:
             return expected_type(value)
         except ValueError as exc:
             allowed = ", ".join(item.value for item in expected_type)
-            raise IRDecodeError(f"Invalid enum value '{value}' for {expected_type.__name__}. Allowed: {allowed}") from exc
+            raise IRDecodeError(
+                f"Invalid enum value '{value}' for {expected_type.__name__} at {path}. Allowed: {allowed}"
+            ) from exc
 
     if isinstance(expected_type, type) and is_dataclass(expected_type):
         if not isinstance(value, dict):
-            raise IRDecodeError(f"Expected object for {expected_type.__name__}, got {type(value).__name__}.")
+            raise IRDecodeError(f"Expected object for {expected_type.__name__} at {path}, got {type(value).__name__}.")
         hints = get_type_hints(expected_type)
         kwargs: dict[str, Any] = {}
-        known = {field.name for field in fields(expected_type)}
-        for name in known:
+        field_map = {field.name: field for field in fields(expected_type)}
+        unknown = sorted(set(value) - set(field_map))
+        if strict and unknown:
+            names = ", ".join(unknown)
+            raise IRDecodeError(f"Unknown field(s) for {expected_type.__name__} at {path}: {names}")
+        for name in field_map:
             if name in value:
-                kwargs[name] = _convert(hints.get(name, Any), value[name])
-        return expected_type(**kwargs)
+                kwargs[name] = _convert(hints.get(name, Any), value[name], strict=strict, path=f"{path}.{name}")
+        try:
+            return expected_type(**kwargs)
+        except TypeError as exc:
+            raise IRDecodeError(f"Invalid object for {expected_type.__name__} at {path}: {exc}") from exc
 
-    try:
-        if expected_type is bool:
-            return _convert_bool(value)
-        if expected_type in {str, int, float}:
-            return expected_type(value)
-    except (TypeError, ValueError):
-        return value
+    if expected_type is bool:
+        return _convert_bool(value, strict=strict, path=path)
+    if expected_type is str:
+        if isinstance(value, str):
+            return value
+        if strict:
+            raise IRDecodeError(f"Expected string at {path}, got {type(value).__name__}.")
+        return str(value)
+    if expected_type is int:
+        return _convert_int(value, strict=strict, path=path)
+    if expected_type is float:
+        return _convert_float(value, strict=strict, path=path)
 
     return value
 
 
-def _convert_union(args: tuple[Any, ...], value: Any) -> Any:
+def _convert_union(args: tuple[Any, ...], value: Any, *, strict: bool, path: str) -> Any:
     errors: list[Exception] = []
     for option in args:
         if option is type(None):
             continue
         try:
-            return _convert(option, value)
+            return _convert(option, value, strict=strict, path=path)
         except Exception as exc:
             errors.append(exc)
     if errors:
@@ -98,7 +132,7 @@ def _convert_union(args: tuple[Any, ...], value: Any) -> Any:
     return value
 
 
-def _convert_bool(value: Any) -> bool:
+def _convert_bool(value: Any, *, strict: bool, path: str) -> bool:
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
@@ -108,4 +142,59 @@ def _convert_bool(value: Any) -> bool:
         return True
     if text in {"0", "false", "no", "n", "off", "none", "null", ""}:
         return False
+    if strict:
+        raise IRDecodeError(f"Expected boolean at {path}, got {value!r}.")
     return bool(value)
+
+
+def _convert_int(value: Any, *, strict: bool, path: str) -> int:
+    if isinstance(value, bool):
+        if strict:
+            raise IRDecodeError(f"Expected integer at {path}, got bool.")
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text and re_match_int(text):
+            return int(text)
+    if strict:
+        raise IRDecodeError(f"Expected integer at {path}, got {value!r}.")
+    return int(value)
+
+
+def _convert_float(value: Any, *, strict: bool, path: str) -> float:
+    if isinstance(value, bool):
+        if strict:
+            raise IRDecodeError(f"Expected number at {path}, got bool.")
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            pass
+    if strict:
+        raise IRDecodeError(f"Expected number at {path}, got {value!r}.")
+    return float(value)
+
+
+def re_match_int(value: str) -> bool:
+    return value.startswith("-") and value[1:].isdigit() or value.isdigit()
+
+
+def _allows_none(expected_type: Any) -> bool:
+    if expected_type is Any:
+        return True
+    origin = get_origin(expected_type)
+    args = get_args(expected_type)
+    if origin in {Union, types.UnionType}:
+        return any(option is type(None) for option in args)
+    return False
+
+
+def _type_name(value: Any) -> str:
+    return getattr(value, "__name__", str(value))

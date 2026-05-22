@@ -552,16 +552,29 @@ Critical checks:
         try:
             data = self.llm.json_multimodal(system, user, screenshot_paths)
         except Exception as exc:
+            unsupported_media = _is_multimodal_input_unsupported(exc)
             return ValidationReport.failed(
                 VerificationMode.VISION,
                 [
                     ValidationIssue(
-                        code="VISION_VERIFIER_PARSE_FAILED",
-                        message=f"Vision verifier did not return valid JSON: {exc}",
-                        severity=Severity.MAJOR,
+                        code="VISION_INPUT_UNSUPPORTED" if unsupported_media else "VISION_VERIFIER_PARSE_FAILED",
+                        message=(
+                            f"Vision verifier model does not accept image input: {exc}"
+                            if unsupported_media
+                            else f"Vision verifier did not return valid JSON: {exc}"
+                        ),
+                        severity=Severity.CRITICAL if unsupported_media else Severity.MAJOR,
+                        suggested_fix=(
+                            "Configure LL3M_VISION_MODEL/API_BASE for a multimodal model that accepts image_url inputs, "
+                            "or rerun with --skip-vision."
+                            if unsupported_media
+                            else None
+                        ),
                     )
                 ],
-                "Vision verifier response could not be parsed.",
+                "Vision verifier model does not accept image input."
+                if unsupported_media
+                else "Vision verifier response could not be parsed.",
             )
         return _report_from_model(data, VerificationMode.VISION)
 
@@ -654,16 +667,29 @@ If deterministic transform trace and images disagree, explain the mismatch and f
         try:
             data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
         except Exception as exc:
+            unsupported_media = _is_multimodal_input_unsupported(exc)
             return ValidationReport.failed(
                 VerificationMode.VIDEO,
                 [
                     ValidationIssue(
-                        code="VIDEO_VERIFIER_PARSE_FAILED",
-                        message=f"Video verifier did not return valid JSON: {exc}",
-                        severity=Severity.MAJOR,
+                        code="VIDEO_INPUT_UNSUPPORTED" if unsupported_media else "VIDEO_VERIFIER_PARSE_FAILED",
+                        message=(
+                            f"Video verifier model does not accept video/image input: {exc}"
+                            if unsupported_media
+                            else f"Video verifier did not return valid JSON: {exc}"
+                        ),
+                        severity=Severity.CRITICAL if unsupported_media else Severity.MAJOR,
+                        suggested_fix=(
+                            "Configure LL3M_VIDEO_MODEL/API_BASE for a multimodal model that accepts video_url/image_url inputs, "
+                            "or rerun with --skip-video."
+                            if unsupported_media
+                            else None
+                        ),
                     )
                 ],
-                "Video verifier response could not be parsed.",
+                "Video verifier model does not accept video/image input."
+                if unsupported_media
+                else "Video verifier response could not be parsed.",
             )
         return _report_from_model(data, VerificationMode.VIDEO)
 
@@ -697,16 +723,29 @@ Do not judge whether the animation is correct in this probe.
         try:
             data = self.llm.json_video(system, user, preview_video_path, image_paths=[])
         except Exception as exc:
+            unsupported_media = _is_multimodal_input_unsupported(exc)
             return ValidationReport.failed(
                 VerificationMode.VIDEO,
                 [
                     ValidationIssue(
-                        code="VIDEO_INPUT_PROBE_FAILED",
-                        message=f"Could not confirm video input support: {exc}",
-                        severity=Severity.MAJOR,
+                        code="VIDEO_INPUT_UNSUPPORTED" if unsupported_media else "VIDEO_INPUT_PROBE_FAILED",
+                        message=(
+                            f"Video verifier model does not accept video input: {exc}"
+                            if unsupported_media
+                            else f"Could not confirm video input support: {exc}"
+                        ),
+                        severity=Severity.CRITICAL if unsupported_media else Severity.MAJOR,
+                        suggested_fix=(
+                            "Configure LL3M_VIDEO_MODEL/API_BASE for a multimodal model that accepts video_url inputs, "
+                            "or rerun with --skip-video."
+                            if unsupported_media
+                            else None
+                        ),
                     )
                 ],
-                "Video verifier could not confirm that the model received the video.",
+                "Video verifier model does not accept video input."
+                if unsupported_media
+                else "Video verifier could not confirm that the model received the video.",
             )
         if data.get("can_see_video") is True or data.get("attachment_readable") is True:
             return None
@@ -761,6 +800,16 @@ def _preview_video_frame_count(preview_video_path: Path) -> int | None:
         except Exception:
             return None
     return None
+
+
+def _is_multimodal_input_unsupported(exc: Exception) -> bool:
+    text = str(exc).lower()
+    if "unknown variant" in text and ("image_url" in text or "video_url" in text) and "expected" in text:
+        return True
+    return (
+        ("image_url" in text or "video_url" in text or "image input" in text or "video input" in text)
+        and any(token in text for token in ("unsupported", "not support", "does not support", "expected `text`"))
+    )
 
 
 def _ffprobe_frame_count(video_path: Path) -> int | None:
@@ -1198,6 +1247,18 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         "tableware": "prop",
     }
     valid_roles = {"primary", "secondary", "background", "support", "decoration", "camera_target", "collider"}
+    importance_aliases = {
+        "low": "optional",
+        "minor": "optional",
+        "nice_to_have": "optional",
+        "normal": "preferred",
+        "medium": "preferred",
+        "important": "required",
+        "high": "required",
+        "critical": "required",
+        "mandatory": "required",
+    }
+    valid_importance = {"optional", "preferred", "required"}
     prompt_text = str((data.get("prompt") or {}).get("text", "")).lower()
     force_plain_materials = any(
         token in prompt_text
@@ -1266,6 +1327,8 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         }
         valid_methods = {item.value for item in RelationVerificationMethod}
         relation["verification_method"] = method_aliases.get(method, method if method in valid_methods else "auto")
+        priority = str(relation.get("visual_priority", "required")).strip().lower().replace("-", "_").replace(" ", "_")
+        relation["visual_priority"] = importance_aliases.get(priority, priority if priority in valid_importance else "required")
     _normalize_view_type_fields(scene)
     for material in scene.get("materials", []) or []:
         if not isinstance(material, dict):

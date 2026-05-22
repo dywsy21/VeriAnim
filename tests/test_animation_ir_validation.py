@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 
 from harness.ir import GenerationIR
+from harness.blender_runtime import _relation_frame_overrides, _view_dicts
 from harness.serde import from_dict
 
 

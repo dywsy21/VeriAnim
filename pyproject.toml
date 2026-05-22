@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ll3m-animation-harness"
+version = "0.1.0"
+description = "Local Blender scene and animation generation harness for LL3M experiments"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+dependencies = [
+    "Pillow>=10.0.0",
+    "PyYAML>=6.0",
+    "litellm>=1.65.0",
+    "python-dotenv>=1.0.1",
+    "requests==2.32.3",
+    "textual>=0.89.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+]
+
+[project.scripts]
+ll3m-harness = "harness.runner:main"
+ll3m-tui = "harness.tui:main"
+
+[tool.setuptools]
+packages = ["blender", "config", "harness"]
+
+[tool.setuptools.package-data]
+config = ["config.yaml"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 160
+extend-exclude = [
+    "runs",
+    "downloads",
+    "remoteassets",
+    "results",
+    "ll3m",
+    "blender4.4_pdfs",
+]
+
+[tool.ruff.lint]
+select = ["E9", "F821", "F822", "F823"]
+ignore = ["F403", "F405"]
+
+[tool.ruff.lint.per-file-ignores]
+"blender/addon.py" = ["F821"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -13,6 +13,7 @@ from typing import Iterator
 
 from .config import HarnessConfig
 from .ir import GenerationIR, report_to_dict
+from .preflight import format_issue, has_errors, run_preflight
 from .serde import from_dict
 from .session import HarnessEvent, InteractiveHarnessSession
 
@@ -66,6 +67,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--animation", action="store_true", help="Ask planner to include animation")
     parser.add_argument("--skip-vision", action="store_true", help="Disable visual model verification")
     parser.add_argument("--skip-video", action="store_true", help="Disable video/temporal model verification")
+    parser.add_argument("--skip-preflight", action="store_true", help="Skip startup checks for Blender, paths, and API keys")
+    parser.add_argument("--preflight-only", action="store_true", help="Run startup checks and exit without generating a scene")
     return parser.parse_args(argv)
 
 
@@ -74,6 +77,26 @@ def main(argv: list[str] | None = None) -> int:
     config = HarnessConfig.from_env()
     runner = HarnessRunner(config)
     try:
+        if not args.skip_preflight:
+            issues = run_preflight(
+                config,
+                prompt=args.text,
+                ir_path=args.ir,
+                include_animation=args.animation,
+                skip_vision=args.skip_vision,
+                skip_video=args.skip_video,
+            )
+            for issue in issues:
+                stream = sys.stderr if issue.severity == "error" else sys.stdout
+                print(format_issue(issue), file=stream)
+            if has_errors(issues):
+                return 2
+            if args.preflight_only:
+                print("[Preflight] OK")
+                return 0
+        elif args.preflight_only:
+            print("[Preflight] Skipped")
+            return 0
         with _runner_lock(config.runs_dir):
             output_dir = runner.run(
                 prompt=args.text,
