@@ -18,10 +18,19 @@ from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, Verif
 REPORT_MARKER = "LL3M_VALIDATION_REPORT:"
 SCREENSHOT_MARKER = "LL3M_SCREENSHOTS:"
 ANIMATION_MARKER = "LL3M_ANIMATION_REPORT:"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _clean_scene_prefix() -> str:
-    return """
+    return f"""
+import importlib, sys
+if {str(PROJECT_ROOT)!r} not in sys.path:
+    sys.path.insert(0, {str(PROJECT_ROOT)!r})
+try:
+    import blender.ll3m_utils as _ll3m_utils
+    importlib.reload(_ll3m_utils)
+except Exception:
+    pass
 import bpy
 for _ll3m_obj in list(bpy.context.scene.objects):
     _ll3m_obj.select_set(True)
@@ -1523,9 +1532,12 @@ def _animation_render_script(
         target_ids = [obj.id for obj in ir.scene.objects]
     target_ids = list(dict.fromkeys(target_ids))
     return f"""
-import json, math, os
+import json, math, os, sys
+if {str(PROJECT_ROOT)!r} not in sys.path:
+    sys.path.insert(0, {str(PROJECT_ROOT)!r})
 import bpy
 from mathutils import Vector
+from blender.ll3m_utils import configure_render
 
 SAMPLE_FRAMES = json.loads({json.dumps(sample_frames)!r})
 GIF_FRAMES = json.loads({json.dumps(gif_frames)!r})
@@ -1576,15 +1588,8 @@ def look_at(camera, target):
     camera.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
 scene = bpy.context.scene
-scene.render.resolution_x = WIDTH
-scene.render.resolution_y = HEIGHT
-scene.render.resolution_percentage = 100
 original_engine = scene.render.engine
-engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-if "BLENDER_WORKBENCH" in engines:
-    scene.render.engine = "BLENDER_WORKBENCH"
-elif "BLENDER_EEVEE_NEXT" in engines:
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
+configure_render(scene, width=WIDTH, height=HEIGHT, engine="workbench")
 
 original_view_settings = {{
     "view_transform": getattr(scene.view_settings, "view_transform", None),
@@ -1887,9 +1892,12 @@ print("{SCREENSHOT_MARKER}" + json.dumps({{"paths": paths, "gif_frames": gif_pat
 
 def _render_views_script(view_dicts: list[dict[str, Any]], output_dir: Path, width: int, height: int, frame_default: int | None) -> str:
     return f"""
-import json, math, os
+import json, math, os, sys
+if {str(PROJECT_ROOT)!r} not in sys.path:
+    sys.path.insert(0, {str(PROJECT_ROOT)!r})
 import bpy
 from mathutils import Vector
+from blender.ll3m_utils import configure_render
 
 VIEWS = json.loads({json.dumps(view_dicts, ensure_ascii=False)!r})
 OUT_DIR = {str(output_dir).replace(chr(92), "/")!r}
@@ -1963,15 +1971,8 @@ def camera_offset(view_type, radius):
     return Vector((radius * 0.8, -radius * 0.8, radius * 0.55))
 
 scene = bpy.context.scene
-scene.render.resolution_x = WIDTH
-scene.render.resolution_y = HEIGHT
-scene.render.resolution_percentage = 100
 original_engine = scene.render.engine
-engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-if "BLENDER_WORKBENCH" in engines:
-    scene.render.engine = "BLENDER_WORKBENCH"
-elif "BLENDER_EEVEE_NEXT" in engines:
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
+configure_render(scene, width=WIDTH, height=HEIGHT, engine="workbench")
 
 original_view_settings = {{
     "view_transform": getattr(scene.view_settings, "view_transform", None),

@@ -394,6 +394,9 @@ The local harness now implements the main architecture described above:
 - `PlannerAgent` receives the full IR definition and emits structured JSON.
 - `CoderAgent` and `RefinerAgent` use a compact code-generation IR to keep long
   LLM calls stable while preserving the full validation IR.
+- Generated Blender scripts prefer `blender.ll3m_utils` for shared setup such
+  as Workbench rendering, scene clearing, materials, cameras, lights, and
+  primitive mesh objects.
 - `LLMClient` retries failed non-streaming calls with streaming, which is
   necessary for long Blender scripts on some OpenAI-compatible gateways.
 - `BlenderRuntime` injects current validation/render scripts into Blender, so

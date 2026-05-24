@@ -186,6 +186,8 @@ python -m harness.runner --text "a blue mug" --preflight-only
   `LL3M_*_STREAM=false` or choose a model/gateway that supports structured JSON.
 - If rendering is slow, lower `LL3M_RENDER_WIDTH`, `LL3M_RENDER_HEIGHT`, or set
   `LL3M_RENDER_GIF_EACH_ROUND=false`.
+- Validation renders default to Workbench to keep transparent or reflective
+  surfaces from hiding interior geometry from vision checks.
 - If external texture lookup is not needed, set
   `LL3M_TEXTURE_SEARCH_ENABLED=false`.
 

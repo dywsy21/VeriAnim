@@ -131,7 +131,7 @@ def get_effective_gpu_setting():
     config_gpu_enabled = blender_config.get("gpu_rendering", False)
     
     # Detect actual GPU availability through Blender addon
-    gpu_info = {'has_gpu': False, 'gpu_type': None, 'preferred_engine': 'BLENDER_EEVEE', 'device': 'CPU'}
+    gpu_info = {'has_gpu': False, 'gpu_type': None, 'preferred_engine': 'BLENDER_WORKBENCH', 'device': 'CPU'}
     gpu_available = False
     
     if config_gpu_enabled:
@@ -157,27 +157,19 @@ if hasattr(bpy.context.preferences, 'addons') and 'cycles' in bpy.context.prefer
                 gpu_type = device.type
                 break
 
-# Determine preferred engine and device
-if gpu_available and 'BLENDER_EEVEE' in available_engines:
-    preferred_engine = 'BLENDER_EEVEE'
-    device = 'GPU'
-elif gpu_available and 'BLENDER_EEVEE_NEXT' in available_engines:
+# Determine preferred engine and device. Workbench is the default inspection
+# renderer because it avoids lighting/reflection artifacts in validation images.
+if 'BLENDER_WORKBENCH' in available_engines:
+    preferred_engine = 'BLENDER_WORKBENCH'
+elif 'BLENDER_EEVEE_NEXT' in available_engines:
     preferred_engine = 'BLENDER_EEVEE_NEXT'
-    device = 'GPU'
-elif gpu_available and 'CYCLES' in available_engines:
+elif 'CYCLES' in available_engines:
     preferred_engine = 'CYCLES'
-    device = 'GPU'
+elif 'BLENDER_EEVEE' in available_engines:
+    preferred_engine = 'BLENDER_EEVEE'
 else:
-    # Fallback to CPU
-    if 'BLENDER_EEVEE' in available_engines:
-        preferred_engine = 'BLENDER_EEVEE'
-    elif 'BLENDER_EEVEE_NEXT' in available_engines:
-        preferred_engine = 'BLENDER_EEVEE_NEXT'
-    elif 'CYCLES' in available_engines:
-        preferred_engine = 'CYCLES'
-    else:
-        preferred_engine = list(available_engines)[0]
-    device = 'CPU'
+    preferred_engine = list(available_engines)[0]
+device = 'GPU' if gpu_available and preferred_engine != 'BLENDER_WORKBENCH' else 'CPU'
 
 # Return result as a string that can be parsed
 result = f"GPU_DETECTION_RESULT:{{'has_gpu':{gpu_available},'gpu_type':'{gpu_type}','preferred_engine':'{preferred_engine}','device':'{device}'}}"
@@ -222,12 +214,14 @@ print(result)
             gpu_available = False
     
     # Determine effective setting
-    if config_gpu_enabled and gpu_available:
+    uses_gpu_engine = gpu_available and gpu_info.get('device') == 'GPU'
+    if config_gpu_enabled and uses_gpu_engine:
         effective_gpu_rendering = True
         print(f"[Client] GPU rendering enabled: {gpu_info['gpu_type']} GPU detected")
-    elif config_gpu_enabled and not gpu_available:
+    elif config_gpu_enabled and not uses_gpu_engine:
         effective_gpu_rendering = False
-        print(f"[Client] GPU rendering requested but no GPU detected, falling back to CPU")
+        reason = "Workbench/CPU inspection rendering is preferred" if gpu_available else "no GPU detected"
+        print(f"[Client] GPU rendering requested but {reason}")
     else:
         effective_gpu_rendering = False
         print(f"[Client] CPU rendering (GPU disabled in config)")

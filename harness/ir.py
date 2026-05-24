@@ -399,7 +399,7 @@ class CameraSpec:
 @dataclass(slots=True)
 class RenderSpec:
     resolution: tuple[int, int] = (1280, 720)
-    engine: RenderEngine = RenderEngine.EEVEE
+    engine: RenderEngine = RenderEngine.WORKBENCH
     samples: int | None = None
     transparent_background: bool = False
     output_dir: str | None = None

@@ -208,15 +208,19 @@ regenerating modeled objects.
 Use the scene render settings before invoking render operators:
 
 ```python
+from blender import ll3m_utils as ll3m
+
 scene = bpy.context.scene
-scene.render.resolution_x = 1280
-scene.render.resolution_y = 720
-scene.render.fps = 24
+ll3m.configure_render(scene, width=1280, height=720, fps=24, engine="workbench")
 scene.frame_set(frame)
 scene.camera = camera
 scene.render.filepath = output_path
 bpy.ops.render.render(write_still=True)
 ```
+
+Prefer Workbench for validation/inspection renders. It is less sensitive to
+overpowered lights, glossy reflections, and transparent exterior shells that can
+hide interior objects from vision checks.
 
 For animation preview video, configure frame range and output format explicitly.
 The video verifier should receive both a preview video and sampled still frames.

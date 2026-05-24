@@ -338,7 +338,8 @@ make visually checked relations inspectable.
 `RenderSpec`
 
 - `resolution`: width and height.
-- `engine`: eevee, cycles, or workbench.
+- `engine`: eevee, cycles, or workbench. Defaults to workbench for inspection
+  renders so transparent or reflective surfaces do not obscure internal models.
 - `samples`: optional sample count.
 - `transparent_background`: render alpha hint.
 - `output_dir`: optional output location.

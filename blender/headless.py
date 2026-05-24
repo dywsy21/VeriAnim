@@ -143,12 +143,17 @@ def execute_headless_blender(code: str, timeout: int = 300, blend_path: Optional
         # Execute the command
         start_time = time.time()
         try:
+            env = os.environ.copy()
+            pythonpath = env.get("PYTHONPATH", "")
+            cwd = os.getcwd()
+            env["PYTHONPATH"] = cwd if not pythonpath else f"{cwd}{os.pathsep}{pythonpath}"
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=os.getcwd()
+                cwd=cwd,
+                env=env,
             )
             execution_time = time.time() - start_time
             

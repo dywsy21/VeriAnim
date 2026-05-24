@@ -99,6 +99,11 @@ one compatibility retry only when the provider explicitly rejects
 code-generation IR instead of the full verification IR; the full IR is still
 written to disk and used by validators.
 
+Generated scripts can import `from blender import ll3m_utils as ll3m` for
+shared helpers such as Workbench render setup, scene clearing, collections,
+materials, cameras, lights, and primitive mesh objects. This keeps model output
+shorter and reduces repeated Blender API mistakes.
+
 `LL3M_MAX_STAGNANT_REFINEMENT_ROUNDS` stops a verifier loop when the same
 failure signature repeats without progress, preventing repeated expensive
 refiner calls on an unchanged issue.
@@ -197,6 +202,8 @@ current even when Blender is running an older loaded addon. The injected script
 temporarily standardizes render conditions for verifier legibility:
 
 - It uses an inspection render path with stable resolution and camera framing.
+- It defaults to Workbench rendering so reflective or transparent shells do not
+  hide interior geometry from the vision verifier.
 - It clamps extreme world/light settings and restores the original scene
   settings after screenshots are written.
 - It computes bounding boxes from all target mesh parts, not just object roots.

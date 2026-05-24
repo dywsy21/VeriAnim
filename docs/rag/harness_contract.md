@@ -47,8 +47,10 @@ import bmesh
 from mathutils import Vector
 import math
 
+from blender import ll3m_utils as ll3m
+
 # 1. Clear scene
-bpy.ops.wm.read_factory_settings(use_empty=True)
+ll3m.clear_scene()
 scene = bpy.context.scene
 
 # 2. Create collections
@@ -85,8 +87,8 @@ LL3M_METADATA = { ... }
 ## 4. Render Engine Selection (CRITICAL)
 
 Blender 4.5 only supports these render engine enum values:
-- `'BLENDER_EEVEE_NEXT'` (fast, good for previews)
 - `'BLENDER_WORKBENCH'` (fastest, basic shading)
+- `'BLENDER_EEVEE_NEXT'` (fast, good for previews)
 - `'CYCLES'` (ray-traced, slow)
 
 WRONG values that will crash:
@@ -97,8 +99,14 @@ WRONG values that will crash:
 Safe pattern:
 
 ```python
-scene.render.engine = 'BLENDER_EEVEE_NEXT'
+from blender import ll3m_utils as ll3m
+
+ll3m.configure_render(scene, engine="workbench")
 ```
+
+Use Workbench by default for validation/inspection renders. It avoids strong
+lighting, mirror-like reflections, and transparent-shell artifacts that can hide
+internal geometry from the vision verifier.
 
 ## 5. EEVEE Properties (CRITICAL)
 
@@ -232,4 +240,4 @@ Animate the ROOT object (the one with `ll3m_id`), not child parts.
 | FRAME_END_TOO_SHORT | `scene.frame_end` < duration | Set `scene.frame_end = duration` |
 | MISSING_ANIMATED_OBJECT | Keyframes on wrong object | Animate the `ll3m_id` root object |
 | gtao_factor error | Using removed EEVEE props | Remove all `scene.eevee.*` calls |
-| enum not found | Wrong engine name | Use `'BLENDER_EEVEE_NEXT'` |
+| enum not found | Wrong engine name | Use `ll3m.configure_render(scene, engine="workbench")` |

@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 from harness.agents import _is_multimodal_input_unsupported, _sanitize_planner_data
-from harness.ir import GenerationIR
+from harness.ir import GenerationIR, VerificationMode
 from harness.llm import LLMError, extract_json_object
 from harness.serde import IRDecodeError, from_dict
 
@@ -63,6 +63,22 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         ir = from_dict(GenerationIR, payload)
 
         self.assertEqual(ir.scene.relations[0].visual_priority.value, "preferred")
+
+    def test_planner_sanitizer_normalizes_stage_visual_mode_alias(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["stages"] = [
+            {
+                "id": "static_scene",
+                "stage_type": "static_scene",
+                "description": "Generate and verify static scene.",
+                "verifier_modes": ["deterministic", "visual"],
+            }
+        ]
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertEqual(ir.stages[0].verifier_modes, [VerificationMode.DETERMINISTIC, VerificationMode.VISION])
 
 
 class ExtractJsonObjectTest(unittest.TestCase):

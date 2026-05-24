@@ -10,8 +10,10 @@ import unittest
 from unittest import mock
 
 from blender.client import BlenderClient
+from blender import ll3m_utils
 from harness.blender_runtime import BlenderRuntime
 from harness.config import HarnessConfig
+from harness.ir import RenderEngine, RenderSpec
 from harness.preflight import format_issue, has_errors, run_preflight
 from harness.runner import _runner_lock
 
@@ -79,6 +81,20 @@ class ConfigEnvTest(unittest.TestCase):
             config = HarnessConfig.from_env()
 
         self.assertEqual(config.blender_port, 8888)
+
+
+class BlenderUtilsTest(unittest.TestCase):
+    def test_ll3m_utils_imports_without_blender_runtime(self) -> None:
+        self.assertEqual(ll3m_utils.DEFAULT_RENDER_ENGINE, "BLENDER_WORKBENCH")
+
+    def test_normalize_engine_name_prefers_valid_blender_enums(self) -> None:
+        self.assertEqual(ll3m_utils.normalize_engine_name(None), "BLENDER_WORKBENCH")
+        self.assertEqual(ll3m_utils.normalize_engine_name("workbench"), "BLENDER_WORKBENCH")
+        self.assertEqual(ll3m_utils.normalize_engine_name("WORKBENCH"), "BLENDER_WORKBENCH")
+        self.assertEqual(ll3m_utils.normalize_engine_name("eevee"), "BLENDER_EEVEE_NEXT")
+
+    def test_render_spec_defaults_to_workbench(self) -> None:
+        self.assertEqual(RenderSpec().engine, RenderEngine.WORKBENCH)
 
 
 class PreflightTest(unittest.TestCase):

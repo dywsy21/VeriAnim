@@ -185,8 +185,8 @@ Relatively minor Python API changes:
 
 Valid engine values in 4.4+:
 ```python
-scene.render.engine = 'BLENDER_EEVEE_NEXT'  # fast
 scene.render.engine = 'BLENDER_WORKBENCH'    # fastest, basic
+scene.render.engine = 'BLENDER_EEVEE_NEXT'  # fast
 scene.render.engine = 'CYCLES'               # ray-traced
 ```
 
@@ -226,7 +226,7 @@ These patterns are verified working in Blender 4.5.4:
 
 ```python
 # Render engine
-scene.render.engine = 'BLENDER_EEVEE_NEXT'
+scene.render.engine = 'BLENDER_WORKBENCH'
 
 # Object creation
 mesh = bpy.data.meshes.new("name")
@@ -297,11 +297,10 @@ context.asset_file_handle              # Use context.asset
 ## Safe Minimal Render Setup for 4.5.4
 
 ```python
+from blender import ll3m_utils as ll3m
+
 scene = bpy.context.scene
-scene.render.engine = 'BLENDER_EEVEE_NEXT'
-scene.render.resolution_x = 960
-scene.render.resolution_y = 540
-scene.render.film_transparent = False
+ll3m.configure_render(scene, width=960, height=540, engine="workbench", transparent_background=False)
 # Do NOT set any scene.eevee.* properties unless verified
 ```
 

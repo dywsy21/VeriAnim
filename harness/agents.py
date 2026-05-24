@@ -30,6 +30,51 @@ from .serde import from_dict
 from .textures import FREE_STOCK_TEXTURES_LICENSE, FreeStockTexturesClient, TextureCandidate
 
 
+LL3M_UTILS_API_GUIDE = """
+Available `blender.ll3m_utils` API. Import it exactly as:
+`from blender import ll3m_utils as ll3m`
+
+Use only these `ll3m.*` helper names. If a helper you want is not listed here,
+use Blender's native `bpy` data API instead of inventing a new `ll3m` function.
+
+Scene and collections:
+- `scene = ll3m.clear_scene()`
+- `collection = ll3m.create_collection(name, parent=None)`
+- `collection = ll3m.ensure_collection(name, parent=None)`
+- `collection = ll3m.get_or_create_collection(name, parent=None)`
+- `obj = ll3m.link_object(obj, collection=None)`
+- `obj = ll3m.link_to_collection(obj, collection=None)`
+- `obj = ll3m.set_ll3m_properties(obj, ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+
+Materials:
+- `mat = ll3m.make_material(name, base_color=None, metallic=None, roughness=None, alpha=None, texture_path=None)`
+- `mat = ll3m.make_material(spec_dict)` where `spec_dict` may contain `id`, `base_color`, `metallic`, `roughness`, `alpha`, and `texture_source.local_path`
+- `mat = ll3m.create_material(...)` is an alias for `make_material`
+- `node = ll3m.find_node_by_type(node_tree, node_type)`
+
+Objects and mesh primitives:
+- `obj = ll3m.create_mesh_object(name, vertices, faces, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), scale=(1,1,1), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+- `obj = ll3m.add_cube(name, size=1.0, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+- `obj = ll3m.create_box(name, size=1.0, ...)`
+- `obj = ll3m.make_box(name, size=1.0, ...)`
+- `obj = ll3m.add_plane(name, size=1.0, collection=None, material=None, location=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+- `obj = ll3m.add_cylinder(name, radius=0.5, depth=1.0, vertices_count=32, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+- `obj = ll3m.add_uv_sphere(name, radius=0.5, segments=32, rings=16, collection=None, material=None, location=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+
+Cameras, lights, and rendering:
+- `camera = ll3m.add_camera(name="camera_main", location=(3,-4,2.5), look_at_target=(0,0,0), lens=35, collection=None, make_active=True)`
+- `camera = ll3m.create_camera(name, location=..., look_at=..., lens=35, collection=None, make_active=True)`
+- `camera = ll3m.make_camera(name, location=..., look_at=..., lens=35, collection=None, make_active=True)`
+- `obj = ll3m.look_at(obj, target)`
+- `light = ll3m.add_light(name, light_type="AREA", location=(0,0,4), rotation=(0,0,0), energy=500, size=None, color=None, collection=None)`
+- `light = ll3m.create_light(name, light_type="AREA", ...)`
+- `light = ll3m.make_light(name, light_type="AREA", ...)`
+- `light = ll3m.create_area_light(name, location=(0,0,4), rotation=(0,0,0), energy=500, size=None, color=None, collection=None)`
+- `engine = ll3m.configure_render(scene, width=None, height=None, fps=None, engine="workbench", transparent_background=None)`
+- `engine = ll3m.set_render_engine(scene, engine="workbench")`
+""".strip()
+
+
 class PlannerAgent:
     def __init__(self, config: HarnessConfig, rag: LocalRAG):
         self.llm = LLMClient(config.planner)
@@ -43,6 +88,7 @@ class PlannerAgent:
             "You are the planner for a Blender 4.5.4 code-generation harness. "
             "Return only a JSON object matching the GenerationIR schema. "
             "Use stable machine ids. Include screenshot views for visual validation. "
+            "If you include pipeline stages, `verifier_modes` must use only these exact enum values: deterministic, vision, video, human. Never use visual; use vision instead. "
             "Keep the IR concise and executable: use at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
             "Prefer compact descriptions and omit optional features that are not needed for verification. "
             "For each MaterialSpec decide whether an external image texture is needed. Set needs_texture=true and texture_query for natural, patterned, grainy, irregular, or surface-specific materials such as wood grain, stone, concrete, rusted metal, bark, fabric, leather, brick, grass, tabletop planks, and walls. Set needs_texture=false for intentionally plain or solid surfaces such as a pure-color mug, simple plastic toy, flat painted part, signal light, or clean ceramic. "
@@ -88,6 +134,7 @@ Use Blender's Z-up coordinate system and meters.
             "You revise an existing GenerationIR for a Blender 4.5.4 harness. "
             "Return only the complete revised GenerationIR JSON. Preserve stable ids where possible. "
             "Add new ids only for new objects, relations, cameras, screenshots, or animation events. "
+            "If you include pipeline stages, `verifier_modes` must use only these exact enum values: deterministic, vision, video, human. Never use visual; use vision instead. "
             "Keep the revised IR concise and executable: at most 7 scene objects, 12 relations, 5 screenshot views, 3 animation events, 8 visual questions, and 8 pass criteria unless the user explicitly asks for more. "
             "For each MaterialSpec decide whether an external image texture is needed. Use needs_texture=true and texture_query only for natural, patterned, grainy, irregular, or surface-specific materials; keep needs_texture=false for intentionally plain or solid-color surfaces. "
             "Animation events must stay structurally verifiable: include required start/end transforms, at least one intermediate keyframe or path point, sampled start/middle/end frames, temporal questions, and pass criteria. "
@@ -138,7 +185,8 @@ event subjects must point to CameraSpec ids. Every object must include id and
 description. Every required animation event must include expected_visual_result,
 start/middle/end states, sampled frames, temporal video questions, and pass
 criteria. Remove nonessential optional_features, visual_check_prompts, long
-notes, duplicate questions, and redundant pass criteria.
+notes, duplicate questions, and redundant pass criteria. In stages.verifier_modes,
+use `vision`, not `visual`.
 """
             try:
                 data = self.llm.json_text(system, request)
@@ -294,18 +342,21 @@ class CoderAgent:
         self.rag = rag
 
     def generate(self, ir: GenerationIR, *, static_only: bool = False) -> str:
-        query = "Blender 4.5 bpy data API mesh from_pydata material camera light render keyframe_insert"
+        query = "Blender 4.5 bpy data API mesh from_pydata material camera light render workbench ll3m_utils keyframe_insert"
         context = self.rag.format_context(query, limit=4, max_chars=5000)
         coder_ir = _compact_ir_for_coder(ir)
         system = (
             "You are a senior Blender 4.5.4 Python coder. "
             "Generate one complete Python script that creates the requested scene and optional animation. "
             "Use data API where possible, stable ll3m custom properties, modular factory functions, and explicit collections. "
+            "Prefer importing `from blender import ll3m_utils as ll3m` and using its common helpers for clearing scenes, collections, render setup, materials, cameras, lights, and primitive mesh objects. "
+            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
             "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
             "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
             "When MaterialSpec.texture_source has approved_by_vision=true and local_path is present, load that absolute image path with bpy.data.images.load and wire it into the material shader as an image texture, keeping base_color as a fallback/tint. "
             "If texture_source is absent, approved_by_vision is false, or local_path is empty, do not create an image texture node for that material; use the base_color, roughness, metallic, and simple procedural shader settings only. "
-            "For Blender 4.5, prefer BLENDER_EEVEE_NEXT or WORKBENCH after checking available render engine enum values from scene.render.bl_rna.properties['engine']; never use bpy.types.Scene.bl_rna.properties['render_engine']. "
+            "Default render setup must use Workbench via `ll3m.configure_render(scene, engine='workbench')` unless the IR explicitly requires another engine. "
+            "For Blender 4.5, the raw Workbench enum is BLENDER_WORKBENCH; never use the invalid literal WORKBENCH and never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. "
@@ -328,8 +379,13 @@ Compact GenerationIR JSON for code generation:
 Blender 4.5.4 RAG context:
 {context}
 
+ll3m_utils API contract:
+{LL3M_UTILS_API_GUIDE}
+
 Script requirements:
 - Clear the current scene safely at the start.
+- Import `from blender import ll3m_utils as ll3m`; use ll3m helpers where practical instead of reimplementing boilerplate.
+- Use only helper functions listed in the ll3m_utils API contract above. If the contract does not cover something, use native `bpy` data API.
 - Create all objects, materials, cameras, lights, and environment from the IR.
 - Assign custom properties exactly: root objects must have ll3m_id equal to ObjectSpec.id. Parts may use ll3m_part, but never replace the root object's ll3m_id with a part id.
 - Create every MaterialSpec using a Blender material name equal to MaterialSpec.id and set material['ll3m_id'] to that same id.
@@ -339,7 +395,7 @@ Script requirements:
 - Make the image texture visibly map onto generated geometry: either create a UV map for mesh surfaces or connect Texture Coordinate Generated/Object output through Mapping into the image texture. Do not connect UV coordinates on a mesh that has no UV map.
 - If texture_source.approved_by_vision is false or no local_path is present, skip image texture nodes for that material and create a clean non-image material from base_color and shader parameters.
 - Set bpy.context.scene.camera to the main generated camera.
-- Set render engines defensively by checking scene.render.bl_rna.properties['engine'].enum_items; Blender 4.5 uses BLENDER_EEVEE_NEXT rather than legacy BLENDER_EEVEE. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
+- Set render settings with `ll3m.configure_render(scene, engine="workbench")` by default; Blender 4.5 uses BLENDER_WORKBENCH for Workbench and BLENDER_EEVEE_NEXT for Eevee. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
 - Set frame_start/frame_end/fps if animation exists.
 - Insert keyframes for AnimationSpec events when present. For translate/rotate/scale, mutate the object's location/rotation_euler/scale at start and end frames, insert keyframes, and ensure sampled frames visibly change.
 - For robotic pick-and-place, keep a continuous articulated chain from arm base to gripper. Do not detach the gripper from the arm just to make it follow the package.
@@ -380,6 +436,8 @@ class RefinerAgent:
         system = (
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
+            "Prefer preserving or adding `from blender import ll3m_utils as ll3m` for common render setup, materials, cameras, lights, and primitive mesh objects instead of duplicating boilerplate. "
+            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
             "For RELATION_ON_TOP_OF_FAILED, use the numeric evidence: move the subject so its bottom z equals the reported support_z and adjust x/y so overlap_x and overlap_y are both positive; do not rename ids or leave the object floating. "
             "For 'on floor of a room/greenhouse/enclosure' relations, place wheels/tanks/props on the interior floor plane, not on the roof or top of the enclosing walls. "
@@ -389,6 +447,7 @@ class RefinerAgent:
             "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
+            "Default render setup should use Workbench via `ll3m.configure_render(scene, engine='workbench')` unless the IR explicitly requires another engine. "
             "If a material has a vision-approved texture_source.local_path in the IR, preserve or add the image texture node so the downloaded surface remains visible. "
             "Keep the script concise and complete. Remove long comments, scratch reasoning, and abandoned implementation notes. "
             "Return only the full corrected Python script."
@@ -405,6 +464,9 @@ Validation reports:
 
 Relevant Blender 4.5.4 notes:
 {context}
+
+ll3m_utils API contract:
+{LL3M_UTILS_API_GUIDE}
 
 Current script:
 ```python
@@ -437,6 +499,8 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
             "You are an interactive Blender 4.5.4 code refiner. "
             "Update the existing full Python script to satisfy the user's new request. "
             "Preserve working code and object ids where possible. "
+            "Use `from blender import ll3m_utils as ll3m` for common helpers when adding new render, material, camera, light, or primitive object code. "
+            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
             "Return only the full corrected Python script."
         )
         user = f"""
@@ -452,6 +516,9 @@ Current Blender scene graph:
 Relevant Blender 4.5.4 notes:
 {context}
 
+ll3m_utils API contract:
+{LL3M_UTILS_API_GUIDE}
+
 Current script:
 ```python
 {code}
@@ -466,6 +533,8 @@ Current script:
             "Preserve the static scene geometry, materials, cameras, object ids, and support/contact relationships. "
             "Only add or adjust animation setup, keyframes, frame range, visibility timing, and metadata needed for the AnimationSpec. "
             "Do not rewrite the whole scene from scratch unless absolutely necessary. "
+            "Preserve helper imports such as `from blender import ll3m_utils as ll3m`; use `ll3m.configure_render(scene, engine='workbench')` for default render setup. "
+            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
             "Keep the script concise and complete; no long reasoning comments. "
             "Return only the full corrected Python script."
         )
@@ -483,6 +552,9 @@ Current Blender scene graph:
 
 Relevant Blender 4.5.4 notes:
 {context}
+
+ll3m_utils API contract:
+{LL3M_UTILS_API_GUIDE}
 
 Requirements:
 - Keep the validated static scene intact.
@@ -1225,6 +1297,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
     if not isinstance(scene, dict):
         return
     data["version"] = "0.2"
+    _sanitize_stage_data(data)
     _promote_animation_end_effectors(data)
     valid_categories = {
         "generic",
@@ -1366,6 +1439,39 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
                 material["texture_query"] = " ".join(str(item) for item in hints[:4])
             else:
                 material["texture_query"] = str(material.get("description") or material.get("id") or "material texture")
+
+
+def _sanitize_stage_data(data: dict[str, Any]) -> None:
+    stages = data.get("stages")
+    if not isinstance(stages, list):
+        return
+    valid_modes = {item.value for item in VerificationMode}
+    mode_aliases = {
+        "visual": "vision",
+        "visual_verification": "vision",
+        "visual_verifier": "vision",
+        "image": "vision",
+        "images": "vision",
+        "screenshot": "vision",
+        "screenshots": "vision",
+        "static_visual": "vision",
+        "temporal": "video",
+        "movie": "video",
+        "animation": "video",
+    }
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        modes = stage.get("verifier_modes")
+        if not isinstance(modes, list):
+            continue
+        normalized = []
+        for mode in modes:
+            raw = str(mode).strip().lower().replace("-", "_").replace(" ", "_")
+            value = mode_aliases.get(raw, raw)
+            if value in valid_modes and value not in normalized:
+                normalized.append(value)
+        stage["verifier_modes"] = normalized
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -2166,6 +2272,10 @@ def _sanitize_generated_blender_code(code: str) -> str:
         'bpy.data.worlds["World"]': "bpy.context.scene.world",
         "bpy.context.object": "bpy.context.view_layer.objects.active",
         "bpy.context.active_object": "bpy.context.view_layer.objects.active",
+        "scene.render.engine = 'WORKBENCH'": "scene.render.engine = 'BLENDER_WORKBENCH'",
+        'scene.render.engine = "WORKBENCH"': 'scene.render.engine = "BLENDER_WORKBENCH"',
+        "bpy.context.scene.render.engine = 'WORKBENCH'": "bpy.context.scene.render.engine = 'BLENDER_WORKBENCH'",
+        'bpy.context.scene.render.engine = "WORKBENCH"': 'bpy.context.scene.render.engine = "BLENDER_WORKBENCH"',
         ".easing = 'EASE_IN_OUT'": ".easing = 'SINE'",
         '.easing = "EASE_IN_OUT"': '.easing = "SINE"',
     }

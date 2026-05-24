@@ -9,9 +9,16 @@ import traceback
 import io
 import os
 import queue
+import sys
 from contextlib import redirect_stderr, redirect_stdout
 from mathutils import Vector
 from bpy.props import IntProperty, BoolProperty
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from blender.ll3m_utils import configure_render
 
 bl_info = {
     "name": "LL3M Blender",
@@ -642,14 +649,7 @@ class LL3MAgentServer:
 
     def _ensure_render_settings(self, width, height):
         scene = bpy.context.scene
-        scene.render.resolution_x = int(width)
-        scene.render.resolution_y = int(height)
-        scene.render.resolution_percentage = 100
-        engines = bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys()
-        if "BLENDER_EEVEE_NEXT" in engines:
-            scene.render.engine = "BLENDER_EEVEE_NEXT"
-        elif "BLENDER_EEVEE" in engines:
-            scene.render.engine = "BLENDER_EEVEE"
+        configure_render(scene, width=int(width), height=int(height), engine="workbench")
 
     def render_view_plan(self, params):
         views = params.get("views") or []
