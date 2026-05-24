@@ -75,6 +75,10 @@ Cameras, lights, and rendering:
 """.strip()
 
 
+def _with_ll3m_utils_api(system: str) -> str:
+    return f"{system}\n\nll3m_utils API contract:\n{LL3M_UTILS_API_GUIDE}"
+
+
 class PlannerAgent:
     def __init__(self, config: HarnessConfig, rag: LocalRAG):
         self.llm = LLMClient(config.planner)
@@ -350,7 +354,7 @@ class CoderAgent:
             "Generate one complete Python script that creates the requested scene and optional animation. "
             "Use data API where possible, stable ll3m custom properties, modular factory functions, and explicit collections. "
             "Prefer importing `from blender import ll3m_utils as ll3m` and using its common helpers for clearing scenes, collections, render setup, materials, cameras, lights, and primitive mesh objects. "
-            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
+            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
             "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
             "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
             "When MaterialSpec.texture_source has approved_by_vision=true and local_path is present, load that absolute image path with bpy.data.images.load and wire it into the material shader as an image texture, keeping base_color as a fallback/tint. "
@@ -365,6 +369,7 @@ class CoderAgent:
             "Keep the script concise. Do not write long reasoning comments, abandoned design notes, or step-by-step analysis inside the code. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
+        system = _with_ll3m_utils_api(system)
         if static_only:
             system += (
                 " This is the static scene stage of a two-stage animation pipeline. "
@@ -378,9 +383,6 @@ Compact GenerationIR JSON for code generation:
 
 Blender 4.5.4 RAG context:
 {context}
-
-ll3m_utils API contract:
-{LL3M_UTILS_API_GUIDE}
 
 Script requirements:
 - Clear the current scene safely at the start.
@@ -437,7 +439,7 @@ class RefinerAgent:
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
             "Prefer preserving or adding `from blender import ll3m_utils as ll3m` for common render setup, materials, cameras, lights, and primitive mesh objects instead of duplicating boilerplate. "
-            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
+            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
             "For RELATION_ON_TOP_OF_FAILED, use the numeric evidence: move the subject so its bottom z equals the reported support_z and adjust x/y so overlap_x and overlap_y are both positive; do not rename ids or leave the object floating. "
             "For 'on floor of a room/greenhouse/enclosure' relations, place wheels/tanks/props on the interior floor plane, not on the roof or top of the enclosing walls. "
@@ -452,6 +454,7 @@ class RefinerAgent:
             "Keep the script concise and complete. Remove long comments, scratch reasoning, and abandoned implementation notes. "
             "Return only the full corrected Python script."
         )
+        system = _with_ll3m_utils_api(system)
         user = f"""
 Compact GenerationIR:
 {json.dumps(_compact_ir_for_coder(ir), indent=2)}
@@ -464,9 +467,6 @@ Validation reports:
 
 Relevant Blender 4.5.4 notes:
 {context}
-
-ll3m_utils API contract:
-{LL3M_UTILS_API_GUIDE}
 
 Current script:
 ```python
@@ -500,9 +500,10 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
             "Update the existing full Python script to satisfy the user's new request. "
             "Preserve working code and object ids where possible. "
             "Use `from blender import ll3m_utils as ll3m` for common helpers when adding new render, material, camera, light, or primitive object code. "
-            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
+            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
             "Return only the full corrected Python script."
         )
+        system = _with_ll3m_utils_api(system)
         user = f"""
 Compact revised GenerationIR:
 {json.dumps(_compact_ir_for_coder(ir), indent=2)}
@@ -515,9 +516,6 @@ Current Blender scene graph:
 
 Relevant Blender 4.5.4 notes:
 {context}
-
-ll3m_utils API contract:
-{LL3M_UTILS_API_GUIDE}
 
 Current script:
 ```python
@@ -534,10 +532,11 @@ Current script:
             "Only add or adjust animation setup, keyframes, frame range, visibility timing, and metadata needed for the AnimationSpec. "
             "Do not rewrite the whole scene from scratch unless absolutely necessary. "
             "Preserve helper imports such as `from blender import ll3m_utils as ll3m`; use `ll3m.configure_render(scene, engine='workbench')` for default render setup. "
-            "Use only the ll3m_utils helper functions listed in the user prompt; do not invent helper names. "
+            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
             "Keep the script concise and complete; no long reasoning comments. "
             "Return only the full corrected Python script."
         )
+        system = _with_ll3m_utils_api(system)
         user = f"""
 Validated static scene script:
 ```python
@@ -552,9 +551,6 @@ Current Blender scene graph:
 
 Relevant Blender 4.5.4 notes:
 {context}
-
-ll3m_utils API contract:
-{LL3M_UTILS_API_GUIDE}
 
 Requirements:
 - Keep the validated static scene intact.
