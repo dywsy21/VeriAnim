@@ -661,3 +661,36 @@ interpenetration or floating during animation, is now a deterministic repair
 signal before the video model is asked to judge the result. Future upgrades can
 replace selected proxies with Blender `BVHTree` or convex-hull checks without
 changing the high-level IR contract.
+
+## Animation Extension Contract
+
+`GenerationIR.extension` is optional. Existing rigid IR files remain valid
+without it; this feature keeps legacy rigid IR and extension IR as parallel
+supported formats.
+
+The extension contract is a narrow metadata layer, not a second harness:
+
+- `families` classify rigid, character, deformable, fluid, or mixed concerns.
+- `target_profiles` describe Blender, Unity, Maya, or other targets as
+  `supported`, `unsupported`, or `degraded`.
+- `verification_probes` state the evidence that can pass a family and evidence
+  that is insufficient by itself.
+- `simulation_caches` describe ownership, timing, status, and invalidation
+  inputs for future simulation cache reuse.
+- `rigid_specs`, `character_specs`, `fluid_specs`, and `prototype` keep domain
+  responsibility separated while sharing the same scene and animation ids.
+
+Format detection and bridge/comparison helpers live in `harness/serde.py`.
+Runner and verifier consumers should consume parsed `GenerationIR` structures
+and should not branch on raw JSON to decide whether a payload is legacy rigid IR
+or extension IR.
+
+The selected prototype is `DeformableSimulationSpec`. It requires both:
+
+- a `deformation_statistics` probe recorded in the animation trace or
+  `reports/*_deformation_statistics.json`;
+- a `video` probe recorded by the video verifier before final acceptance.
+
+Unity, Unreal, Maya, full character, mocap, IK, fluid, smoke, particle, and full
+cloth/soft-body runtimes are capability-profile-only in this feature. Unsupported
+requests must be reported as unsupported or deferred rather than executed.

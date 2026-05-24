@@ -1,0 +1,615 @@
+{
+  "prompt": {
+    "text": "Create a narrow cloth banner that ripples up and down while anchored between two posts.",
+    "image_paths": [],
+    "user_constraints": [
+      "The cloth-like banner must visibly deform over time.",
+      "The prototype must report deformation statistics and video evidence.",
+      "Unity, Unreal, Maya, character, and fluid runtimes are defined but not executed by this feature."
+    ]
+  },
+  "scene": {
+    "objects": [
+      {
+        "id": "cloth_patch",
+        "description": "lightweight cloth-style banner strip with visible ripple guides",
+        "category": "prop",
+        "role": "primary",
+        "importance": "required",
+        "parts": [
+          {
+            "id": "cloth_surface",
+            "description": "single deformable cloth surface",
+            "required": true,
+            "material_id": "cloth_yellow",
+            "expected_count": 1
+          }
+        ],
+        "required_features": [
+          "thin flexible surface",
+          "visible deformation markers"
+        ],
+        "dimensions": {
+          "size": [
+            1.6,
+            0.05,
+            0.7
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              0.0,
+              0.0,
+              1.2
+            ]
+          },
+          "anchor": "center"
+        },
+        "material_ids": [
+          "cloth_yellow"
+        ],
+        "collision": {
+          "proxy_type": "bbox",
+          "role": "kinematic",
+          "margin": 0.03,
+          "enabled": true
+        },
+        "visual_check_prompts": [
+          "Is the cloth patch visible between the posts?",
+          "Do sampled frames show non-rigid deformation rather than only rigid translation?"
+        ]
+      },
+      {
+        "id": "left_post",
+        "description": "left static support post for the cloth",
+        "category": "prop",
+        "role": "support",
+        "importance": "required",
+        "dimensions": {
+          "size": [
+            0.08,
+            0.08,
+            1.4
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              -0.9,
+              0.0,
+              0.7
+            ]
+          },
+          "anchor": "bottom_center"
+        },
+        "material_ids": [
+          "post_gray"
+        ]
+      },
+      {
+        "id": "right_post",
+        "description": "right static support post for the cloth",
+        "category": "prop",
+        "role": "support",
+        "importance": "required",
+        "dimensions": {
+          "size": [
+            0.08,
+            0.08,
+            1.4
+          ]
+        },
+        "placement": {
+          "transform": {
+            "location": [
+              0.9,
+              0.0,
+              0.7
+            ]
+          },
+          "anchor": "bottom_center"
+        },
+        "material_ids": [
+          "post_gray"
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "id": "cloth_between_posts",
+        "relation_type": "near",
+        "subject_id": "cloth_patch",
+        "object_id": "left_post",
+        "description": "The cloth remains attached near the support posts while rippling.",
+        "required": true,
+        "max_distance": 1.2,
+        "visual_priority": "required"
+      }
+    ],
+    "materials": [
+      {
+        "id": "cloth_yellow",
+        "description": "matte yellow fabric",
+        "base_color": [
+          0.95,
+          0.72,
+          0.12,
+          1.0
+        ],
+        "roughness": 0.8,
+        "texture_hints": [
+          "subtle fabric grid"
+        ]
+      },
+      {
+        "id": "post_gray",
+        "description": "matte dark gray support material",
+        "base_color": [
+          0.22,
+          0.22,
+          0.24,
+          1.0
+        ],
+        "roughness": 0.65,
+        "texture_hints": []
+      }
+    ],
+    "environment": {
+      "environment_type": "studio",
+      "description": "simple studio floor with neutral background",
+      "floor": "matte gray floor plane",
+      "lights": [
+        {
+          "id": "key_light",
+          "light_type": "area",
+          "description": "large soft light above the cloth",
+          "location": [
+            0.0,
+            -3.0,
+            4.0
+          ],
+          "energy": 500,
+          "size": 5.0
+        }
+      ],
+      "ambient_occlusion": true
+    },
+    "cameras": [
+      {
+        "id": "camera_main",
+        "view_type": "front",
+        "description": "front view showing cloth deformation between posts",
+        "location": [
+          0.0,
+          -4.0,
+          1.4
+        ],
+        "look_at": [
+          0.0,
+          0.0,
+          1.1
+        ],
+        "target_object_ids": [
+          "cloth_patch",
+          "left_post",
+          "right_post"
+        ],
+        "coverage": "cloth and both posts visible throughout the sampled frames"
+      }
+    ],
+    "style": {
+      "description": "clear low-poly simulation prototype",
+      "detail_level": "medium",
+      "color_palette": [
+        "yellow",
+        "dark gray",
+        "neutral gray"
+      ]
+    },
+    "verifier": {
+      "screenshot_plan": {
+        "views": [
+          {
+            "id": "front",
+            "view_type": "front",
+            "description": "front view showing cloth ripple shape",
+            "camera_id": "camera_main",
+            "target_object_ids": [
+              "cloth_patch",
+              "left_post",
+              "right_post"
+            ],
+            "relation_ids": [
+              "cloth_between_posts"
+            ],
+            "required": true
+          },
+          {
+            "id": "side",
+            "view_type": "right",
+            "description": "side view showing cloth thickness and support",
+            "target_object_ids": [
+              "cloth_patch",
+              "left_post",
+              "right_post"
+            ],
+            "relation_ids": [
+              "cloth_between_posts"
+            ],
+            "required": true
+          },
+          {
+            "id": "top",
+            "view_type": "top",
+            "description": "top view showing cloth between posts",
+            "target_object_ids": [
+              "cloth_patch",
+              "left_post",
+              "right_post"
+            ],
+            "relation_ids": [
+              "cloth_between_posts"
+            ],
+            "required": true
+          }
+        ],
+        "min_required_views": 3
+      },
+      "visual": {
+        "enabled": true,
+        "required_view_ids": [
+          "front",
+          "side",
+          "top"
+        ],
+        "questions": [
+          "Are the cloth patch and both posts visible?",
+          "Is the cloth presented as a deformable banner rather than a rigid block?"
+        ],
+        "pass_criteria": [
+          "The cloth patch and both support posts are visible.",
+          "The scene framing is sufficient to judge deformation over sampled frames."
+        ],
+        "max_rounds": 4
+      }
+    },
+    "coordinate_system": "Blender default: Z up, right-handed",
+    "units": "meters"
+  },
+  "animation": {
+    "duration_frames": 120,
+    "fps": 24,
+    "events": [
+      {
+        "id": "cloth_ripple_scale",
+        "action": "scale",
+        "subject_ids": [
+          "cloth_patch"
+        ],
+        "start_frame": 1,
+        "end_frame": 120,
+        "description": "The cloth-style patch changes shape to approximate a non-rigid ripple prototype.",
+        "start_transform": {
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "end_transform": {
+          "scale": [
+            1.18,
+            1.0,
+            0.86
+          ]
+        },
+        "path": {
+          "keyframes": [
+            {
+              "frame": 60,
+              "transform": {
+                "scale": [
+                  0.92,
+                  1.0,
+                  1.12
+                ]
+              },
+              "value": {},
+              "interpolation": "ease_in_out",
+              "description": "The cloth patch reaches the opposite ripple shape."
+            }
+          ],
+          "follow_orientation": false
+        },
+        "interpolation": "ease_in_out",
+        "required": true,
+        "expected_visual_result": "The cloth patch visibly changes shape across frames 1, 60, and 120.",
+        "constraints": [
+          "The cloth deformation must be visible in sampled frames.",
+          "The support posts must remain static."
+        ]
+      }
+    ],
+    "camera_events": [],
+    "loop": false,
+    "verifier": {
+      "enabled": true,
+      "model_hint": "qwen3.5-omni",
+      "sampled_frames": [
+        1,
+        60,
+        120
+      ],
+      "require_preview_video": false,
+      "questions": [
+        "Does the cloth patch visibly deform between the sampled frames?",
+        "Do the support posts remain static?",
+        "Is the deformation visible without requiring Unity, Unreal, or Maya tooling?"
+      ],
+      "pass_criteria": [
+        "The cloth patch shape changes across sampled frames.",
+        "The support posts remain static.",
+        "Video evidence is recorded for the Blender prototype only."
+      ],
+      "max_rounds": 4
+    }
+  },
+  "extension": {
+    "families": [
+      {
+        "id": "rigid",
+        "family_type": "rigid",
+        "description": "Existing rigid object animation behavior remains supported.",
+        "required_probe_ids": [
+          "bbox_probe",
+          "video_probe"
+        ],
+        "insufficient_probe_types": [
+          "bbox"
+        ]
+      },
+      {
+        "id": "character",
+        "family_type": "character",
+        "description": "Skeleton, mocap, IK, and joint constraint requirements are defined but not executed.",
+        "required_probe_ids": [
+          "joint_probe"
+        ],
+        "insufficient_probe_types": [
+          "bbox"
+        ]
+      },
+      {
+        "id": "deformable",
+        "family_type": "deformable",
+        "description": "Selected Blender cloth-style deformation prototype.",
+        "required_probe_ids": [
+          "deformation_stats_probe",
+          "video_probe"
+        ],
+        "insufficient_probe_types": [
+          "bbox"
+        ]
+      },
+      {
+        "id": "fluid",
+        "family_type": "fluid",
+        "description": "Fluid, smoke, and particle requirements are defined but not executed.",
+        "required_probe_ids": [
+          "particle_stats_probe",
+          "video_probe"
+        ],
+        "insufficient_probe_types": [
+          "bbox"
+        ]
+      }
+    ],
+    "target_profiles": [
+      {
+        "id": "blender",
+        "display_name": "Blender 4.5 LTS",
+        "capabilities": [
+          {
+            "family_type": "rigid",
+            "status": "supported",
+            "notes": "Existing harness rigid animation path."
+          },
+          {
+            "family_type": "deformable",
+            "status": "degraded",
+            "notes": "Prototype-only shape deformation and statistics."
+          },
+          {
+            "family_type": "fluid",
+            "status": "unsupported",
+            "notes": "No fluid runtime in this feature."
+          }
+        ],
+        "coordinate_system": "Z-up right-handed meters",
+        "timebase": "Frame-based animation at 24 fps",
+        "unsupported_behavior": "Report unsupported or deferred runtime capability."
+      },
+      {
+        "id": "unity",
+        "display_name": "Unity",
+        "capabilities": [
+          {
+            "family_type": "rigid",
+            "status": "degraded",
+            "notes": "Capability profile only; no runtime adapter."
+          },
+          {
+            "family_type": "deformable",
+            "status": "unsupported",
+            "notes": "No Unity deformable adapter in this feature."
+          }
+        ],
+        "coordinate_system": "Y-up convention requires normalization",
+        "timebase": "Seconds and fixed timestep require normalization",
+        "unsupported_behavior": "Refuse runtime execution and report deferred adapter capability."
+      },
+      {
+        "id": "maya",
+        "display_name": "Maya",
+        "capabilities": [
+          {
+            "family_type": "character",
+            "status": "degraded",
+            "notes": "Skeleton/mocap/IK requirements only."
+          },
+          {
+            "family_type": "fluid",
+            "status": "unsupported",
+            "notes": "No Maya fluid runtime in this feature."
+          }
+        ],
+        "coordinate_system": "Y-up convention requires normalization",
+        "timebase": "Timeline frame convention requires normalization",
+        "unsupported_behavior": "Report unsupported adapter capability instead of executing."
+      }
+    ],
+    "simulation_caches": [
+      {
+        "id": "cloth_cache",
+        "owner_family_id": "deformable",
+        "purpose": "Document prototype cache ownership; no reusable cache required.",
+        "frame_range": [
+          1,
+          120
+        ],
+        "validity_inputs": [
+          "cloth_patch geometry",
+          "sampled frames",
+          "statistic threshold"
+        ],
+        "status": "not_required"
+      }
+    ],
+    "verification_probes": [
+      {
+        "id": "bbox_probe",
+        "probe_type": "bbox",
+        "target_ids": [
+          "rigid"
+        ],
+        "required": true,
+        "pass_criteria": "Rigid objects preserve expected bbox/contact relationships.",
+        "evidence_path": "reports/*_scene_deterministic.json"
+      },
+      {
+        "id": "joint_probe",
+        "probe_type": "joint_limits",
+        "target_ids": [
+          "character"
+        ],
+        "required": true,
+        "pass_criteria": "Future character joints remain within stated limits.",
+        "evidence_path": "reports/*_joint_limits.json"
+      },
+      {
+        "id": "particle_stats_probe",
+        "probe_type": "particle_statistics",
+        "target_ids": [
+          "fluid"
+        ],
+        "required": true,
+        "pass_criteria": "Future particle statistics match requested fluid behavior.",
+        "evidence_path": "reports/*_particle_statistics.json"
+      },
+      {
+        "id": "deformation_stats_probe",
+        "probe_type": "deformation_statistics",
+        "target_ids": [
+          "cloth_patch"
+        ],
+        "required": true,
+        "pass_criteria": "bbox_delta or displacement_spread is at least 0.03 over sampled frames.",
+        "evidence_path": "reports/*_deformation_statistics.json"
+      },
+      {
+        "id": "video_probe",
+        "probe_type": "video",
+        "target_ids": [
+          "deformable"
+        ],
+        "required": true,
+        "pass_criteria": "Video verifier confirms the cloth deformation is visible over time.",
+        "evidence_path": "reports/*_animation_video.json"
+      }
+    ],
+    "rigid_specs": [
+      {
+        "id": "rigid_baseline",
+        "family_id": "rigid",
+        "object_ids": [
+          "left_post",
+          "right_post"
+        ],
+        "probe_ids": [
+          "bbox_probe"
+        ]
+      }
+    ],
+    "character_specs": [
+      {
+        "id": "character_requirement_profile",
+        "family_id": "character",
+        "skeleton_intent": "Humanoid skeleton support is defined for future adapters.",
+        "mocap_source": "future mocap clip metadata",
+        "ik_intent": "Future IK controls constrain hands or feet to targets.",
+        "joint_constraints": [
+          "joint rotations must stay within authored limits"
+        ],
+        "probe_ids": [
+          "joint_probe"
+        ]
+      }
+    ],
+    "fluid_specs": [
+      {
+        "id": "fluid_requirement_profile",
+        "family_id": "fluid",
+        "fluid_intent": "Future fluid, smoke, or particle behavior.",
+        "visible_behavior": "Particles or volume statistics must match visible motion.",
+        "cache_id": "cloth_cache",
+        "particle_probe_ids": [
+          "particle_stats_probe"
+        ],
+        "video_probe_ids": [
+          "video_probe"
+        ]
+      }
+    ],
+    "prototype": {
+      "id": "cloth_deform_prototype",
+      "subject_ids": [
+        "cloth_patch"
+      ],
+      "deformation_intent": "A cloth-style banner visibly changes shape across sampled frames.",
+      "statistic_probe_ids": [
+        "deformation_stats_probe"
+      ],
+      "video_probe_ids": [
+        "video_probe"
+      ],
+      "cache_id": "cloth_cache",
+      "statistic_threshold": 0.03,
+      "statistics": [
+        {
+          "target_id": "cloth_patch",
+          "threshold": 0.03,
+          "metric": "bbox_delta"
+        }
+      ]
+    },
+    "requested_target_id": null,
+    "unsupported_scope_reporting": [
+      "Unity, Unreal, and Maya runtime adapters are capability-profile-only in this feature.",
+      "Full character, mocap, IK, cloth solver, fluid, smoke, and particle runtimes are deferred."
+    ]
+  },
+  "version": "0.2",
+  "project_id": "example_deformable_cloth_prototype",
+  "notes": "Runnable Blender deformable extension prototype using existing animation validation and extension evidence metadata."
+}

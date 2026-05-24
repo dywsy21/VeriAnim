@@ -8,8 +8,75 @@ import types
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
 
+LEGACY_RIGID_IR = "legacy_rigid_ir"
+EXTENSION_IR = "extension_ir"
+INVALID_IR = "invalid_ir"
+
+
 class IRDecodeError(ValueError):
     """Raised when LLM JSON cannot be mapped into the IR."""
+
+
+def detect_ir_format(value: Any) -> str:
+    """Classify raw IR JSON before consumers decode it."""
+
+    if not isinstance(value, dict):
+        return INVALID_IR
+    if not isinstance(value.get("prompt"), dict) or not isinstance(value.get("scene"), dict):
+        return INVALID_IR
+    if "extension" in value and value.get("extension") is not None:
+        return EXTENSION_IR if isinstance(value.get("extension"), dict) else INVALID_IR
+    return LEGACY_RIGID_IR
+
+
+def bridge_legacy_rigid_intent(value: dict[str, Any]) -> dict[str, Any]:
+    """Build a minimal rigid extension view for a legacy rigid IR payload."""
+
+    if detect_ir_format(value) != LEGACY_RIGID_IR:
+        raise IRDecodeError("Invalid bridge/comparison payload: expected legacy rigid IR.")
+    scene = value.get("scene") or {}
+    animation = value.get("animation") or {}
+    object_ids = [
+        item.get("id")
+        for item in scene.get("objects", [])
+        if isinstance(item, dict) and item.get("id")
+    ]
+    event_object_ids: list[str] = []
+    for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
+        if not isinstance(event, dict):
+            continue
+        event_object_ids.extend(str(item) for item in event.get("subject_ids", []) if item)
+        event_object_ids.extend(str(item) for item in event.get("target_ids", []) if item)
+    rigid_ids = list(dict.fromkeys(event_object_ids or object_ids))
+    return {
+        "families": [
+            {
+                "id": "rigid",
+                "family_type": "rigid",
+                "description": "Legacy rigid animation intent bridged from GenerationIR.animation.",
+                "required_probe_ids": ["rigid_video"],
+                "insufficient_probe_types": ["bbox"],
+            }
+        ],
+        "verification_probes": [
+            {
+                "id": "rigid_video",
+                "probe_type": "video",
+                "target_ids": ["rigid"],
+                "required": True,
+                "pass_criteria": "Rigid animation intent remains visible over sampled frames.",
+                "evidence_path": "reports/*_animation_video.json",
+            }
+        ],
+        "rigid_specs": [
+            {
+                "id": "legacy_rigid_intent",
+                "family_id": "rigid",
+                "object_ids": rigid_ids,
+                "probe_ids": ["rigid_video"],
+            }
+        ],
+    }
 
 
 def from_dict(cls: type[Any], value: Any, *, strict: bool = True) -> Any:

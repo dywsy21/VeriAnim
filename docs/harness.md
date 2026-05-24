@@ -30,6 +30,18 @@ To use a previously planned IR:
 python -m harness.runner --ir runs/run_xxx/ir.json
 ```
 
+To run the scoped deformable extension prototype:
+
+```bash
+python -m harness.runner --ir examples/animation_ir/deformable_cloth_prototype.json --animation --skip-video
+```
+
+The `--skip-video` smoke run validates schema, static-scene-first generation,
+deterministic animation checks, sampled frames, and structured deformation
+statistics. It does not satisfy final deformable acceptance by itself. Final
+prototype acceptance requires running without `--skip-video` with a configured
+video-capable verifier.
+
 ## Dependencies
 
 The harness uses open-source libraries:
@@ -295,6 +307,12 @@ extra temporal checks:
   `animation/final/animation.gif` and, when `ffmpeg` is available, an MP4
   preview to `animation/final/animation.mp4`. Validation rounds also produce
   previews when `LL3M_RENDER_GIF_EACH_ROUND=true`.
+
+When an IR contains `extension.prototype`, deterministic animation validation
+also records `deformation_statistics` in `reports/*_animation_trace.json`. The
+session writes a narrow `reports/*_deformation_statistics.json` artifact when
+those statistics are present. Existing rigid animation trace and report paths
+are unchanged.
 
 The static vision verifier and video verifier have separate responsibilities.
 For animation runs, the static verifier judges object presence, support/contact

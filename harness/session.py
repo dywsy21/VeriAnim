@@ -442,6 +442,9 @@ class InteractiveHarnessSession:
             reports.append(anim_report)
             self.store.write_json(f"reports/{label}_animation_deterministic.json", report_to_dict(anim_report))
             self.store.write_json(f"reports/{label}_animation_trace.json", transform_trace)
+            deformation_statistics = transform_trace.get("deformation_statistics") if isinstance(transform_trace, dict) else None
+            if deformation_statistics:
+                self.store.write_json(f"reports/{label}_deformation_statistics.json", deformation_statistics)
             self._emit_report(anim_report)
 
             if self.ir.animation.verifier.enabled:

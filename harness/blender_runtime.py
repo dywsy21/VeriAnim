@@ -457,6 +457,63 @@ def _json(ir: GenerationIR) -> str:
     return json.dumps(ir.to_dict(), ensure_ascii=False)
 
 
+def build_deformation_statistics(
+    samples_by_target: dict[str, list[dict[str, Any]]],
+    *,
+    thresholds: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Summarize sampled bbox/deformation evidence for extension prototypes."""
+
+    thresholds = thresholds or {}
+    targets: list[dict[str, Any]] = []
+    for target_id, samples in sorted(samples_by_target.items()):
+        ordered = sorted(samples, key=lambda item: int(item.get("frame", 0)))
+        if not ordered:
+            continue
+        bbox_sizes = [
+            [float(component) for component in sample.get("bbox_size", [])[:3]]
+            for sample in ordered
+            if isinstance(sample.get("bbox_size"), list) and len(sample.get("bbox_size", [])) >= 3
+        ]
+        displacement_values = [
+            float(sample.get("displacement_spread", 0.0))
+            for sample in ordered
+            if sample.get("displacement_spread") is not None
+        ]
+        bbox_delta = 0.0
+        if len(bbox_sizes) >= 2:
+            first = bbox_sizes[0]
+            bbox_delta = max(
+                max(abs(sample[index] - first[index]) for index in range(3))
+                for sample in bbox_sizes[1:]
+            )
+        displacement_spread = max(displacement_values) if displacement_values else 0.0
+        threshold = float(thresholds.get(target_id, 0.05))
+        targets.append(
+            {
+                "target_id": target_id,
+                "frame_range": [int(ordered[0].get("frame", 0)), int(ordered[-1].get("frame", 0))],
+                "sampled_frames": [int(sample.get("frame", 0)) for sample in ordered],
+                "bbox_delta": bbox_delta,
+                "displacement_spread": displacement_spread,
+                "threshold": threshold,
+                "passed": max(bbox_delta, displacement_spread) >= threshold,
+            }
+        )
+    passed = bool(targets) and all(target["passed"] for target in targets)
+    return {
+        "frame_range": [
+            min((target["frame_range"][0] for target in targets), default=0),
+            max((target["frame_range"][1] for target in targets), default=0),
+        ],
+        "target_ids": [target["target_id"] for target in targets],
+        "targets": targets,
+        "threshold": min((target["threshold"] for target in targets), default=0.0),
+        "passed": passed,
+        "review_required": False,
+    }
+
+
 def _view_dicts(ir: GenerationIR) -> list[dict[str, Any]]:
     views = _normalized_screenshot_views(ir)
     relation_frames = _relation_frame_overrides(ir)
@@ -886,12 +943,23 @@ def _screenshot_script(ir: GenerationIR, output_dir: Path, width: int, height: i
 
 
 def _animation_validation_script(ir: GenerationIR) -> str:
+    prototype = ir.extension.prototype if ir.extension else None
+    deformable_subject_ids = prototype.subject_ids if prototype else []
+    deformable_thresholds = {
+        statistic.target_id: statistic.threshold
+        for statistic in (prototype.statistics if prototype else [])
+    }
+    if prototype:
+        for subject_id in prototype.subject_ids:
+            deformable_thresholds.setdefault(subject_id, prototype.statistic_threshold)
     return f"""
 import json
 import bpy
 from mathutils import Vector
 
 IR = json.loads({_json(ir)!r})
+DEFORMABLE_SUBJECT_IDS = json.loads({json.dumps(deformable_subject_ids)!r})
+DEFORMABLE_THRESHOLDS = json.loads({json.dumps(deformable_thresholds)!r})
 issues = []
 trace = {{}}
 
@@ -1004,6 +1072,59 @@ def aggregate_minmax(objs):
         Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points))),
         Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points))),
     )
+
+def bbox_size(mm):
+    if not mm:
+        return [0.0, 0.0, 0.0]
+    return [float(mm[1].x - mm[0].x), float(mm[1].y - mm[0].y), float(mm[1].z - mm[0].z)]
+
+def deformation_sample(objs, frame):
+    bpy.context.scene.frame_set(frame)
+    mm = aggregate_minmax(objs)
+    size = bbox_size(mm)
+    centers = []
+    for obj in objs:
+        if obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}:
+            continue
+        child_mm = aggregate_minmax([obj])
+        if child_mm:
+            centers.append((child_mm[0] + child_mm[1]) * 0.5)
+    spread = 0.0
+    if centers:
+        base = centers[0]
+        spread = max((center - base).length for center in centers)
+    return {{"frame": int(frame), "bbox_size": size, "displacement_spread": float(spread)}}
+
+def build_deformation_statistics(samples_by_target):
+    targets = []
+    for target_id, samples in samples_by_target.items():
+        samples = sorted(samples, key=lambda item: int(item.get("frame", 0)))
+        if not samples:
+            continue
+        first_size = samples[0].get("bbox_size") or [0.0, 0.0, 0.0]
+        bbox_delta = 0.0
+        for sample in samples[1:]:
+            size = sample.get("bbox_size") or [0.0, 0.0, 0.0]
+            bbox_delta = max(bbox_delta, max(abs(float(size[index]) - float(first_size[index])) for index in range(3)))
+        displacement_spread = max(float(sample.get("displacement_spread", 0.0)) for sample in samples)
+        threshold = float(DEFORMABLE_THRESHOLDS.get(target_id, 0.05))
+        targets.append({{
+            "target_id": target_id,
+            "frame_range": [int(samples[0].get("frame", 0)), int(samples[-1].get("frame", 0))],
+            "sampled_frames": [int(sample.get("frame", 0)) for sample in samples],
+            "bbox_delta": bbox_delta,
+            "displacement_spread": displacement_spread,
+            "threshold": threshold,
+            "passed": max(bbox_delta, displacement_spread) >= threshold,
+        }})
+    return {{
+        "frame_range": [min([target["frame_range"][0] for target in targets], default=0), max([target["frame_range"][1] for target in targets], default=0)],
+        "target_ids": [target["target_id"] for target in targets],
+        "targets": targets,
+        "threshold": min([target["threshold"] for target in targets], default=0.0),
+        "passed": bool(targets) and all(target["passed"] for target in targets),
+        "review_required": False,
+    }}
 
 def bbox_gap(a, b):
     gaps = []
@@ -1504,6 +1625,18 @@ for event in events:
         check_contact_constraint(constraint)
 
 audit_global_nonpenetration()
+
+if DEFORMABLE_SUBJECT_IDS:
+    sample_frames = sorted(set(int(frame) for frame in (anim.get("verifier", {{}}).get("sampled_frames", []) or [1, max(1, int(duration / 2)), max(1, duration)])))
+    deformation_samples = {{}}
+    for subject_id in DEFORMABLE_SUBJECT_IDS:
+        subject_objs = find_objects(subject_id)
+        deformation_samples[subject_id] = [deformation_sample(subject_objs, frame) for frame in sample_frames if subject_objs]
+        if not deformation_samples[subject_id]:
+            issue("MISSING_DEFORMATION_STATISTICS_EVIDENCE", f"Could not collect deformation statistics for '{{subject_id}}'.", "major", subject_id)
+    trace["deformation_statistics"] = build_deformation_statistics(deformation_samples)
+    if not trace["deformation_statistics"].get("passed"):
+        issue("DEFORMATION_STATISTICS_BELOW_THRESHOLD", "Structured deformation statistics did not exceed the configured threshold.", "major", evidence=trace["deformation_statistics"])
 
 report = {{"passed": not issues, "issues": issues, "summary": "Animation deterministic validation passed." if not issues else "Animation deterministic validation found issues."}}
 print("{ANIMATION_MARKER}" + json.dumps({{"report": report, "trace": trace}}))

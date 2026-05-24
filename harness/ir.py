@@ -192,6 +192,39 @@ class GenerationStageType(str, Enum):
     ANIMATION_EXTENSION = "animation_extension"
 
 
+class AnimationExtensionFamilyType(str, Enum):
+    RIGID = "rigid"
+    CHARACTER = "character"
+    DEFORMABLE = "deformable"
+    FLUID = "fluid"
+    MIXED = "mixed"
+
+
+class CapabilityStatus(str, Enum):
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+    DEGRADED = "degraded"
+
+
+class VerificationProbeType(str, Enum):
+    BBOX = "bbox"
+    BVH = "bvh"
+    JOINT_LIMITS = "joint_limits"
+    PARTICLE_STATISTICS = "particle_statistics"
+    VOLUME_STATISTICS = "volume_statistics"
+    DEFORMATION_STATISTICS = "deformation_statistics"
+    VISUAL = "visual"
+    VIDEO = "video"
+
+
+class SimulationCacheStatus(str, Enum):
+    NOT_REQUIRED = "not_required"
+    REQUIRED = "required"
+    AVAILABLE = "available"
+    STALE = "stale"
+    MISSING = "missing"
+
+
 @dataclass(slots=True)
 class ValidationIssue:
     code: str
@@ -558,11 +591,123 @@ class PipelineStageSpec:
 
 
 @dataclass(slots=True)
+class VerificationProbeSpec:
+    id: str
+    probe_type: VerificationProbeType
+    target_ids: list[str] = field(default_factory=list)
+    required: bool = True
+    pass_criteria: str | None = None
+    evidence_path: str | None = None
+
+
+@dataclass(slots=True)
+class AnimationExtensionFamily:
+    id: str
+    family_type: AnimationExtensionFamilyType
+    description: str = ""
+    required_probe_ids: list[str] = field(default_factory=list)
+    insufficient_probe_types: list[VerificationProbeType] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class TargetCapability:
+    family_type: AnimationExtensionFamilyType
+    status: CapabilityStatus
+    notes: str = ""
+
+
+@dataclass(slots=True)
+class TargetCapabilityProfile:
+    id: str
+    display_name: str
+    capabilities: list[TargetCapability] = field(default_factory=list)
+    coordinate_system: str = ""
+    timebase: str = ""
+    unsupported_behavior: str = ""
+
+
+@dataclass(slots=True)
+class SimulationCacheSpec:
+    id: str
+    owner_family_id: str
+    purpose: str
+    frame_range: tuple[int, int] | None = None
+    validity_inputs: list[str] = field(default_factory=list)
+    status: SimulationCacheStatus = SimulationCacheStatus.NOT_REQUIRED
+
+
+@dataclass(slots=True)
+class RigidAnimationSpec:
+    id: str = "rigid_animation"
+    family_id: str = "rigid"
+    object_ids: list[str] = field(default_factory=list)
+    contact_constraint_ids: list[str] = field(default_factory=list)
+    probe_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class CharacterAnimationSpec:
+    id: str
+    family_id: str
+    skeleton_intent: str
+    mocap_source: str | None = None
+    ik_intent: str | None = None
+    joint_constraints: list[str] = field(default_factory=list)
+    probe_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class FluidSimulationSpec:
+    id: str
+    family_id: str
+    fluid_intent: str
+    visible_behavior: str
+    cache_id: str | None = None
+    particle_probe_ids: list[str] = field(default_factory=list)
+    volume_probe_ids: list[str] = field(default_factory=list)
+    video_probe_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class DeformationStatisticSpec:
+    target_id: str
+    threshold: float = 0.05
+    metric: str = "bbox_delta"
+
+
+@dataclass(slots=True)
+class DeformableSimulationSpec:
+    id: str
+    subject_ids: list[str]
+    deformation_intent: str
+    statistic_probe_ids: list[str] = field(default_factory=list)
+    video_probe_ids: list[str] = field(default_factory=list)
+    cache_id: str | None = None
+    statistic_threshold: float = 0.05
+    statistics: list[DeformationStatisticSpec] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class AnimationExtensionContract:
+    families: list[AnimationExtensionFamily] = field(default_factory=list)
+    target_profiles: list[TargetCapabilityProfile] = field(default_factory=list)
+    simulation_caches: list[SimulationCacheSpec] = field(default_factory=list)
+    verification_probes: list[VerificationProbeSpec] = field(default_factory=list)
+    rigid_specs: list[RigidAnimationSpec] = field(default_factory=list)
+    character_specs: list[CharacterAnimationSpec] = field(default_factory=list)
+    fluid_specs: list[FluidSimulationSpec] = field(default_factory=list)
+    prototype: DeformableSimulationSpec | None = None
+    requested_target_id: str | None = None
+    unsupported_scope_reporting: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class GenerationIR:
     prompt: SourcePrompt
     scene: SceneSpec
     animation: AnimationSpec | None = None
     stages: list[PipelineStageSpec] = field(default_factory=list)
+    extension: AnimationExtensionContract | None = None
     version: str = IR_VERSION
     project_id: str | None = None
     notes: str | None = None
@@ -866,6 +1011,9 @@ class GenerationIR:
                     is_camera_event=True,
                 )
 
+        if self.extension:
+            _validate_extension_contract(self.extension, issues=issues, object_id_set=object_id_set)
+
         return ValidationReport(
             mode=VerificationMode.DETERMINISTIC,
             passed=not issues,
@@ -878,6 +1026,337 @@ class GenerationIR:
 
     def to_json(self, *, indent: int = 2, omit_none: bool = True) -> str:
         return json.dumps(self.to_dict(omit_none=omit_none), indent=indent, sort_keys=True)
+
+
+def _validate_extension_contract(
+    extension: AnimationExtensionContract,
+    *,
+    issues: list[ValidationIssue],
+    object_id_set: set[str],
+) -> None:
+    family_ids = [family.id for family in extension.families]
+    family_id_set = set(family_ids)
+    probe_by_id = {probe.id: probe for probe in extension.verification_probes}
+    cache_by_id = {cache.id: cache for cache in extension.simulation_caches}
+
+    if len(family_ids) != len(family_id_set):
+        issues.append(
+            ValidationIssue(
+                code="DUPLICATE_EXTENSION_FAMILY_ID",
+                message="Animation extension family ids must be unique.",
+                severity=Severity.CRITICAL,
+            )
+        )
+
+    for family in extension.families:
+        if not family.id:
+            issues.append(
+                ValidationIssue(
+                    code="EMPTY_EXTENSION_FAMILY_ID",
+                    message="Animation extension family id cannot be empty.",
+                    severity=Severity.CRITICAL,
+                )
+            )
+        if not family.required_probe_ids:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_REQUIRED_PROBE",
+                    message=f"Extension family '{family.id}' must list at least one required verification probe.",
+                    severity=Severity.MAJOR,
+                    target_id=family.id,
+                )
+            )
+        if not family.insufficient_probe_types:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_INSUFFICIENT_PROBE_TYPE",
+                    message=f"Extension family '{family.id}' must list evidence that is insufficient by itself.",
+                    severity=Severity.MAJOR,
+                    target_id=family.id,
+                )
+            )
+        for probe_id in family.required_probe_ids:
+            if probe_id not in probe_by_id:
+                issues.append(
+                    ValidationIssue(
+                        code="MISSING_REQUIRED_PROBE",
+                        message=f"Extension family '{family.id}' references unknown probe '{probe_id}'.",
+                        severity=Severity.MAJOR,
+                        target_id=family.id,
+                        evidence={"probe_id": probe_id},
+                    )
+                )
+
+    for probe in extension.verification_probes:
+        if not probe.id:
+            issues.append(
+                ValidationIssue(
+                    code="EMPTY_VERIFICATION_PROBE_ID",
+                    message="Verification probe id cannot be empty.",
+                    severity=Severity.CRITICAL,
+                )
+            )
+        if probe.required and not (probe.pass_criteria or "").strip():
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_PROBE_PASS_CRITERIA",
+                    message=f"Required verification probe '{probe.id}' must define pass_criteria.",
+                    severity=Severity.MAJOR,
+                    target_id=probe.id,
+                )
+            )
+        if probe.required and not probe.target_ids:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_PROBE_TARGET",
+                    message=f"Required verification probe '{probe.id}' must target at least one object or extension family.",
+                    severity=Severity.MAJOR,
+                    target_id=probe.id,
+                )
+            )
+        for target_id in probe.target_ids:
+            if target_id not in object_id_set and target_id not in family_id_set:
+                issues.append(
+                    ValidationIssue(
+                        code="UNKNOWN_PROBE_TARGET",
+                        message=f"Verification probe '{probe.id}' targets unknown object or family '{target_id}'.",
+                        severity=Severity.MAJOR,
+                        target_id=target_id,
+                    )
+                )
+
+    if extension.target_profiles and len(extension.target_profiles) < 3:
+        issues.append(
+            ValidationIssue(
+                code="MALFORMED_TARGET_CAPABILITY_PROFILE",
+                message="Extension target capability documentation must include at least three target profiles.",
+                severity=Severity.MAJOR,
+                evidence={"count": len(extension.target_profiles)},
+            )
+        )
+    for profile in extension.target_profiles:
+        if not profile.id or not profile.display_name:
+            issues.append(
+                ValidationIssue(
+                    code="MALFORMED_TARGET_CAPABILITY_PROFILE",
+                    message="Target capability profiles require id and display_name.",
+                    severity=Severity.MAJOR,
+                    target_id=profile.id or None,
+                )
+            )
+        if not profile.capabilities:
+            issues.append(
+                ValidationIssue(
+                    code="MALFORMED_TARGET_CAPABILITY_PROFILE",
+                    message=f"Target profile '{profile.id}' must list capabilities.",
+                    severity=Severity.MAJOR,
+                    target_id=profile.id,
+                )
+            )
+        if not (profile.coordinate_system and profile.timebase and profile.unsupported_behavior):
+            issues.append(
+                ValidationIssue(
+                    code="MALFORMED_TARGET_CAPABILITY_PROFILE",
+                    message=f"Target profile '{profile.id}' must state coordinate_system, timebase, and unsupported_behavior.",
+                    severity=Severity.MAJOR,
+                    target_id=profile.id,
+                )
+            )
+        if extension.requested_target_id == profile.id:
+            unsupported = [
+                capability.family_type.value
+                for capability in profile.capabilities
+                if capability.status == CapabilityStatus.UNSUPPORTED
+            ]
+            if unsupported:
+                issues.append(
+                    ValidationIssue(
+                        code="UNSUPPORTED_TARGET_RUNTIME_REQUEST",
+                        message=f"Requested target profile '{profile.id}' reports unsupported capabilities.",
+                        severity=Severity.MAJOR,
+                        target_id=profile.id,
+                        evidence={"unsupported_families": unsupported},
+                    )
+                )
+
+    for cache in extension.simulation_caches:
+        if cache.owner_family_id not in family_id_set:
+            issues.append(
+                ValidationIssue(
+                    code="UNKNOWN_SIMULATION_CACHE_OWNER",
+                    message=f"Simulation cache '{cache.id}' references unknown family '{cache.owner_family_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=cache.id,
+                )
+            )
+        if cache.frame_range and (
+            len(cache.frame_range) != 2 or int(cache.frame_range[0]) < 1 or int(cache.frame_range[1]) < int(cache.frame_range[0])
+        ):
+            issues.append(
+                ValidationIssue(
+                    code="INVALID_SIMULATION_CACHE_FRAME_RANGE",
+                    message=f"Simulation cache '{cache.id}' has an invalid frame_range.",
+                    severity=Severity.MAJOR,
+                    target_id=cache.id,
+                    evidence={"frame_range": list(cache.frame_range)},
+                )
+            )
+
+    for rigid in extension.rigid_specs:
+        if rigid.family_id not in family_id_set:
+            issues.append(
+                ValidationIssue(
+                    code="INVALID_BRIDGE_COMPARISON_PAYLOAD",
+                    message=f"RigidAnimationSpec '{rigid.id}' references unknown family '{rigid.family_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=rigid.id,
+                )
+            )
+        for object_id in rigid.object_ids:
+            if object_id not in object_id_set:
+                issues.append(
+                    ValidationIssue(
+                        code="UNKNOWN_RIGID_SPEC_OBJECT",
+                        message=f"RigidAnimationSpec '{rigid.id}' references unknown object '{object_id}'.",
+                        severity=Severity.MAJOR,
+                        target_id=object_id,
+                    )
+                )
+
+    for character in extension.character_specs:
+        if character.family_id not in family_id_set:
+            issues.append(
+                ValidationIssue(
+                    code="UNKNOWN_CHARACTER_FAMILY",
+                    message=f"CharacterAnimationSpec '{character.id}' references unknown family '{character.family_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=character.id,
+                )
+            )
+        if not character.skeleton_intent or not character.joint_constraints:
+            issues.append(
+                ValidationIssue(
+                    code="MALFORMED_CHARACTER_ANIMATION_SPEC",
+                    message=f"CharacterAnimationSpec '{character.id}' requires skeleton intent and joint constraints.",
+                    severity=Severity.MAJOR,
+                    target_id=character.id,
+                )
+            )
+
+    for fluid in extension.fluid_specs:
+        if fluid.family_id not in family_id_set:
+            issues.append(
+                ValidationIssue(
+                    code="UNKNOWN_FLUID_FAMILY",
+                    message=f"FluidSimulationSpec '{fluid.id}' references unknown family '{fluid.family_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=fluid.id,
+                )
+            )
+        if not fluid.fluid_intent or not fluid.visible_behavior:
+            issues.append(
+                ValidationIssue(
+                    code="MALFORMED_FLUID_SIMULATION_SPEC",
+                    message=f"FluidSimulationSpec '{fluid.id}' requires fluid intent and visible behavior.",
+                    severity=Severity.MAJOR,
+                    target_id=fluid.id,
+                )
+            )
+        if fluid.cache_id and fluid.cache_id not in cache_by_id:
+            issues.append(
+                ValidationIssue(
+                    code="UNKNOWN_FLUID_CACHE",
+                    message=f"FluidSimulationSpec '{fluid.id}' references unknown cache '{fluid.cache_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=fluid.id,
+                )
+            )
+
+    if extension.prototype:
+        _validate_deformable_prototype(
+            extension.prototype,
+            issues=issues,
+            object_id_set=object_id_set,
+            probe_by_id=probe_by_id,
+            cache_by_id=cache_by_id,
+        )
+        if not extension.unsupported_scope_reporting:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_UNSUPPORTED_SCOPE_REPORTING",
+                    message="Extension prototype must state unsupported or deferred out-of-scope runtime behavior.",
+                    severity=Severity.MAJOR,
+                )
+            )
+
+
+def _validate_deformable_prototype(
+    prototype: DeformableSimulationSpec,
+    *,
+    issues: list[ValidationIssue],
+    object_id_set: set[str],
+    probe_by_id: dict[str, VerificationProbeSpec],
+    cache_by_id: dict[str, SimulationCacheSpec],
+) -> None:
+    for subject_id in prototype.subject_ids:
+        if subject_id not in object_id_set:
+            issues.append(
+                ValidationIssue(
+                    code="UNKNOWN_DEFORMABLE_SUBJECT",
+                    message=f"DeformableSimulationSpec '{prototype.id}' references unknown subject '{subject_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=subject_id,
+                )
+            )
+    statistic_probes = [probe_by_id.get(probe_id) for probe_id in prototype.statistic_probe_ids]
+    video_probes = [probe_by_id.get(probe_id) for probe_id in prototype.video_probe_ids]
+    if not statistic_probes or not any(probe and probe.probe_type == VerificationProbeType.DEFORMATION_STATISTICS for probe in statistic_probes):
+        issues.append(
+            ValidationIssue(
+                code="MISSING_DEFORMATION_STATISTICS_EVIDENCE",
+                message=f"DeformableSimulationSpec '{prototype.id}' requires a deformation_statistics probe.",
+                severity=Severity.MAJOR,
+                target_id=prototype.id,
+            )
+        )
+    if not video_probes or not any(probe and probe.probe_type == VerificationProbeType.VIDEO for probe in video_probes):
+        issues.append(
+            ValidationIssue(
+                code="MISSING_VIDEO_EVIDENCE",
+                message=f"DeformableSimulationSpec '{prototype.id}' requires a video probe.",
+                severity=Severity.MAJOR,
+                target_id=prototype.id,
+            )
+        )
+    for probe_id in [*prototype.statistic_probe_ids, *prototype.video_probe_ids]:
+        if probe_id not in probe_by_id:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_REQUIRED_PROBE",
+                    message=f"DeformableSimulationSpec '{prototype.id}' references unknown probe '{probe_id}'.",
+                    severity=Severity.MAJOR,
+                    target_id=prototype.id,
+                    evidence={"probe_id": probe_id},
+                )
+            )
+    if prototype.cache_id and prototype.cache_id not in cache_by_id:
+        issues.append(
+            ValidationIssue(
+                code="UNKNOWN_DEFORMABLE_CACHE",
+                message=f"DeformableSimulationSpec '{prototype.id}' references unknown cache '{prototype.cache_id}'.",
+                severity=Severity.MAJOR,
+                target_id=prototype.id,
+            )
+        )
+    if prototype.statistic_threshold < 0:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_DEFORMATION_STATISTIC_THRESHOLD",
+                message=f"DeformableSimulationSpec '{prototype.id}' statistic_threshold cannot be negative.",
+                severity=Severity.MAJOR,
+                target_id=prototype.id,
+            )
+        )
 
 
 def _validate_animation_event(

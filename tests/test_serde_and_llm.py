@@ -8,7 +8,15 @@ import unittest
 from harness.agents import _is_multimodal_input_unsupported, _sanitize_planner_data
 from harness.ir import GenerationIR, VerificationMode
 from harness.llm import LLMError, extract_json_object
-from harness.serde import IRDecodeError, from_dict
+from harness.serde import (
+    EXTENSION_IR,
+    INVALID_IR,
+    LEGACY_RIGID_IR,
+    IRDecodeError,
+    bridge_legacy_rigid_intent,
+    detect_ir_format,
+    from_dict,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +62,44 @@ class SerdeStrictDecodeTest(unittest.TestCase):
 
         with self.assertRaisesRegex(IRDecodeError, r"RelationType at GenerationIR\.scene\.relations\[0\]\.relation_type"):
             from_dict(GenerationIR, broken)
+
+    def test_detect_ir_format_classifies_legacy_extension_and_invalid_payloads(self) -> None:
+        extension_payload = copy.deepcopy(self.data)
+        extension_payload["extension"] = {
+            "families": [],
+            "target_profiles": [],
+            "simulation_caches": [],
+            "verification_probes": [],
+        }
+
+        self.assertEqual(detect_ir_format(self.data), LEGACY_RIGID_IR)
+        self.assertEqual(detect_ir_format(extension_payload), EXTENSION_IR)
+        self.assertEqual(detect_ir_format({"scene": {}}), INVALID_IR)
+        self.assertEqual(detect_ir_format({"prompt": {}, "scene": {}, "extension": []}), INVALID_IR)
+
+    def test_bridge_legacy_rigid_intent_creates_rigid_extension_view(self) -> None:
+        bridged = bridge_legacy_rigid_intent(self.data)
+
+        self.assertEqual(bridged["families"][0]["family_type"], "rigid")
+        self.assertEqual(bridged["rigid_specs"][0]["family_id"], "rigid")
+        self.assertIn("ball", bridged["rigid_specs"][0]["object_ids"])
+
+    def test_bridge_rejects_non_legacy_payload(self) -> None:
+        extension_payload = copy.deepcopy(self.data)
+        extension_payload["extension"] = {"families": []}
+
+        with self.assertRaisesRegex(IRDecodeError, "Invalid bridge/comparison payload"):
+            bridge_legacy_rigid_intent(extension_payload)
+
+    def test_from_dict_decodes_extension_contract(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["extension"] = bridge_legacy_rigid_intent(self.data)
+
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertIsNotNone(ir.extension)
+        self.assertEqual(ir.extension.families[0].family_type.value, "rigid")
+        self.assertEqual(ir.extension.rigid_specs[0].object_ids[0], "ball")
 
     def test_planner_sanitizer_normalizes_relation_visual_priority_alias(self) -> None:
         payload = copy.deepcopy(self.data)
