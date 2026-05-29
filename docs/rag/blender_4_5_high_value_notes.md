@@ -285,6 +285,37 @@ Relation checks:
 Use `mathutils.bvhtree.BVHTree` for higher-confidence intersection checks on
 evaluated mesh data.
 
+Support/contact placement recipes:
+
+- Horizontal support: create and scale both objects first. Compute
+  `support_top_z` from the support world bbox, compute the subject half height
+  from its world bbox, then set `subject.location.z = support_top_z +
+  subject_half_height + margin`. Also move x/y so the subject footprint overlaps
+  the support footprint before checking z.
+- Animation final state: if the prompt says "stops near", "ends on", or "lands
+  in", satisfy that at the final keyframe and sampled final frame. Do not move
+  the static initial pose unless the relation must hold at frame 1.
+- Ramp sliding: do not treat a slanted ramp as a horizontal `on_top_of` stack.
+  Define start/end surface points along the ramp length and offset the moving
+  object's center from the surface along the ramp normal by its radius or half
+  extent. Keep start, middle, and end sampled frames on or just above the ramp
+  without bbox penetration.
+
+Refiner issue-code playbook:
+
+- `RELATION_ON_TOP_OF_FAILED`: fix x/y overlap first, then align subject bottom
+  to the reported support top z.
+- `CONTACT_CONSTRAINT_SUPPORT_OVERLAP_FAILED`: move the subject footprint into
+  the support footprint before changing z.
+- `CONTACT_CONSTRAINT_SUPPORT_PENETRATION`: lift by the reported penetration or
+  negative gap plus a small margin.
+- `CONTACT_CONSTRAINT_PENETRATION` / `ANIMATION_GLOBAL_PENETRATION`: separate
+  along the reported axis or shallowest overlap axis by penetration depth plus a
+  small margin and update all affected keyframes.
+- `RELATION_DISTANCE_FAILED` in an animation prompt may be a final-state
+  problem; repair the end keyframe/end transform when the language says the
+  object stops or ends near a target.
+
 ## Visual Verification Rules
 
 Vision verification should not receive unlabeled screenshots only. Send:

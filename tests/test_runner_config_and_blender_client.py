@@ -11,11 +11,36 @@ from unittest import mock
 
 from blender.client import BlenderClient
 from blender import ll3m_utils
-from harness.blender_runtime import BlenderRuntime
-from harness.config import HarnessConfig
-from harness.ir import RenderEngine, RenderSpec
+from harness.blender_runtime import BlenderRunResult, BlenderRuntime
+from harness.config import AgentModelConfig, HarnessConfig
+from harness.ir import (
+    AnimationAction,
+    AnimationEventSpec,
+    AnimationSpec,
+    CameraSpec,
+    CollisionProxySpec,
+    CollisionProxyType,
+    ContactConstraintSpec,
+    ContactConstraintType,
+    GenerationIR,
+    MotionPathSpec,
+    ObjectSpec,
+    RelationType,
+    SceneSpec,
+    SourcePrompt,
+    RenderEngine,
+    RenderSpec,
+    SpatialRelationSpec,
+    TransformSpec,
+    ValidationIssue,
+    ValidationReport,
+    VerificationMode,
+    VideoVerifierSpec,
+)
 from harness.preflight import format_issue, has_errors, run_preflight
 from harness.runner import _runner_lock
+from harness.session import InteractiveHarnessSession
+from harness.artifacts import ArtifactStore
 
 
 def run_server_pending_commands(server: object) -> int:
@@ -92,6 +117,7 @@ class BlenderUtilsTest(unittest.TestCase):
         self.assertEqual(ll3m_utils.normalize_engine_name("workbench"), "BLENDER_WORKBENCH")
         self.assertEqual(ll3m_utils.normalize_engine_name("WORKBENCH"), "BLENDER_WORKBENCH")
         self.assertEqual(ll3m_utils.normalize_engine_name("eevee"), "BLENDER_EEVEE_NEXT")
+        self.assertEqual(ll3m_utils.normalize_engine_name("BLENDER_EEVEE"), "BLENDER_EEVEE")
 
     def test_render_spec_defaults_to_workbench(self) -> None:
         self.assertEqual(RenderSpec().engine, RenderEngine.WORKBENCH)
@@ -207,6 +233,20 @@ class BlenderClientSocketTest(unittest.TestCase):
 
 
 class BlenderRuntimeStatusTest(unittest.TestCase):
+    def test_run_result_diagnostic_text_includes_traceback_when_stdout_empty(self) -> None:
+        result = BlenderRunResult(
+            ok=False,
+            message="bad",
+            stdout="",
+            stderr="",
+            traceback="Traceback...\nNameError: bad",
+            raw={},
+        )
+
+        self.assertIn("Traceback", result.diagnostic_text())
+        self.assertIn("NameError", result.diagnostic_text())
+        self.assertIn("bad", result.diagnostic_text())
+
     def test_runtime_uses_structured_ok_status_not_error_words_in_stdout(self) -> None:
         config = HarnessConfig.from_env()
         runtime = BlenderRuntime(config)
@@ -248,6 +288,293 @@ class BlenderRuntimeStatusTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.message, "bad")
         self.assertEqual(result.traceback, "Traceback...\nValueError: bad")
+
+
+def minimal_config(runs_dir: Path) -> HarnessConfig:
+    model = AgentModelConfig(name="test", model="test/model", api_key="test-key")
+    return HarnessConfig(
+        planner=model,
+        coder=model,
+        refiner=model,
+        vision=model,
+        video=model,
+        max_refinement_rounds=0,
+        max_visual_refinement_rounds=0,
+        max_video_refinement_rounds=0,
+        max_stagnant_refinement_rounds=1,
+        planner_max_retries=0,
+        rag_docs=(),
+        runs_dir=runs_dir,
+        blender_host="localhost",
+        blender_port=8888,
+        headless_rendering=False,
+        render_width=64,
+        render_height=64,
+        render_gif_each_round=False,
+        texture_search_enabled=False,
+        texture_search_candidate_limit=1,
+        texture_search_timeout_seconds=3,
+        tui_initial_animation=False,
+        tui_skip_vision=True,
+        tui_skip_video=True,
+    )
+
+
+def minimal_ir(*, animation: bool = False) -> GenerationIR:
+    return GenerationIR(
+        prompt=SourcePrompt(text="test scene"),
+        scene=SceneSpec(
+            objects=[ObjectSpec(id="cube", description="test cube")],
+            cameras=[CameraSpec(id="camera_main", target_object_ids=["cube"])],
+        ),
+        animation=AnimationSpec(duration_frames=3) if animation else None,
+    )
+
+
+def bridge_animation_ir() -> GenerationIR:
+    return GenerationIR(
+        prompt=SourcePrompt(text="a toy car drives over a low bridge without clipping through the bridge deck"),
+        scene=SceneSpec(
+            objects=[
+                ObjectSpec(id="car", description="toy car", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+                ObjectSpec(id="bridge_deck", description="bridge deck", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ],
+            cameras=[CameraSpec(id="camera_main", target_object_ids=["car", "bridge_deck"])],
+        ),
+        animation=AnimationSpec(
+            duration_frames=120,
+            verifier=VideoVerifierSpec(sampled_frames=[1, 60, 120]),
+            events=[
+                AnimationEventSpec(
+                    id="car_drive",
+                    action=AnimationAction.TRANSLATE,
+                    subject_ids=["car"],
+                    start_frame=1,
+                    end_frame=120,
+                    description="car crosses bridge deck",
+                    start_transform=TransformSpec(location=(-2.5, 0.0, 0.2)),
+                    end_transform=TransformSpec(location=(2.5, 0.0, 0.2)),
+                    path=MotionPathSpec(),
+                    contact_constraints=[
+                        ContactConstraintSpec(
+                            id="car_deck_support",
+                            constraint_type=ContactConstraintType.SUPPORT,
+                            subject_id="car",
+                            object_id="bridge_deck",
+                            start_frame=1,
+                            end_frame=120,
+                        )
+                    ],
+                )
+            ],
+        ),
+    )
+
+
+def bridge_scene_graph() -> dict:
+    return {
+        "objects": [
+            {
+                "name": "car",
+                "ll3m_id": "car",
+                "type": "MESH",
+                "bbox": {"min": [-3.0, -0.2, 0.0], "max": [-2.0, 0.2, 0.4]},
+            },
+            {
+                "name": "bridge_deck",
+                "ll3m_id": "bridge_deck",
+                "type": "MESH",
+                "bbox": {"min": [-1.0, -0.8, 0.5], "max": [1.0, 0.8, 0.7]},
+            },
+        ]
+    }
+
+
+def support_repair_ir() -> GenerationIR:
+    return GenerationIR(
+        prompt=SourcePrompt(text="a mug on a table"),
+        scene=SceneSpec(
+            objects=[
+                ObjectSpec(id="mug", description="plain mug"),
+                ObjectSpec(id="table", description="wooden table"),
+            ],
+            cameras=[CameraSpec(id="camera_main", target_object_ids=["mug", "table"])],
+            relations=[
+                SpatialRelationSpec(
+                    id="mug_on_table",
+                    relation_type=RelationType.ON_TOP_OF,
+                    subject_id="mug",
+                    object_id="table",
+                )
+            ],
+        ),
+    )
+
+
+def support_repair_scene_graph() -> dict:
+    return {
+        "objects": [
+            {
+                "name": "mug",
+                "ll3m_id": "mug",
+                "type": "MESH",
+                "bbox": {"min": [0.0, 0.0, 1.0], "max": [0.3, 0.3, 1.4]},
+            },
+            {
+                "name": "table",
+                "ll3m_id": "table",
+                "type": "MESH",
+                "bbox": {"min": [-1.0, -1.0, 0.0], "max": [1.0, 1.0, 0.5]},
+            },
+        ]
+    }
+
+
+class HarnessSessionDiagnosticsTest(unittest.TestCase):
+    def test_static_code_report_flags_undefined_math_module(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = minimal_ir()
+            session.code = "import bpy\nx = math.pi\nLL3M_METADATA = {}\n"
+
+            report = session._static_code_report()
+
+        self.assertFalse(report.passed)
+        self.assertIn("CODE_UNDEFINED_MODULE", {issue.code for issue in report.issues})
+
+    def test_execution_failure_writes_traceback_log_and_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = minimal_ir()
+            session.store = ArtifactStore.create(Path(tmp))
+            session.code = "LL3M_METADATA = {}\n"
+            result = BlenderRunResult(
+                ok=False,
+                message="bad",
+                stdout="",
+                stderr="",
+                traceback="Traceback...\nRuntimeError: bad",
+                raw={},
+            )
+            with mock.patch.object(session.blender, "execute_scene_code", return_value=result), mock.patch.object(
+                session.refiner,
+                "refine",
+                return_value="LL3M_METADATA = {}\n",
+            ):
+                session._execute_validate_refine(reason="initial")
+
+            log = (session.store.root / "logs" / "initial_round_0_execution.txt").read_text(encoding="utf-8")
+            report = json.loads((session.store.root / "reports" / "initial_round_0_execution.json").read_text(encoding="utf-8"))
+
+        self.assertIn("Traceback", log)
+        self.assertEqual(report["issues"][0]["code"], "BLENDER_EXEC_FAILED")
+
+    def test_validation_pass_reports_missing_render_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = minimal_ir()
+            session.store = ArtifactStore.create(Path(tmp))
+            with mock.patch.object(
+                session.blender,
+                "validate_scene",
+                return_value=ValidationReport.ok(VerificationMode.DETERMINISTIC),
+            ), mock.patch.object(
+                session.blender,
+                "render_screenshots",
+                return_value=[],
+            ):
+                reports = session._run_validation_pass("initial_round_0")
+
+        self.assertIn("RENDER_NO_SCREENSHOTS", {issue.code for report in reports for issue in report.issues})
+
+    def test_validation_pass_applies_static_support_repair_and_writes_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = support_repair_ir()
+            session.store = ArtifactStore.create(Path(tmp))
+            session.code = "LL3M_METADATA = {}\n"
+            failed_report = ValidationReport.failed(
+                VerificationMode.DETERMINISTIC,
+                [
+                    ValidationIssue(
+                        code="RELATION_ON_TOP_OF_FAILED",
+                        message="'mug' is not clearly on top of 'table'.",
+                        relation_id="mug_on_table",
+                        target_id="mug",
+                        evidence={"z_gap": 0.5, "overlap_x": 0.3, "overlap_y": 0.3, "support_z": 0.5},
+                    )
+                ],
+            )
+            repaired_report = ValidationReport.ok(VerificationMode.DETERMINISTIC, "support relation repaired")
+            repair_result = BlenderRunResult(ok=True, message=None, stdout="repair ok\n", raw={})
+            with mock.patch.object(
+                session.blender,
+                "validate_scene",
+                side_effect=[failed_report, repaired_report],
+            ), mock.patch.object(
+                session.blender,
+                "get_scene_graph",
+                return_value=support_repair_scene_graph(),
+            ), mock.patch.object(
+                session.blender,
+                "execute_code",
+                return_value=repair_result,
+            ) as execute_code, mock.patch.object(
+                session.blender,
+                "render_screenshots",
+                return_value=[],
+            ):
+                reports = session._run_validation_pass("initial_round_0")
+
+            root = session.store.root
+            repair_plan = json.loads(
+                (root / "repairs" / "initial_round_0_static_support_repair.json").read_text(encoding="utf-8")
+            )
+            repair_script = (root / "code" / "initial_round_0_support_repair.py").read_text(encoding="utf-8")
+            persisted_script = (root / "code" / "initial_round_0_scene_with_support_repair.py").read_text(encoding="utf-8")
+            execution_log = (root / "logs" / "initial_round_0_support_repair_execution.txt").read_text(encoding="utf-8")
+            after_report = json.loads(
+                (
+                    root / "reports" / "initial_round_0_scene_deterministic_after_support_repair.json"
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertTrue(repair_plan["applied"], repair_plan)
+        self.assertAlmostEqual(repair_plan["adjustments"][0]["delta"][2], -0.5)
+        self.assertIn("LL3M deterministic static support repair", repair_script)
+        self.assertIn("LL3M deterministic static support repair", persisted_script)
+        self.assertIn("LL3M deterministic static support repair", session.code or "")
+        self.assertIn("repair ok", execution_log)
+        self.assertTrue(after_report["passed"], after_report)
+        execute_code.assert_called_once()
+        self.assertTrue(reports[0].passed)
+        self.assertIn("RENDER_NO_SCREENSHOTS", {issue.code for report in reports for issue in report.issues})
+
+    def test_animation_stage_writes_repair_artifact_and_appends_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True, skip_vision=True, skip_video=True)
+            session.store = ArtifactStore.create(Path(tmp))
+            with mock.patch.object(session.coder, "generate", return_value="LL3M_METADATA = {}\n"), mock.patch.object(
+                session,
+                "_execute_validate_refine",
+                side_effect=[True, True],
+            ), mock.patch.object(session.blender, "get_scene_graph", return_value=bridge_scene_graph()), mock.patch.object(
+                session.refiner,
+                "add_animation",
+                return_value="import bpy\nLL3M_METADATA = {}\n",
+            ):
+                session._run_two_stage_animation_start(bridge_animation_ir())
+
+            plan = json.loads((session.store.root / "reports" / "animation_path_repair_plan.json").read_text(encoding="utf-8"))
+            script = (session.store.root / "code" / "generated_animation_stage.py").read_text(encoding="utf-8")
+            repaired_ir = json.loads((session.store.root / "ir_animation_stage_repaired.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(plan["applied"], plan)
+        self.assertIn("LL3M deterministic animation path repair", script)
+        self.assertIn("_ll3m_repair_recalibrate_keyframes", script)
+        self.assertIn("_ll3m_repair_keyframe.get(\"location\"", script)
+        support = repaired_ir["animation"]["events"][0]["contact_constraints"][0]
+        self.assertEqual((support["start_frame"], support["end_frame"]), (37, 84))
 
 
 class BackgroundCommandQueueTest(unittest.TestCase):

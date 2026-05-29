@@ -145,6 +145,11 @@ provider capability/configuration problems are visible in the run.
      not using an image texture and falls back to `base_color` plus shader
      parameters. `texture_policy=solid_only` or `forbidden` is treated as a hard
      no-texture constraint.
+   - Writes `materials/texture_search_results.json` with each material's
+     status, candidate and download counts, candidate manifests, selected
+     candidate, download errors, and summary. `vision_blocked` means the
+     configured vision backend rejected or does not support image input; it is
+     not a semantic reject-all result.
 
 3. `CoderAgent`
    - Uses RAG notes from `docs/rag`.
@@ -343,6 +348,18 @@ and a smooth featureless sphere whose rotation was mathematically present but
 not visually observable. The refiner fixed these by improving contact/table
 assembly and adding visible surface markings.
 
+For recognized horizontal bridge/deck/platform crossings, the session can apply
+a deterministic animation path repair after the static scene passes and before
+animation code is validated. The pure repair plan narrows the support-contact
+window to the frames where the subject and support footprints overlap, then
+builds an outside-lift-cross-exit path from measured scene bboxes. The appended
+Blender execution layer rewrites only the animated subject's location keyframes,
+recursively includes descendant meshes, normalizes obviously world-positioned
+direct child local offsets, updates the Blender view layer before bbox reads,
+and recalibrates support-window z keyframes from the current support bbox.
+This is a narrow bbox-level repair for support crossings, not a general physics
+or obstacle-avoidance system.
+
 ## Validation Runs
 
 Recent successful end-to-end runs:
@@ -368,10 +385,17 @@ runs/run_YYYYMMDD_HHMMSS/
     refined_round_*.py
     final_scene.py
   reports/
+  repairs/
   screenshots/
   animation/
   logs/
 ```
+
+`repairs/` is written only when a deterministic local repair path is attempted.
+Static support repair writes the measured scene graph plus
+`*_static_support_repair.json`; animation path repair writes its plan under
+`reports/animation_path_repair_plan.json` and, when applied, the repaired IR and
+the appended Blender repair block under `code/`.
 
 ## Blender Requirement
 

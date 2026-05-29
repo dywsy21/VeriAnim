@@ -3,10 +3,22 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
-from harness.agents import _is_multimodal_input_unsupported, _sanitize_planner_data
-from harness.ir import GenerationIR, VerificationMode
+from harness.agents import MaterialAgent, _is_multimodal_input_unsupported, _sanitize_planner_data
+from harness.config import AgentModelConfig, HarnessConfig
+from harness.ir import (
+    CameraSpec,
+    GenerationIR,
+    MaterialSpec,
+    ObjectSpec,
+    SceneSpec,
+    SourcePrompt,
+    TexturePolicy,
+    VerificationMode,
+)
 from harness.llm import LLMError, extract_json_object
 from harness.serde import (
     EXTENSION_IR,
@@ -17,10 +29,61 @@ from harness.serde import (
     detect_ir_format,
     from_dict,
 )
+from harness.textures import TextureCandidate
 
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "examples" / "animation_ir" / "translate_ball_to_box.json"
+
+
+def minimal_material_config(runs_dir: Path, *, supports_images: bool = True) -> HarnessConfig:
+    model = AgentModelConfig(name="test", model="test/model", api_key="test-key")
+    vision = AgentModelConfig(name="vision", model="test/vision", api_key="test-key", supports_images=supports_images)
+    return HarnessConfig(
+        planner=model,
+        coder=model,
+        refiner=model,
+        vision=vision,
+        video=model,
+        max_refinement_rounds=0,
+        max_visual_refinement_rounds=0,
+        max_video_refinement_rounds=0,
+        max_stagnant_refinement_rounds=1,
+        planner_max_retries=0,
+        rag_docs=(),
+        runs_dir=runs_dir,
+        blender_host="localhost",
+        blender_port=8888,
+        headless_rendering=False,
+        render_width=64,
+        render_height=64,
+        render_gif_each_round=False,
+        texture_search_enabled=True,
+        texture_search_candidate_limit=2,
+        texture_search_timeout_seconds=3,
+        tui_initial_animation=False,
+        tui_skip_vision=True,
+        tui_skip_video=True,
+    )
+
+
+def material_ir() -> GenerationIR:
+    return GenerationIR(
+        prompt=SourcePrompt(text="wood cube"),
+        scene=SceneSpec(
+            objects=[ObjectSpec(id="cube", description="cube", material_ids=["wood_material"])],
+            materials=[
+                MaterialSpec(
+                    id="wood_material",
+                    description="visible wood grain material",
+                    texture_policy=TexturePolicy.REQUIRED,
+                    needs_texture=True,
+                    texture_query="wood grain",
+                )
+            ],
+            cameras=[CameraSpec(id="camera_main", target_object_ids=["cube"])],
+        ),
+    )
 
 
 class SerdeStrictDecodeTest(unittest.TestCase):
@@ -125,6 +188,221 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         ir = from_dict(GenerationIR, payload)
 
         self.assertEqual(ir.stages[0].verifier_modes, [VerificationMode.DETERMINISTIC, VerificationMode.VISION])
+
+    def test_planner_sanitizer_converts_ramp_support_to_visual_attachment(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["objects"].extend(
+            [
+                {
+                    "id": "ramp",
+                    "label": "slanted ramp",
+                    "category": "prop",
+                    "role": "support",
+                    "description": "Inclined ramp.",
+                    "placement": {
+                        "transform": {"location": [0, 0, 0.3]},
+                        "anchor": "center",
+                    },
+                },
+                {
+                    "id": "leg",
+                    "label": "ramp support leg",
+                    "category": "prop",
+                    "role": "support",
+                    "description": "Bracket holding the incline.",
+                    "placement": {
+                        "transform": {"location": [0, 0, 0.15]},
+                        "anchor": "center",
+                    },
+                },
+            ]
+        )
+        payload["scene"]["relations"] = [
+            {
+                "id": "ramp_on_support_leg",
+                "relation_type": "on_top_of",
+                "subject_id": "ramp",
+                "object_id": "leg",
+                "description": "slanted ramp on its support bracket",
+                "required": True,
+                "verification_method": "bbox_contact",
+            }
+        ]
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertEqual(ir.scene.relations[0].relation_type.value, "attached_to")
+        self.assertEqual(ir.scene.relations[0].verification_method.value, "visual_only")
+
+    def test_planner_sanitizer_converts_slanted_ramp_surface_to_visual_touching(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["objects"].extend(
+            [
+                {
+                    "id": "cube",
+                    "label": "sliding cube",
+                    "category": "prop",
+                    "role": "primary",
+                    "description": "Cube sliding down the ramp.",
+                    "placement": {
+                        "transform": {"location": [0, 0, 0.8]},
+                        "anchor": "center",
+                    },
+                },
+                {
+                    "id": "ramp",
+                    "label": "inclined ramp",
+                    "category": "prop",
+                    "role": "support",
+                    "description": "Slanted ramp surface.",
+                    "placement": {
+                        "transform": {"location": [0, 0, 0.3]},
+                        "anchor": "center",
+                    },
+                },
+            ]
+        )
+        payload["scene"]["relations"] = [
+            {
+                "id": "cube_on_slanted_ramp",
+                "relation_type": "on_top_of",
+                "subject_id": "cube",
+                "object_id": "ramp",
+                "description": "cube on the slanted ramp surface",
+                "required": True,
+                "verification_method": "bbox_contact",
+            }
+        ]
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertEqual(ir.scene.relations[0].relation_type.value, "touching")
+        self.assertEqual(ir.scene.relations[0].verification_method.value, "visual_only")
+
+    def test_planner_sanitizer_scopes_no_image_texture_to_named_statue(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["prompt"]["text"] = "a stone pedestal with a bronze statue, no image textures on the statue"
+        payload["scene"]["materials"] = [
+            {
+                "id": "stone_material",
+                "description": "rough gray stone pedestal material",
+                "texture_policy": "required",
+                "needs_texture": True,
+                "texture_query": "gray stone surface",
+            },
+            {
+                "id": "bronze_statue_material",
+                "description": "bronze statue material",
+                "texture_policy": "required",
+                "needs_texture": True,
+                "texture_query": "bronze patina",
+            },
+        ]
+
+        _sanitize_planner_data(payload)
+
+        materials = {material["id"]: material for material in payload["scene"]["materials"]}
+        self.assertEqual(materials["stone_material"]["texture_policy"], "required")
+        self.assertTrue(materials["stone_material"]["needs_texture"])
+        self.assertEqual(materials["bronze_statue_material"]["texture_policy"], "solid_only")
+        self.assertFalse(materials["bronze_statue_material"]["needs_texture"])
+
+    def test_planner_sanitizer_scopes_solid_color_to_plastic_ball_not_grass(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["prompt"]["text"] = "a green grass patch with a simple solid-color plastic ball"
+        payload["scene"]["materials"] = [
+            {
+                "id": "grass_material",
+                "description": "green grass patch material",
+                "texture_policy": "required",
+                "needs_texture": True,
+                "texture_query": "green grass ground",
+            },
+            {
+                "id": "plastic_ball_material",
+                "description": "simple solid-color plastic ball material",
+                "texture_policy": "required",
+                "needs_texture": True,
+                "texture_query": "plastic ball",
+            },
+        ]
+
+        _sanitize_planner_data(payload)
+
+        materials = {material["id"]: material for material in payload["scene"]["materials"]}
+        self.assertEqual(materials["grass_material"]["texture_policy"], "required")
+        self.assertTrue(materials["grass_material"]["needs_texture"])
+        self.assertEqual(materials["plastic_ball_material"]["texture_policy"], "solid_only")
+        self.assertFalse(materials["plastic_ball_material"]["needs_texture"])
+
+
+class MaterialAgentTextureSearchTest(unittest.TestCase):
+    def test_material_agent_records_vision_blocked_with_candidate_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            local_image = tmp_path / "wood.jpg"
+            local_image.write_bytes(b"fake image")
+            candidate = TextureCandidate(
+                title="Brown Wooden Planks",
+                page_url="https://freestocktextures.com/texture/brown-wooden-planks,1.html",
+                image_url="https://example.test/wood.jpg",
+                download_url="https://example.test/download/wood.jpg",
+                tags=["wood"],
+                local_path=local_image,
+                score=2.0,
+            )
+            config = minimal_material_config(tmp_path)
+            agent = MaterialAgent(config)
+            agent.client.search = mock.Mock(return_value=[candidate])
+            agent.client.download_candidate = mock.Mock(return_value=candidate)
+            agent.llm.json_multimodal = mock.Mock(
+                side_effect=RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")
+            )
+
+            ir = agent.resolve(material_ir(), tmp_path / "textures")
+
+        result = agent.last_results[0]
+        material = ir.scene.materials[0]
+        self.assertEqual(result["status"], "vision_blocked")
+        self.assertEqual(result["candidate_count"], 1)
+        self.assertEqual(result["downloaded_count"], 1)
+        self.assertEqual(result["candidates"][0]["title"], "Brown Wooden Planks")
+        self.assertIsNone(result["selected"])
+        self.assertFalse(material.needs_texture)
+        self.assertFalse(material.texture_source.approved_by_vision)
+        self.assertIn("does not accept image input", material.texture_source.vision_summary)
+
+    def test_material_agent_records_selected_texture_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            local_image = tmp_path / "wood.jpg"
+            local_image.write_bytes(b"fake image")
+            candidate = TextureCandidate(
+                title="Brown Wooden Planks",
+                page_url="https://freestocktextures.com/texture/brown-wooden-planks,1.html",
+                image_url="https://example.test/wood.jpg",
+                download_url="https://example.test/download/wood.jpg",
+                tags=["wood"],
+                local_path=local_image,
+                score=2.0,
+            )
+            config = minimal_material_config(tmp_path)
+            agent = MaterialAgent(config)
+            agent.client.search = mock.Mock(return_value=[candidate])
+            agent.client.download_candidate = mock.Mock(return_value=candidate)
+            agent.llm.json_multimodal = mock.Mock(return_value={"passed": True, "selected_index": 1, "summary": "usable wood"})
+
+            ir = agent.resolve(material_ir(), tmp_path / "textures")
+
+        result = agent.last_results[0]
+        material = ir.scene.materials[0]
+        self.assertEqual(result["status"], "selected")
+        self.assertEqual(result["selected"], "Brown Wooden Planks")
+        self.assertEqual(result["selected_candidate"]["local_path"], str(local_image))
+        self.assertTrue(material.texture_source.approved_by_vision)
+        self.assertEqual(material.texture_source.local_path, str(local_image.resolve()))
 
 
 class ExtractJsonObjectTest(unittest.TestCase):

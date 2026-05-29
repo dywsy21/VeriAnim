@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import ast
+import builtins
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from typing import Any, Callable
 
 from .agents import CoderAgent, MaterialAgent, PlannerAgent, RefinerAgent, VideoVerifierAgent, VisionVerifierAgent
+from .animation_repair import AnimationRepairPlan, blender_repair_script, repair_animation_ir
 from .artifacts import ArtifactStore
 from .blender_runtime import BlenderRuntime
 from .config import AgentModelConfig, HarnessConfig
 from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, VerificationMode, report_to_dict
 from .rag import LocalRAG
+from .static_support_repair import StaticSupportRepairPlan, blender_static_support_repair_script, repair_static_support
 
 
 @dataclass(slots=True)
@@ -24,6 +27,8 @@ class HarnessEvent:
 
 
 EventCallback = Callable[[HarnessEvent], None]
+_ANIMATION_REPAIR_MARKER = "# LL3M deterministic animation path repair"
+_STATIC_SUPPORT_REPAIR_MARKER = "# LL3M deterministic static support repair"
 
 
 def _agent_model_record(config: AgentModelConfig) -> dict[str, Any]:
@@ -71,6 +76,9 @@ class InteractiveHarnessSession:
         self.code: str | None = None
         self._last_executed_code: str | None = None
         self._frozen_scene_graph: dict[str, Any] | None = None
+        self._animation_repair_plan: AnimationRepairPlan | None = None
+        self._static_support_repair_plan: StaticSupportRepairPlan | None = None
+        self._static_support_repair_applied = False
         self.turn_index = 0
         self._latest_screenshots: list[Path] = []
 
@@ -83,6 +91,9 @@ class InteractiveHarnessSession:
         self._write_agent_model_manifest()
         self.turn_index = 0
         self._last_executed_code = None
+        self._animation_repair_plan = None
+        self._static_support_repair_plan = None
+        self._static_support_repair_applied = False
         self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
 
         self._emit("planner", "Planning structured IR")
@@ -109,6 +120,9 @@ class InteractiveHarnessSession:
         self._write_agent_model_manifest()
         self.turn_index = 0
         self._last_executed_code = None
+        self._animation_repair_plan = None
+        self._static_support_repair_plan = None
+        self._static_support_repair_applied = False
         self._emit("session", f"Run directory: {self.store.root}", path=str(self.store.root))
         ir = self._resolve_material_textures(ir)
         self.store.write_json("ir.json", ir.to_dict())
@@ -143,8 +157,18 @@ class InteractiveHarnessSession:
         scene_graph = self.blender.get_scene_graph()
         self.store.write_json("scene_stage_graph.json", scene_graph)
         self._frozen_scene_graph = scene_graph
+        repaired_ir, repair_plan = repair_animation_ir(full_ir, scene_graph)
+        self._animation_repair_plan = repair_plan if repair_plan.applied else None
+        self.store.write_json("reports/animation_path_repair_plan.json", repair_plan.to_dict())
+        if repair_plan.applied:
+            full_ir = repaired_ir
+            self.ir = full_ir
+            self.store.write_json("ir_animation_stage_repaired.json", full_ir.to_dict())
+            self._emit("stage", f"Applied deterministic animation path repair to {len(repair_plan.plans)} event(s)")
         base_code = self._last_executed_code or self.code or ""
         self.code = self.refiner.add_animation(ir=full_ir, code=base_code, scene_graph=scene_graph)
+        self.code = self._append_static_support_repair(self.code)
+        self.code = self._append_animation_repair(self.code)
         self.store.write_text("code/generated_animation_stage.py", self.code)
         self._execute_validate_refine(reason="animation_stage")
 
@@ -255,12 +279,14 @@ class InteractiveHarnessSession:
                     execution_error=execution_error,
                     screenshot_paths=self._latest_screenshots,
                 )
+                self.code = self._append_static_support_repair(self.code)
+                self.code = self._append_animation_repair(self.code)
                 self.store.write_text(f"code/{label}_refined.py", self.code)
                 continue
 
             self._emit("execute", f"Executing Blender script: {label}")
             execution = self.blender.execute_scene_code(self.code)
-            self.store.write_text(f"logs/{label}_execution.txt", execution.stdout)
+            self.store.write_text(f"logs/{label}_execution.txt", execution.diagnostic_text())
             if not execution.ok:
                 execution_error = execution.message or execution.stdout
                 self._emit("error", "Blender execution failed", error=execution_error)
@@ -270,6 +296,7 @@ class InteractiveHarnessSession:
                         [ValidationIssue(code="BLENDER_EXEC_FAILED", message=execution_error)],
                     )
                 ]
+                self.store.write_json(f"reports/{label}_execution.json", report_to_dict(reports[0]))
             else:
                 execution_error = None
                 self._emit("execute", "Blender scene updated")
@@ -325,8 +352,74 @@ class InteractiveHarnessSession:
                 execution_error=execution_error,
                 screenshot_paths=self._latest_screenshots,
             )
+            self.code = self._append_static_support_repair(self.code)
+            self.code = self._append_animation_repair(self.code)
             self.store.write_text(f"code/{label}_refined.py", self.code)
         return False
+
+    def _append_animation_repair(self, code: str) -> str:
+        if not self._animation_repair_plan or not self._animation_repair_plan.applied:
+            return code
+        if _ANIMATION_REPAIR_MARKER in code:
+            return code
+        repair_code = blender_repair_script(self._animation_repair_plan)
+        if not repair_code:
+            return code
+        return code.rstrip() + "\n\n" + repair_code + "\n"
+
+    def _append_static_support_repair(self, code: str) -> str:
+        if not self._static_support_repair_plan or not self._static_support_repair_plan.applied:
+            return code
+        if _STATIC_SUPPORT_REPAIR_MARKER in code:
+            return code
+        repair_code = blender_static_support_repair_script(self._static_support_repair_plan)
+        if not repair_code:
+            return code
+        return code.rstrip() + "\n\n" + repair_code + "\n"
+
+    def _try_static_support_repair(self, label: str, scene_report: ValidationReport) -> ValidationReport | None:
+        assert self.store is not None
+        assert self.ir is not None
+        if self._static_support_repair_applied:
+            return None
+        if not any(issue.code == "RELATION_ON_TOP_OF_FAILED" for issue in scene_report.issues):
+            return None
+
+        scene_graph = self.blender.get_scene_graph()
+        self.store.write_json(f"repairs/{label}_static_support_scene_graph.json", scene_graph)
+        repair_plan = repair_static_support(self.ir, scene_graph, scene_report)
+        self.store.write_json(f"repairs/{label}_static_support_repair.json", repair_plan.to_dict())
+        if not repair_plan.applied:
+            return None
+
+        repair_script = blender_static_support_repair_script(repair_plan)
+        self.store.write_text(f"code/{label}_support_repair.py", repair_script)
+        execution = self.blender.execute_code(repair_script)
+        self.store.write_text(f"logs/{label}_support_repair_execution.txt", execution.diagnostic_text())
+        if not execution.ok:
+            return ValidationReport.failed(
+                VerificationMode.DETERMINISTIC,
+                [
+                    ValidationIssue(
+                        code="STATIC_SUPPORT_REPAIR_EXEC_FAILED",
+                        message=execution.message or execution.stdout,
+                        severity=Severity.MAJOR,
+                    )
+                ],
+                "Static support repair script failed.",
+            )
+
+        self._static_support_repair_applied = True
+        self._static_support_repair_plan = repair_plan
+        if self.code is not None:
+            self.code = self._append_static_support_repair(self.code)
+            self._last_executed_code = self.code
+            self.store.write_text(f"code/{label}_scene_with_support_repair.py", self.code)
+        self._emit("repair", f"Applied deterministic static support repair to {len(repair_plan.adjustments)} relation(s)")
+        repaired_report = self.blender.validate_scene(self.ir)
+        self.store.write_json(f"reports/{label}_scene_deterministic_after_support_repair.json", report_to_dict(repaired_report))
+        self._emit_report(repaired_report)
+        return repaired_report
 
     def _static_code_report(self) -> ValidationReport:
         assert self.ir is not None
@@ -370,6 +463,15 @@ class InteractiveHarnessSession:
                     code="CODE_ENTRYPOINT_NOT_CALLED",
                     message="Generated script defines main() but never calls it, so no fresh scene may be created.",
                     severity=Severity.CRITICAL,
+                )
+            )
+        for module_name in _undefined_module_references(tree):
+            issues.append(
+                ValidationIssue(
+                    code="CODE_UNDEFINED_MODULE",
+                    message=f"Generated script uses '{module_name}' but does not import or define it.",
+                    severity=Severity.CRITICAL,
+                    evidence={"name": module_name},
                 )
             )
         keyframe_calls = _count_effective_keyframe_calls(tree)
@@ -420,14 +522,35 @@ class InteractiveHarnessSession:
 
         self._emit("validate", "Running deterministic scene validation")
         scene_report = self.blender.validate_scene(self.ir)
-        reports.append(scene_report)
         self.store.write_json(f"reports/{label}_scene_deterministic.json", report_to_dict(scene_report))
         self._emit_report(scene_report)
+        repaired_scene_report = None
+        if not scene_report.passed:
+            repaired_scene_report = self._try_static_support_repair(label, scene_report)
+        if repaired_scene_report is not None:
+            scene_report = repaired_scene_report
+        reports.append(scene_report)
 
         self._emit("render", "Rendering screenshot plan")
         screenshots = self.blender.render_screenshots(self.ir, self.store.root / "screenshots" / label)
         self._latest_screenshots = screenshots
         self._emit("render", f"Rendered {len(screenshots)} screenshots", paths=[str(path) for path in screenshots])
+        if not screenshots:
+            render_report = ValidationReport.failed(
+                VerificationMode.DETERMINISTIC,
+                [
+                    ValidationIssue(
+                        code="RENDER_NO_SCREENSHOTS",
+                        message="Screenshot render completed without producing any image files.",
+                        severity=Severity.MAJOR,
+                        evidence={"output_dir": str(self.store.root / "screenshots" / label)},
+                    )
+                ],
+                "Screenshot render produced no artifacts.",
+            )
+            reports.append(render_report)
+            self.store.write_json(f"reports/{label}_render_screenshots.json", report_to_dict(render_report))
+            self._emit_report(render_report)
 
         if screenshots and not self.skip_vision and self.ir.scene.verifier.visual.enabled:
             self._emit("vision", "Running visual model verification")
@@ -462,6 +585,22 @@ class InteractiveHarnessSession:
                     paths=[str(path) for path in sampled_frames],
                     preview=str(preview_video) if preview_video else None,
                 )
+                if not sampled_frames:
+                    render_report = ValidationReport.failed(
+                        VerificationMode.DETERMINISTIC,
+                        [
+                            ValidationIssue(
+                                code="RENDER_NO_ANIMATION_FRAMES",
+                                message="Animation sample render completed without producing any frame image files.",
+                                severity=Severity.MAJOR,
+                                evidence={"output_dir": str(self.store.root / "animation" / label)},
+                            )
+                        ],
+                        "Animation sample render produced no artifacts.",
+                    )
+                    reports.append(render_report)
+                    self.store.write_json(f"reports/{label}_render_animation.json", report_to_dict(render_report))
+                    self._emit_report(render_report)
             else:
                 sampled_frames = []
                 preview_video = None
@@ -543,6 +682,39 @@ def _failure_signature(reports: list[ValidationReport], execution_error: str | N
 def _has_unrecoverable_verifier_config_issue(reports: list[ValidationReport]) -> bool:
     unrecoverable_codes = {"VISION_INPUT_UNSUPPORTED", "VIDEO_INPUT_UNSUPPORTED"}
     return any(issue.code in unrecoverable_codes for report in reports for issue in report.issues)
+
+
+def _undefined_module_references(tree: ast.AST) -> list[str]:
+    imported: set[str] = set()
+    defined: set[str] = set()
+    builtin_names = set(dir(builtins))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update((alias.asname or alias.name.split(".", 1)[0]) for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.update((alias.asname or alias.name) for alias in node.names)
+        elif isinstance(node, ast.FunctionDef):
+            defined.add(node.name)
+            defined.update(arg.arg for arg in node.args.args)
+            defined.update(arg.arg for arg in node.args.kwonlyargs)
+            if node.args.vararg:
+                defined.add(node.args.vararg.arg)
+            if node.args.kwarg:
+                defined.add(node.args.kwarg.arg)
+        elif isinstance(node, ast.ClassDef):
+            defined.add(node.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            defined.add(node.id)
+    missing = {
+        node.value.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id not in imported
+        and node.value.id not in defined
+        and node.value.id not in builtin_names
+    }
+    return sorted(missing)
 
 
 def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:

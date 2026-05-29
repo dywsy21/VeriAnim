@@ -48,7 +48,7 @@ def normalize_engine_name(engine: str | None) -> str:
         "BLENDER_WORKBENCH": "BLENDER_WORKBENCH",
         "EEVEE": "BLENDER_EEVEE_NEXT",
         "EEVEE_NEXT": "BLENDER_EEVEE_NEXT",
-        "BLENDER_EEVEE": "BLENDER_EEVEE_NEXT",
+        "BLENDER_EEVEE": "BLENDER_EEVEE",
         "BLENDER_EEVEE_NEXT": "BLENDER_EEVEE_NEXT",
         "CYCLE": "CYCLES",
         "CYCLES": "CYCLES",

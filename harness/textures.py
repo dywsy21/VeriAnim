@@ -53,10 +53,12 @@ class FreeStockTexturesClient:
     CATEGORY_ALIASES = {
         "brick": "wall",
         "bricks": "wall",
+        "brushed": "metal",
         "ceramic": "stone",
         "cement": "concrete",
         "fabric": "abstract",
         "grass": "ground",
+        "leather": "abstract",
         "marble": "stone",
         "paper": "grunge",
         "plank": "wood",
@@ -106,13 +108,13 @@ class FreeStockTexturesClient:
                 existing = candidates.get(item.page_url)
                 if existing is None:
                     candidates[item.page_url] = item
-                if len(candidates) >= max(limit * 2, limit):
+                if len(candidates) >= max(limit * 4, limit):
                     break
-            if len(candidates) >= max(limit * 2, limit):
+            if len(candidates) >= max(limit * 4, limit):
                 break
         ranked = sorted(candidates.values(), key=lambda item: _text_score(query, item.title, item.tags), reverse=True)
         enriched: list[TextureCandidate] = []
-        for candidate in ranked[: max(limit * 2, limit)]:
+        for candidate in ranked[: max(limit * 4, limit)]:
             try:
                 detail_html = self._get_text(candidate.page_url)
                 detail = _parse_detail_page(detail_html, candidate.page_url)
@@ -124,9 +126,8 @@ class FreeStockTexturesClient:
             candidate.score = _text_score(query, candidate.title, candidate.tags)
             if candidate.image_url or candidate.download_url:
                 enriched.append(candidate)
-            if len(enriched) >= limit:
-                break
-        return enriched
+        filtered = [candidate for candidate in enriched if _passes_intent_gate(query, candidate)]
+        return sorted(filtered, key=lambda item: item.score, reverse=True)[:limit]
 
     def download_candidate(self, candidate: TextureCandidate, output_dir: Path) -> TextureCandidate:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -278,6 +279,8 @@ def _parse_listing_candidates(html: str, base_url: str) -> list[TextureCandidate
     for item in parser.items:
         if item.page_url in seen:
             continue
+        if _is_non_texture_listing_item(item):
+            continue
         seen.add(item.page_url)
         result.append(item)
     return result
@@ -312,16 +315,83 @@ def _query_tokens(query: str) -> list[str]:
 
 
 def _text_score(query: str, title: str, tags: list[str]) -> float:
-    tokens = set(_query_tokens(query))
+    intent = _query_intent(query)
+    tokens = set(intent["tokens"])
     haystack = " ".join([title, *tags]).lower()
-    score = sum(2.0 for token in tokens if token in haystack)
+    haystack_tokens = set(_query_tokens(haystack))
+    score = sum(2.0 for token in tokens if token in haystack_tokens)
+    score += sum(0.5 for token in tokens if token in haystack and token not in haystack_tokens)
     if title.lower() in query.lower() or query.lower() in title.lower():
         score += 3.0
+    for token in intent["required_any"]:
+        if token in haystack_tokens or token in haystack:
+            score += 8.0
+    for token in intent["positive"]:
+        if token in haystack_tokens or token in haystack:
+            score += 3.0
+    for token in intent["negative"]:
+        if token in haystack_tokens or token in haystack:
+            score -= 8.0
+    if intent["required_any"] and not any(token in haystack_tokens or token in haystack for token in intent["required_any"]):
+        score -= 20.0
     return score
 
 
 def _clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", unescape(text)).strip()
+
+
+def _is_non_texture_listing_item(item: TextureCandidate) -> bool:
+    title = item.title.strip().lower()
+    if title in {"browse", "download", "next", "previous"}:
+        return True
+    return not urlparse(item.page_url).path.startswith("/texture/")
+
+
+def _passes_intent_gate(query: str, candidate: TextureCandidate) -> bool:
+    intent = _query_intent(query)
+    haystack = " ".join([candidate.title, *candidate.tags]).lower()
+    haystack_tokens = set(_query_tokens(haystack))
+    title = candidate.title.lower()
+    title_tokens = set(_query_tokens(title))
+    if any(token in title_tokens or token in title for token in intent["negative"]):
+        return False
+    if intent["required_any"] and not any(token in haystack_tokens or token in haystack for token in intent["required_any"]):
+        return False
+    if candidate.score < intent["min_score"]:
+        return False
+    return True
+
+
+def _query_intent(query: str) -> dict[str, Any]:
+    tokens = _query_tokens(query)
+    required_any: list[str] = []
+    positive: list[str] = []
+    negative: list[str] = []
+    min_score = -100.0
+
+    if "ceramic" in tokens and any(token in tokens for token in ("plain", "white", "clean", "solid")):
+        required_any.extend(["ceramic", "porcelain"])
+        positive.extend(["smooth", "glossy", "white"])
+        negative.extend(["wall", "paper", "grunge", "dirty", "wrinkled", "rust", "wood"])
+        min_score = 4.0
+    if "leather" in tokens:
+        required_any.append("leather")
+        positive.extend(["brown", "hide", "grain", "quilted"])
+        negative.extend(["paper", "wood", "wooden", "floor", "wall"])
+        min_score = 4.0
+    if "brushed" in tokens and "metal" in tokens:
+        required_any.append("metal")
+        positive.extend(["brushed", "scratched", "galvanized", "silver", "steel", "metallic"])
+        negative.extend(["rust", "rusty", "russet", "paper", "grunge", "painted"])
+        min_score = 2.0
+    return {
+        "tokens": tokens,
+        "required_any": list(dict.fromkeys(required_any)),
+        "positive": list(dict.fromkeys(positive)),
+        "negative": list(dict.fromkeys(negative)),
+        "min_score": min_score,
+    }
 
 
 def _slugify(value: str) -> str:

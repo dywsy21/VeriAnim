@@ -293,12 +293,33 @@ Deterministic verification should measure these with Blender world-space
 bounding boxes. Vision verification should judge whether the relation is visible
 and semantically clear.
 
+For horizontal support, plan and code the placement with an explicit bbox
+alignment recipe: compute the support top in world z, compute the subject half
+height after scale is applied, set the subject center z to support_top +
+subject_half_height, and keep the subject footprint inside or overlapping the
+support footprint in x/y. A support relation should not pass by moving only z
+when x/y overlap is missing.
+
+Animation prompts often describe a final relation, for example "rolls across a
+table and stops near a box". Treat that as an animation end-state unless the
+initial scene must already satisfy it. Encode the final placement in
+`AnimationEventSpec.end_transform`, sampled final frames, pass criteria, and
+event-scoped `contact_constraints`; avoid adding a static `near` or `on_top_of`
+relation that must be true before the motion starts.
+
 Recent medium-animation tests exposed the main relation-design risk: a single
 semantic enum is not enough to choose a reliable deterministic check. A slanted
 ramp supported by legs is structurally attached/touching, not a horizontal
 `on_top_of` stack. The planner should therefore specify both `relation_type`
 and `verification_method`, and the screenshot plan should include views that
 make visually checked relations inspectable.
+
+For a cube, ball, or vehicle moving on a ramp, use a ramp-aware path instead of
+horizontal support math: define the ramp's length direction, top-surface
+normal, start/end surface points, and sampled contact frames. Place the moving
+object center on the surface plus the normal times the object's radius or half
+extent. Use `touching` or `visual_only` for static slanted contact relations and
+event-scoped support/nonpenetration constraints for the animation window.
 
 ## Environment
 
@@ -469,6 +490,13 @@ Recommended use:
 - `carry_contact`: gripper, hand, crane hook, or tray must remain close to the
   carried object during the carry window.
 - `inside`: object must remain within a basket, box, drawer, pipe, or boundary.
+
+Repair priority for contact reports should follow the same geometry order as
+the validator. Fix missing support footprint overlap in x/y before z alignment;
+then fix support penetration or floating; then resolve pairwise penetration by
+separating along the reported axis or the shallowest bbox overlap axis. For
+animation reports, apply the same correction to every affected keyframe or path
+point in the failing frame window, not just to the current frame.
 
 `MotionPathSpec`
 

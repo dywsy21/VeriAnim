@@ -56,6 +56,18 @@ class BlenderRunResult:
     stderr: str = ""
     traceback: str | None = None
 
+    def diagnostic_text(self) -> str:
+        parts: list[str] = []
+        if self.stdout:
+            parts.append(self.stdout.rstrip())
+        if self.stderr:
+            parts.append("[stderr]\n" + self.stderr.rstrip())
+        if self.traceback:
+            parts.append("[traceback]\n" + self.traceback.rstrip())
+        if self.message and self.message not in "\n".join(parts):
+            parts.append("[message]\n" + self.message)
+        return "\n\n".join(part for part in parts if part).rstrip() + ("\n" if parts else "")
+
 
 class BlenderRuntime:
     def __init__(self, config: HarnessConfig):
@@ -655,6 +667,7 @@ from mathutils import Vector
 IR = json.loads({_json(ir)!r})
 RELATION_FRAMES = json.loads({json.dumps(relation_frames)!r})
 issues = []
+bpy.context.view_layer.update()
 
 def issue(code, message, severity="major", target_id=None, relation_id=None, evidence=None):
     issues.append({{"code": code, "message": message, "severity": severity, "target_id": target_id, "relation_id": relation_id, "evidence": evidence or {{}}}})
@@ -1028,6 +1041,9 @@ def value_for_path(obj, path_prefix):
 def moving_representative(objs, path_prefix, frames):
     if not objs or not path_prefix or not frames:
         return representative_obj(objs, path_prefix)
+    keyed = [candidate for candidate in objs if has_fcurve(candidate, path_prefix)]
+    if keyed:
+        return representative_obj(keyed, path_prefix)
     start_frame = int(frames[0])
     end_frame = int(frames[-1])
     best = None
