@@ -101,6 +101,21 @@ The default video model hint is `dashscope/qwen-omni-turbo`. Replace it with the
 LiteLLM model name that matches your deployed Qwen Omni or other video-capable
 endpoint.
 
+To check media support before a full Blender run, use:
+
+```bash
+python scripts/diagnose_media_support.py --output-dir runs/media_capability_probe
+```
+
+The probe writes a small PNG, a two-frame GIF, sampled PNG frames, and
+`media_capability_report.json`. It uses the existing `VisionVerifierAgent` and
+`VideoVerifierAgent` paths, so it tests the same `image_url` and `video_url`
+payload shapes used by normal verification. A status of `unsupported` with
+`VISION_INPUT_UNSUPPORTED` or `VIDEO_INPUT_UNSUPPORTED` means the configured
+model/endpoint is text-only for that payload shape; use a deployed multimodal
+endpoint or run deterministic-only checks with `--skip-vision` or
+`--skip-video`.
+
 Long Blender code generations can exceed the stable non-streaming response
 window of some OpenAI-compatible gateways. For non-JSON code-generation calls,
 the LLM client now streams first and disables LiteLLM's internal retries
@@ -115,6 +130,11 @@ Generated scripts can import `from blender import ll3m_utils as ll3m` for
 shared helpers such as Workbench render setup, scene clearing, collections,
 materials, cameras, lights, and primitive mesh objects. This keeps model output
 shorter and reduces repeated Blender API mistakes.
+
+Before execution, generated Blender code also goes through a narrow deterministic
+compatibility sanitizer. One covered case maps invalid keyframe interpolation
+assignments such as `key.interpolation = 'EASE_IN_OUT'` to Blender-supported
+`SINE`; valid interpolation values such as `LINEAR` are preserved.
 
 `LL3M_MAX_STAGNANT_REFINEMENT_ROUNDS` stops a verifier loop when the same
 failure signature repeats without progress, preventing repeated expensive
@@ -251,6 +271,13 @@ user says an object is "beside" or "next to" another object, the harness does
 not force a left/right relation unless the prompt explicitly says left or right.
 It treats that relationship as symmetric `near` plus any existing
 `not_intersecting` constraints.
+
+Planner IR sanitization also covers a narrow deterministic stability case:
+when generated IR references a common `floor` or `ground` support but omits that
+object, the sanitizer inserts a horizontal support plane with bbox collision
+metadata. It may also drop stale verifier-only camera/view/relation references.
+It does not invent arbitrary missing objects; those remain structural
+validation errors.
 
 IR v0.2 separates relation semantics from relation checking with
 `SpatialRelationSpec.verification_method`. Horizontal support can use

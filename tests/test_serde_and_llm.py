@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from harness.agents import MaterialAgent, _is_multimodal_input_unsupported, _sanitize_planner_data
+from harness.agents import MaterialAgent, _is_multimodal_input_unsupported, _sanitize_generated_blender_code, _sanitize_planner_data
 from harness.config import AgentModelConfig, HarnessConfig
 from harness.ir import (
     CameraSpec,
@@ -336,6 +336,100 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         self.assertTrue(materials["grass_material"]["needs_texture"])
         self.assertEqual(materials["plastic_ball_material"]["texture_policy"], "solid_only")
         self.assertFalse(materials["plastic_ball_material"]["needs_texture"])
+
+    def test_planner_sanitizer_adds_common_missing_floor_support(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["objects"] = [
+            {
+                "id": "pedestal",
+                "description": "stone pedestal",
+                "category": "prop",
+                "role": "primary",
+            }
+        ]
+        payload["scene"]["relations"] = [
+            {
+                "id": "pedestal_on_floor",
+                "relation_type": "on_top_of",
+                "subject_id": "pedestal",
+                "object_id": "floor",
+                "verification_method": "bbox_contact",
+            }
+        ]
+        payload["scene"]["cameras"] = [{"id": "camera_main", "target_object_ids": ["pedestal", "floor"]}]
+        payload["animation"] = None
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+        report = ir.validate()
+
+        object_ids = {obj.id for obj in ir.scene.objects}
+        floor = next(obj for obj in ir.scene.objects if obj.id == "floor")
+        self.assertIn("floor", object_ids)
+        self.assertEqual(floor.role.value, "support")
+        self.assertTrue(floor.collision.enabled)
+        self.assertTrue(report.passed, [issue.code for issue in report.issues])
+
+    def test_planner_sanitizer_does_not_invent_arbitrary_missing_objects(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["relations"] = [
+            {
+                "id": "box_on_missing_platform",
+                "relation_type": "on_top_of",
+                "subject_id": "box",
+                "object_id": "missing_platform",
+            }
+        ]
+
+        _sanitize_planner_data(payload)
+        report = from_dict(GenerationIR, payload).validate()
+        codes = {issue.code for issue in report.issues}
+
+        self.assertFalse(report.passed)
+        self.assertIn("UNKNOWN_RELATION_OBJECT", codes)
+
+    def test_planner_sanitizer_prunes_invalid_verifier_references(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["cameras"] = [
+            {"id": "camera_main", "target_object_ids": ["ball", "missing_camera_target"]}
+        ]
+        payload["scene"]["verifier"] = {
+            "screenshot_plan": {
+                "views": [
+                    {
+                        "id": "bad_view",
+                        "view_type": "close-up",
+                        "camera_id": "missing_camera",
+                        "target_object_ids": ["ball", "missing_view_target"],
+                        "relation_ids": ["ball_final_near_box", "missing_relation"],
+                    }
+                ]
+            }
+        }
+
+        _sanitize_planner_data(payload)
+
+        self.assertEqual(payload["scene"]["cameras"][0]["target_object_ids"], ["ball"])
+        view = payload["scene"]["verifier"]["screenshot_plan"]["views"][0]
+        self.assertIsNone(view["camera_id"])
+        self.assertEqual(view["target_object_ids"], ["ball"])
+        self.assertEqual(view["relation_ids"], ["ball_final_near_box"])
+
+    def test_blender_code_sanitizer_rewrites_invalid_keyframe_interpolation_enum(self) -> None:
+        code = """
+for fc in obj.animation_data.action.fcurves:
+    for key in fc.keyframe_points:
+        key.interpolation = 'EASE_IN_OUT'
+        key.easing = "EASE_IN_OUT"
+other_key.interpolation = "LINEAR"
+"""
+
+        sanitized = _sanitize_generated_blender_code(code)
+
+        self.assertIn("key.interpolation = 'SINE'", sanitized)
+        self.assertIn('key.easing = "SINE"', sanitized)
+        self.assertIn('other_key.interpolation = "LINEAR"', sanitized)
+        self.assertNotIn("EASE_IN_OUT", sanitized)
 
 
 class MaterialAgentTextureSearchTest(unittest.TestCase):

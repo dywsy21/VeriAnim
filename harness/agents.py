@@ -1529,6 +1529,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         obj["category"] = category_aliases.get(category, category if category in valid_categories else "generic")
         role = str(obj.get("role", "secondary")).lower()
         obj["role"] = role if role in valid_roles else "secondary"
+    _ensure_common_support_objects(scene, data.get("animation"))
     relation_aliases = {
         "above": "on_top_of",
         "atop": "on_top_of",
@@ -1584,6 +1585,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         priority = str(relation.get("visual_priority", "required")).strip().lower().replace("-", "_").replace(" ", "_")
         relation["visual_priority"] = importance_aliases.get(priority, priority if priority in valid_importance else "required")
     _normalize_view_type_fields(scene)
+    _prune_invalid_verifier_references(scene)
     for material in scene.get("materials", []) or []:
         if not isinstance(material, dict):
             continue
@@ -1620,6 +1622,151 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
                 material["texture_query"] = " ".join(str(item) for item in hints[:4])
             else:
                 material["texture_query"] = str(material.get("description") or material.get("id") or "material texture")
+
+
+_COMMON_SUPPORT_IDS = {
+    "floor",
+    "floor_plane",
+    "floor_surface",
+    "ground",
+    "ground_plane",
+    "ground_surface",
+}
+
+
+def _ensure_common_support_objects(scene: dict[str, Any], animation: Any = None) -> None:
+    objects = scene.get("objects")
+    if not isinstance(objects, list):
+        return
+    existing_ids = {str(obj.get("id")) for obj in objects if isinstance(obj, dict) and obj.get("id")}
+    missing_support_ids = sorted(
+        reference_id
+        for reference_id in _referenced_common_support_ids(scene, animation)
+        if reference_id not in existing_ids
+    )
+    for support_id in missing_support_ids:
+        objects.append(
+            {
+                "id": support_id,
+                "label": _common_support_label(support_id),
+                "category": "terrain",
+                "role": "support",
+                "importance": "required",
+                "description": f"Horizontal {_common_support_label(support_id)} support plane.",
+                "dimensions": {"size": [6.0, 6.0, 0.02]},
+                "placement": {
+                    "transform": {"location": [0.0, 0.0, 0.0]},
+                    "anchor": "center",
+                },
+                "collision": {
+                    "proxy_type": "bbox",
+                    "role": "support",
+                    "margin": 0.02,
+                    "enabled": True,
+                },
+            }
+        )
+
+
+def _referenced_common_support_ids(scene: dict[str, Any], animation: Any = None) -> set[str]:
+    references: set[str] = set()
+
+    def collect(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        normalized = value.strip()
+        if normalized and normalized.lower() in _COMMON_SUPPORT_IDS:
+            references.add(normalized)
+
+    for relation in scene.get("relations", []) or []:
+        if isinstance(relation, dict):
+            collect(relation.get("subject_id"))
+            collect(relation.get("object_id"))
+    for camera in scene.get("cameras", []) or []:
+        if isinstance(camera, dict):
+            for target_id in camera.get("target_object_ids") or []:
+                collect(target_id)
+    verifier = scene.get("verifier")
+    if isinstance(verifier, dict):
+        screenshot_plan = verifier.get("screenshot_plan")
+        if isinstance(screenshot_plan, dict):
+            for view in screenshot_plan.get("views", []) or []:
+                if isinstance(view, dict):
+                    for target_id in view.get("target_object_ids") or []:
+                        collect(target_id)
+
+    if isinstance(animation, dict):
+        _collect_common_supports_from_animation(animation, collect)
+    return references
+
+
+def _collect_common_supports_from_animation(animation: dict[str, Any], collect: Any) -> None:
+    for constraint in animation.get("contact_constraints") or []:
+        if isinstance(constraint, dict):
+            collect(constraint.get("subject_id"))
+            collect(constraint.get("object_id"))
+    for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
+        if not isinstance(event, dict):
+            continue
+        for target_id in event.get("target_ids") or []:
+            collect(target_id)
+        for constraint in event.get("contact_constraints") or []:
+            if isinstance(constraint, dict):
+                collect(constraint.get("subject_id"))
+                collect(constraint.get("object_id"))
+
+
+def _common_support_label(support_id: str) -> str:
+    return "ground plane" if "ground" in support_id.lower() else "floor plane"
+
+
+def _prune_invalid_verifier_references(scene: dict[str, Any]) -> None:
+    object_ids = _raw_object_and_part_ids(scene)
+    relation_ids = {
+        str(relation.get("id"))
+        for relation in scene.get("relations", []) or []
+        if isinstance(relation, dict) and relation.get("id")
+    }
+    camera_ids = {
+        str(camera.get("id"))
+        for camera in scene.get("cameras", []) or []
+        if isinstance(camera, dict) and camera.get("id")
+    }
+    for camera in scene.get("cameras", []) or []:
+        if isinstance(camera, dict):
+            camera["target_object_ids"] = _filter_existing_ids(camera.get("target_object_ids"), object_ids)
+    verifier = scene.get("verifier")
+    if not isinstance(verifier, dict):
+        return
+    screenshot_plan = verifier.get("screenshot_plan")
+    if not isinstance(screenshot_plan, dict):
+        return
+    for view in screenshot_plan.get("views", []) or []:
+        if not isinstance(view, dict):
+            continue
+        if view.get("camera_id") and view.get("camera_id") not in camera_ids:
+            view["camera_id"] = None
+        view["target_object_ids"] = _filter_existing_ids(view.get("target_object_ids"), object_ids)
+        view["relation_ids"] = _filter_existing_ids(view.get("relation_ids"), relation_ids)
+
+
+def _filter_existing_ids(values: Any, valid_ids: set[str]) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [value for value in dict.fromkeys(str(item) for item in values if item) if value in valid_ids]
+
+
+def _raw_object_and_part_ids(scene: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for obj in scene.get("objects", []) or []:
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("id"):
+            ids.add(str(obj["id"]))
+        for part in obj.get("parts") or []:
+            if isinstance(part, dict) and part.get("id"):
+                ids.add(str(part["id"]))
+    return ids
 
 
 def _prompt_forbids_material_texture(prompt_text: str, material: dict[str, Any]) -> bool:
@@ -2490,6 +2637,8 @@ def _sanitize_generated_blender_code(code: str) -> str:
         'bpy.context.scene.render.engine = "WORKBENCH"': 'bpy.context.scene.render.engine = "BLENDER_WORKBENCH"',
         ".easing = 'EASE_IN_OUT'": ".easing = 'SINE'",
         '.easing = "EASE_IN_OUT"': '.easing = "SINE"',
+        ".interpolation = 'EASE_IN_OUT'": ".interpolation = 'SINE'",
+        '.interpolation = "EASE_IN_OUT"': '.interpolation = "SINE"',
     }
     for bad, good in replacements.items():
         code = code.replace(bad, good)
