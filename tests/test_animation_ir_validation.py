@@ -6,7 +6,13 @@ from pathlib import Path
 import unittest
 
 from harness.ir import GenerationIR
-from harness.blender_runtime import _relation_frame_overrides, _view_dicts, build_deformation_statistics
+from harness.blender_runtime import (
+    _animation_validation_script,
+    build_deformation_statistics,
+    _relation_frame_overrides,
+    _scene_validation_script,
+    _view_dicts,
+)
 from harness.serde import bridge_legacy_rigid_intent, from_dict
 
 
@@ -441,6 +447,31 @@ class AnimationIRValidationTest(unittest.TestCase):
 
         self.assertFalse(report.passed)
         self.assertIn("INVALID_COLLISION_MARGIN", codes)
+
+    def test_generated_validation_scripts_compile(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+
+        compile(_scene_validation_script(ir), "<scene_validation_script>", "exec")
+        compile(_animation_validation_script(ir), "<animation_validation_script>", "exec")
+
+    def test_generated_validation_scripts_use_physical_evaluated_bboxes(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        scene_script = _scene_validation_script(ir)
+        animation_script = _animation_validation_script(ir)
+
+        for script in (scene_script, animation_script):
+            self.assertIn("evaluated_depsgraph_get", script)
+            self.assertIn("to_mesh()", script)
+            self.assertIn("is_physical_bbox_object", script)
+
+    def test_global_nonpenetration_exemptions_are_frame_aware(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        animation_script = _animation_validation_script(ir)
+
+        self.assertIn("def globally_allowed_overlap_pairs(frame):", animation_script)
+        self.assertIn("if start <= frame <= end:", animation_script)
+        self.assertIn("allowed = globally_allowed_overlap_pairs(frame)", animation_script)
+        self.assertNotIn('rtype in ("attached_to", "touching", "inside", "contains", "on_top_of")', animation_script)
 
 
 if __name__ == "__main__":
