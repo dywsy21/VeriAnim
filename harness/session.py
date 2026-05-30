@@ -76,6 +76,7 @@ def _strip_appended_repair_block(code: str, marker: str) -> str:
 
 def _animation_contact_repair_script(report: ValidationReport) -> str:
     deltas: dict[str, list[float]] = {}
+    support_ids: dict[str, set[str]] = {}
     for issue in report.issues:
         if issue.code not in {"CONTACT_CONSTRAINT_FLOATING", "CONTACT_CONSTRAINT_SUPPORT_PENETRATION"}:
             continue
@@ -90,8 +91,13 @@ def _animation_contact_repair_script(report: ValidationReport) -> str:
         if abs(delta) > 0.2:
             continue
         deltas.setdefault(target_id, []).append(delta)
+        object_id = issue.evidence.get("object_id") if isinstance(issue.evidence, dict) else None
+        if object_id:
+            support_ids.setdefault(target_id, set()).add(str(object_id))
     repairs: dict[str, float] = {}
     for target_id, values in deltas.items():
+        if len(support_ids.get(target_id, set())) > 1:
+            continue
         if len(values) < 2:
             continue
         average = sum(values) / len(values)

@@ -577,6 +577,29 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         self.assertIn('"box": -0.0405', script)
         self.assertIn("point.co.y += float(dz)", script)
 
+    def test_animation_contact_repair_skips_multi_support_subjects(self) -> None:
+        report = ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            [
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_SUPPORT_PENETRATION",
+                    message="car penetrates ramp",
+                    target_id="car",
+                    evidence={"object_id": "ramp", "z_gap": -0.06},
+                ),
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_FLOATING",
+                    message="car floats over platform",
+                    target_id="car",
+                    evidence={"object_id": "platform", "z_gap": 0.06},
+                ),
+            ],
+        )
+
+        script = _animation_contact_repair_script(report)
+
+        self.assertEqual(script, "")
+
     def test_animation_stage_writes_repair_artifact_and_appends_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True, skip_vision=True, skip_video=True)
