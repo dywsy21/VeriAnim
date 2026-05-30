@@ -571,9 +571,9 @@ def _relation_frame_overrides(ir: GenerationIR) -> dict[str, int]:
             if part
         ).lower()
         tokens = text.replace("_", " ").replace("-", " ").split()
-        if any(token in tokens for token in ("final", "end", "ending", "ended", "last", "stop", "stopped")):
+        if any(token in tokens for token in ("final", "end", "ending", "ended", "last", "stop", "stopped", "stops")):
             overrides[relation.id] = end_frame
-        elif any(token in tokens for token in ("initial", "start", "starting", "started", "first", "begin", "beginning")):
+        elif any(token in tokens for token in ("initial", "start", "starts", "starting", "started", "first", "begin", "begins", "beginning", "resting")):
             overrides[relation.id] = start_frame
     return overrides
 

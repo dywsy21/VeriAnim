@@ -46,6 +46,32 @@ def _agent_model_record(config: AgentModelConfig) -> dict[str, Any]:
     }
 
 
+def _strip_appended_repair_block(code: str, marker: str) -> str:
+    """Remove a previously appended deterministic repair block from generated code."""
+
+    start = code.find(marker)
+    if start < 0:
+        return code
+    line_start = code.rfind("\n", 0, start)
+    if line_start < 0:
+        line_start = 0
+    else:
+        line_start += 1
+    following_markers = [
+        index
+        for other_marker in (_STATIC_SUPPORT_REPAIR_MARKER, _ANIMATION_REPAIR_MARKER)
+        if other_marker != marker
+        for index in [code.find(other_marker, start + len(marker))]
+        if index >= 0
+    ]
+    if following_markers:
+        next_start = min(following_markers)
+        next_line_start = code.rfind("\n", 0, next_start)
+        end = next_line_start + 1 if next_line_start >= 0 else next_start
+        return code[:line_start].rstrip() + "\n\n" + code[end:].lstrip()
+    return code[:line_start].rstrip()
+
+
 class InteractiveHarnessSession:
     """Stateful local harness session with multi-turn user changes."""
 
@@ -370,11 +396,10 @@ class InteractiveHarnessSession:
     def _append_static_support_repair(self, code: str) -> str:
         if not self._static_support_repair_plan or not self._static_support_repair_plan.applied:
             return code
-        if _STATIC_SUPPORT_REPAIR_MARKER in code:
-            return code
         repair_code = blender_static_support_repair_script(self._static_support_repair_plan)
         if not repair_code:
             return code
+        code = _strip_appended_repair_block(code, _STATIC_SUPPORT_REPAIR_MARKER)
         return code.rstrip() + "\n\n" + repair_code + "\n"
 
     def _try_static_support_repair(self, label: str, scene_report: ValidationReport) -> ValidationReport | None:

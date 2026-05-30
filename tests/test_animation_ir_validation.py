@@ -411,6 +411,31 @@ class AnimationIRValidationTest(unittest.TestCase):
 
         self.assertTrue(report.passed, report.to_dict() if hasattr(report, "to_dict") else report)
 
+    def test_relation_frame_overrides_recognize_inflected_start_and_stop_words(self) -> None:
+        data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
+        data["scene"]["relations"] = [
+            {
+                "id": "car_on_road",
+                "relation_type": "on_top_of",
+                "subject_id": data["scene"]["objects"][0]["id"],
+                "object_id": data["scene"]["objects"][1]["id"],
+                "description": "the car starts resting on the lower road",
+            },
+            {
+                "id": "car_on_platform",
+                "relation_type": "on_top_of",
+                "subject_id": data["scene"]["objects"][0]["id"],
+                "object_id": data["scene"]["objects"][1]["id"],
+                "description": "the car stops on the platform",
+            },
+        ]
+        ir = from_dict(GenerationIR, data)
+
+        overrides = _relation_frame_overrides(ir)
+
+        self.assertEqual(overrides["car_on_road"], 1)
+        self.assertEqual(overrides["car_on_platform"], ir.animation.duration_frames)
+
     def test_contact_constraint_unknown_object_and_bad_frames_are_invalid(self) -> None:
         data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
         data["animation"]["events"][0]["contact_constraints"] = [

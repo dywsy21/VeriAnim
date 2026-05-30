@@ -88,7 +88,7 @@ class AnimationRepairPlan:
 
 AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
 INDEX_AXIS = ("x", "y", "z")
-SUPPORT_TOKENS = ("bridge", "deck", "platform", "table", "shelf")
+SUPPORT_TOKENS = ("bridge", "deck", "platform", "ramp", "road", "table", "shelf")
 MESH_BBOX_TYPES = {"MESH", "CURVE", "SURFACE", "FONT", "META"}
 
 
@@ -122,7 +122,7 @@ def repair_animation_ir(
             continue
         subject_id = event.subject_ids[0]
         constraints = _event_constraints(repaired, event, subject_id)
-        support_constraint = _event_support_constraint(constraints, repaired)
+        support_constraint = _event_support_constraint(constraints, repaired, event=event)
         if support_constraint is None:
             skipped.append(f"{event.id}: no deck/platform support constraint.")
             continue
@@ -238,16 +238,23 @@ def _ll3m_repair_find_objects(ll3m_id):
 def _ll3m_repair_iter_action_fcurves(action):
     if not action:
         return
+    seen = set()
     if hasattr(action, "fcurves"):
         for fcurve in action.fcurves:
-            yield action.fcurves, fcurve
+            marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+            if marker not in seen:
+                seen.add(marker)
+                yield action.fcurves, fcurve
     for layer in getattr(action, "layers", []):
         for strip in getattr(layer, "strips", []):
             for bag in getattr(strip, "channelbags", []):
                 collection = getattr(bag, "fcurves", None)
                 if collection:
                     for fcurve in collection:
-                        yield collection, fcurve
+                        marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+                        if marker not in seen:
+                            seen.add(marker)
+                            yield collection, fcurve
 
 def _ll3m_repair_remove_fcurve(collection, fcurve):
     try:
@@ -443,17 +450,17 @@ if _ll3m_repair_obj is not None:
 
 def _event_constraints(ir: GenerationIR, event: Any, subject_id: str) -> list[Any]:
     constraints: list[Any] = []
+    constraints.extend(
+        constraint
+        for constraint in event.contact_constraints
+        if constraint.subject_id == subject_id or constraint.subject_id in event.subject_ids
+    )
     if ir.animation:
         constraints.extend(
             constraint
             for constraint in ir.animation.contact_constraints
             if constraint.subject_id == subject_id or constraint.subject_id in event.subject_ids
         )
-    constraints.extend(
-        constraint
-        for constraint in event.contact_constraints
-        if constraint.subject_id == subject_id or constraint.subject_id in event.subject_ids
-    )
     return constraints
 
 
@@ -482,8 +489,9 @@ def _is_vec3(value: Any) -> bool:
     return isinstance(value, (list, tuple)) and len(value) == 3 and all(isinstance(v, (int, float)) for v in value)
 
 
-def _event_support_constraint(constraints: list[Any], ir: GenerationIR) -> Any | None:
+def _event_support_constraint(constraints: list[Any], ir: GenerationIR, *, event: Any | None = None) -> Any | None:
     objects_by_id = {obj.id: obj for obj in ir.scene.objects}
+    candidates: list[tuple[int, Any]] = []
     for constraint in constraints:
         if constraint.constraint_type != ContactConstraintType.SUPPORT:
             continue
@@ -496,8 +504,20 @@ def _event_support_constraint(constraints: list[Any], ir: GenerationIR) -> Any |
             ]
         ).lower()
         if any(token in text for token in SUPPORT_TOKENS):
-            return constraint
-    return None
+            score = 1
+            if any(token in text for token in ("ramp", "bridge", "deck", "platform")):
+                score += 4
+            if any(token in text for token in ("road", "ground")):
+                score -= 2
+            if event is not None:
+                event_start = int(getattr(event, "start_frame", 0))
+                event_end = int(getattr(event, "end_frame", 0))
+                if int(constraint.start_frame) > event_start and int(constraint.end_frame) < event_end:
+                    score += 3
+            candidates.append((score, constraint))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
 
 
 def _location(transform: TransformSpec | None) -> tuple[float, float, float] | None:

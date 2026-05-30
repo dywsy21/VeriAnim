@@ -241,6 +241,15 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertTrue(plan.applied, plan.to_dict())
         self.assertEqual((repaired.animation.contact_constraints[0].start_frame, repaired.animation.contact_constraints[0].end_frame), (37, 84))
 
+    def test_event_support_constraint_takes_priority_over_global_terminal_support(self) -> None:
+        ir = bridge_ir_with_terminal_ground_support()
+
+        repaired, plan = repair_animation_ir(ir, scene_graph_with_ground())
+
+        self.assertTrue(plan.applied, plan.to_dict())
+        self.assertEqual(plan.plans[0].support_id, "bridge_deck")
+        self.assertEqual(repaired.animation.events[0].contact_constraints[0].object_id, "bridge_deck")
+
     def test_terminal_support_constraints_set_ground_height_endpoints(self) -> None:
         repaired, plan = repair_animation_ir(bridge_ir_with_terminal_ground_support(), scene_graph_with_ground())
 

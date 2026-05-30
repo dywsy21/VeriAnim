@@ -134,35 +134,173 @@ _LL3M_STATIC_SUPPORT_REPAIR_PLAN = _ll3m_static_repair_json.loads({payload!r})
 def _ll3m_static_repair_find_objects(ll3m_id):
     marker = str(ll3m_id)
     matches = []
+    def add_with_descendants(obj):
+        if obj not in matches:
+            matches.append(obj)
+        stack = list(getattr(obj, "children", []))
+        while stack:
+            child = stack.pop(0)
+            if child not in matches:
+                matches.append(child)
+            stack.extend(list(getattr(child, "children", [])))
     exact = _ll3m_static_repair_bpy.data.objects.get(marker)
     if exact:
-        matches.append(exact)
+        add_with_descendants(exact)
     for obj in _ll3m_static_repair_bpy.data.objects:
         obj_id = str(obj.get("ll3m_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
-            matches.append(obj)
+            add_with_descendants(obj)
     for obj in _ll3m_static_repair_bpy.data.objects:
         if obj not in matches and obj.name.startswith(marker):
-            matches.append(obj)
+            add_with_descendants(obj)
     return matches
 
-def _ll3m_static_repair_apply_delta(subject_id, delta):
+def _ll3m_static_repair_apply_delta(subject_id, support_id, delta):
     objects = _ll3m_static_repair_find_objects(subject_id)
     if not objects:
         return
+    _ll3m_static_repair_normalize_child_offsets(objects)
+    before_locations = {{obj: obj.matrix_world.translation.copy() for obj in objects}}
     exact_roots = [
         obj for obj in objects
         if str(obj.get("ll3m_id", "")) == str(subject_id) and obj.parent is None
     ]
     exact = [obj for obj in objects if str(obj.get("ll3m_id", "")) == str(subject_id)]
     targets = exact_roots or exact[:1] or objects
-    vector = _ll3m_static_repair_Vector(tuple(float(value) for value in delta))
+    vector = _ll3m_static_repair_current_delta(
+        subject_id,
+        delta,
+        support_id,
+    )
+    frame = int(_ll3m_static_repair_bpy.context.scene.frame_current)
     for obj in targets:
         obj.location = obj.location + vector
+        _ll3m_static_repair_shift_location_keyframes(obj, vector, frame=frame)
+    _ll3m_static_repair_bpy.context.view_layer.update()
+    for obj in objects:
+        before = before_locations.get(obj)
+        if before is None:
+            continue
+        observed = obj.matrix_world.translation - before
+        remainder = vector - observed
+        if max(abs(float(remainder.x)), abs(float(remainder.y)), abs(float(remainder.z))) <= 1e-6:
+            continue
+        obj.matrix_world.translation = obj.matrix_world.translation + remainder
+        _ll3m_static_repair_shift_location_keyframes(obj, remainder, frame=frame)
+
+def _ll3m_static_repair_normalize_child_offsets(objects):
+    roots = [obj for obj in objects if str(obj.get("ll3m_id", "")) and obj.parent is None]
+    root = roots[0] if roots else (objects[0] if objects else None)
+    if root is None:
+        return
+    direct_children = [obj for obj in objects if obj is not root and obj.parent == root]
+    if not direct_children:
+        return
+    center = _ll3m_static_repair_Vector((0.0, 0.0, 0.0))
+    for child in direct_children:
+        center += child.location
+    center /= len(direct_children)
+    root_extent = max([float(value) for value in getattr(root, "dimensions", (0.0, 0.0, 0.0)) if float(value) >= 0.0] or [0.0])
+    if center.length <= max(root_extent * 0.75, 0.25):
+        return
+    bbox = _ll3m_static_repair_world_bbox(objects)
+    reference = (bbox[0] + bbox[1]) * 0.5 if bbox else root.matrix_world.translation
+    threshold = max(root_extent * 2.0, 1.0)
+    if (center - reference).length > threshold:
+        return
+    try:
+        basis = root.matrix_world.to_3x3().inverted()
+    except Exception:
+        basis = None
+    for child in direct_children:
+        offset = child.location - center
+        child.location = basis @ offset if basis is not None else offset
+    _ll3m_static_repair_bpy.context.view_layer.update()
+
+def _ll3m_static_repair_world_bbox(objects):
+    _ll3m_static_repair_bpy.context.view_layer.update()
+    points = []
+    depsgraph = _ll3m_static_repair_bpy.context.evaluated_depsgraph_get()
+    for obj in objects:
+        if obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} or not getattr(obj, "bound_box", None):
+            continue
+        evaluated = obj.evaluated_get(depsgraph)
+        points.extend(evaluated.matrix_world @ _ll3m_static_repair_Vector(corner) for corner in evaluated.bound_box)
+    if not points:
+        return None
+    return (
+        _ll3m_static_repair_Vector((min(point.x for point in points), min(point.y for point in points), min(point.z for point in points))),
+        _ll3m_static_repair_Vector((max(point.x for point in points), max(point.y for point in points), max(point.z for point in points))),
+    )
+
+def _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, axis, margin=0.02):
+    overlap = min(subject_max[axis], support_max[axis]) - max(subject_min[axis], support_min[axis])
+    if overlap > 0:
+        return 0.0
+    subject_size = subject_max[axis] - subject_min[axis]
+    subject_half = subject_size * 0.5
+    subject_center = (subject_min[axis] + subject_max[axis]) * 0.5
+    support_center = (support_min[axis] + support_max[axis]) * 0.5
+    low = support_min[axis] + subject_half + margin
+    high = support_max[axis] - subject_half - margin
+    target_center = min(max(subject_center, low), high) if low <= high else support_center
+    return target_center - subject_center
+
+def _ll3m_static_repair_current_delta(subject_id, fallback_delta, support_id):
+    vector = _ll3m_static_repair_Vector(tuple(float(value) for value in fallback_delta))
+    if not support_id:
+        return vector
+    subject_bbox = _ll3m_static_repair_world_bbox(_ll3m_static_repair_find_objects(subject_id))
+    support_bbox = _ll3m_static_repair_world_bbox(_ll3m_static_repair_find_objects(support_id))
+    if not subject_bbox or not support_bbox:
+        return vector
+    subject_min, subject_max = subject_bbox
+    support_min, support_max = support_bbox
+    return _ll3m_static_repair_Vector((
+        _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, 0),
+        _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, 1),
+        float(support_max.z - subject_min.z),
+    ))
+
+def _ll3m_static_repair_shift_location_keyframes(obj, vector, frame=None):
+    action = obj.animation_data.action if obj.animation_data else None
+    if not action:
+        return
+    fcurves = []
+    seen_fcurves = set()
+    if hasattr(action, "fcurves"):
+        for fcurve in action.fcurves:
+            marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+            if marker not in seen_fcurves:
+                seen_fcurves.add(marker)
+                fcurves.append(fcurve)
+    if hasattr(action, "layers"):
+        for layer in action.layers:
+            for strip in getattr(layer, "strips", []):
+                for bag in getattr(strip, "channelbags", []):
+                    for fcurve in getattr(bag, "fcurves", []):
+                        marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+                        if marker not in seen_fcurves:
+                            seen_fcurves.add(marker)
+                            fcurves.append(fcurve)
+    for fcurve in fcurves:
+        if fcurve.data_path != "location" or fcurve.array_index not in (0, 1, 2):
+            continue
+        offset = float(vector[fcurve.array_index])
+        if abs(offset) <= 1e-12:
+            continue
+        for point in fcurve.keyframe_points:
+            if frame is not None and abs(float(point.co.x) - float(frame)) > 0.5:
+                continue
+            point.co.y += offset
+            point.handle_left.y += offset
+            point.handle_right.y += offset
+        fcurve.update()
 
 for _ll3m_static_repair_adjustment in _LL3M_STATIC_SUPPORT_REPAIR_PLAN.get("adjustments", []):
     _ll3m_static_repair_apply_delta(
         _ll3m_static_repair_adjustment.get("subject_id"),
+        _ll3m_static_repair_adjustment.get("support_id"),
         _ll3m_static_repair_adjustment.get("delta", [0.0, 0.0, 0.0]),
     )
 
