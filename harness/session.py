@@ -78,25 +78,36 @@ def _animation_contact_repair_script(report: ValidationReport) -> str:
     deltas: dict[str, list[float]] = {}
     support_ids: dict[str, set[str]] = {}
     for issue in report.issues:
-        if issue.code not in {"CONTACT_CONSTRAINT_FLOATING", "CONTACT_CONSTRAINT_SUPPORT_PENETRATION"}:
+        if issue.code not in {
+            "ANIMATION_PENETRATES_SUPPORT",
+            "CONTACT_CONSTRAINT_FLOATING",
+            "CONTACT_CONSTRAINT_PENETRATION",
+            "CONTACT_CONSTRAINT_SUPPORT_PENETRATION",
+        }:
             continue
         target_id = issue.target_id
         if not target_id:
             continue
+        evidence = issue.evidence if isinstance(issue.evidence, dict) else {}
+        object_id = evidence.get("object_id") or evidence.get("target_id")
+        if object_id:
+            support_ids.setdefault(target_id, set()).add(str(object_id))
         try:
-            z_gap = float(issue.evidence.get("z_gap"))
+            z_gap = float(evidence.get("z_gap"))
         except (AttributeError, TypeError, ValueError):
             continue
         delta = -z_gap
         if abs(delta) > 0.2:
             continue
         deltas.setdefault(target_id, []).append(delta)
-        object_id = issue.evidence.get("object_id") if isinstance(issue.evidence, dict) else None
-        if object_id:
-            support_ids.setdefault(target_id, set()).add(str(object_id))
+    support_pairs = {
+        target_id: next(iter(ids))
+        for target_id, ids in support_ids.items()
+        if len(ids) == 1 and target_id != next(iter(ids))
+    }
     repairs: dict[str, float] = {}
     for target_id, values in deltas.items():
-        if len(support_ids.get(target_id, set())) > 1:
+        if target_id in support_pairs or len(support_ids.get(target_id, set())) > 1:
             continue
         if len(values) < 2:
             continue
@@ -105,13 +116,18 @@ def _animation_contact_repair_script(report: ValidationReport) -> str:
             continue
         if abs(average) > 1e-5:
             repairs[target_id] = average
-    if not repairs:
+    if not repairs and not support_pairs:
         return ""
-    payload = json.dumps(repairs, ensure_ascii=True, sort_keys=True)
+    payload = json.dumps(
+        {"constant_deltas": repairs, "support_pairs": support_pairs},
+        ensure_ascii=True,
+        sort_keys=True,
+    )
     return f"""
 {_ANIMATION_CONTACT_REPAIR_MARKER}
 import json as _ll3m_contact_repair_json
 import bpy as _ll3m_contact_repair_bpy
+from mathutils import Vector as _ll3m_contact_repair_Vector
 
 _LL3M_ANIMATION_CONTACT_REPAIRS = _ll3m_contact_repair_json.loads({payload!r})
 
@@ -159,7 +175,76 @@ def _ll3m_contact_repair_shift_z(obj, dz):
             point.handle_right.y += float(dz)
         fcurve.update()
 
-for _ll3m_contact_repair_id, _ll3m_contact_repair_dz in _LL3M_ANIMATION_CONTACT_REPAIRS.items():
+def _ll3m_contact_repair_descendants(root):
+    yield root
+    for child in root.children:
+        yield from _ll3m_contact_repair_descendants(child)
+
+def _ll3m_contact_repair_bbox(root):
+    corners = []
+    for obj in _ll3m_contact_repair_descendants(root):
+        if not hasattr(obj, "bound_box") or not obj.bound_box:
+            continue
+        corners.extend(obj.matrix_world @ _ll3m_contact_repair_Vector(corner) for corner in obj.bound_box)
+    if not corners:
+        loc = root.matrix_world.translation
+        return (loc.x, loc.y, loc.z, loc.x, loc.y, loc.z)
+    return (
+        min(corner.x for corner in corners),
+        min(corner.y for corner in corners),
+        min(corner.z for corner in corners),
+        max(corner.x for corner in corners),
+        max(corner.y for corner in corners),
+        max(corner.z for corner in corners),
+    )
+
+def _ll3m_contact_repair_xy_overlap(a, b):
+    return min(a[3], b[3]) > max(a[0], b[0]) and min(a[4], b[4]) > max(a[1], b[1])
+
+def _ll3m_contact_repair_z_fcurves(obj):
+    action = obj.animation_data.action if obj.animation_data else None
+    for fcurve in _ll3m_contact_repair_iter_fcurves(action):
+        if fcurve.data_path == "location" and fcurve.array_index == 2:
+            yield fcurve
+
+def _ll3m_contact_repair_align_keyed_support(subject, support):
+    scene = _ll3m_contact_repair_bpy.context.scene
+    fcurves = list(_ll3m_contact_repair_z_fcurves(subject))
+    if not fcurves:
+        _ll3m_contact_repair_bpy.context.view_layer.update()
+        subject_box = _ll3m_contact_repair_bbox(subject)
+        support_box = _ll3m_contact_repair_bbox(support)
+        if _ll3m_contact_repair_xy_overlap(subject_box, support_box):
+            dz = support_box[5] - subject_box[2] + 0.001
+            if abs(dz) <= 0.25:
+                subject.location.z += dz
+        return
+    original_frame = scene.frame_current
+    for fcurve in fcurves:
+        for point in fcurve.keyframe_points:
+            frame = int(round(point.co.x))
+            scene.frame_set(frame)
+            _ll3m_contact_repair_bpy.context.view_layer.update()
+            subject_box = _ll3m_contact_repair_bbox(subject)
+            support_box = _ll3m_contact_repair_bbox(support)
+            if not _ll3m_contact_repair_xy_overlap(subject_box, support_box):
+                continue
+            dz = support_box[5] - subject_box[2] + 0.001
+            if abs(dz) > 0.25 or abs(dz) <= 1e-5:
+                continue
+            point.co.y += dz
+            point.handle_left.y += dz
+            point.handle_right.y += dz
+        fcurve.update()
+    scene.frame_set(original_frame)
+
+for _ll3m_contact_repair_id, _ll3m_contact_repair_support_id in _LL3M_ANIMATION_CONTACT_REPAIRS.get("support_pairs", {{}}).items():
+    _ll3m_contact_repair_obj = _ll3m_contact_repair_find_root(_ll3m_contact_repair_id)
+    _ll3m_contact_repair_support = _ll3m_contact_repair_find_root(_ll3m_contact_repair_support_id)
+    if _ll3m_contact_repair_obj is not None and _ll3m_contact_repair_support is not None:
+        _ll3m_contact_repair_align_keyed_support(_ll3m_contact_repair_obj, _ll3m_contact_repair_support)
+
+for _ll3m_contact_repair_id, _ll3m_contact_repair_dz in _LL3M_ANIMATION_CONTACT_REPAIRS.get("constant_deltas", {{}}).items():
     _ll3m_contact_repair_obj = _ll3m_contact_repair_find_root(_ll3m_contact_repair_id)
     if _ll3m_contact_repair_obj is not None:
         _ll3m_contact_repair_shift_z(_ll3m_contact_repair_obj, _ll3m_contact_repair_dz)

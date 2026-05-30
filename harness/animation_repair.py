@@ -89,6 +89,7 @@ class AnimationRepairPlan:
 AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
 INDEX_AXIS = ("x", "y", "z")
 SUPPORT_TOKENS = ("bridge", "deck", "platform", "ramp", "road", "table", "shelf")
+CROSSING_SUPPORT_TOKENS = ("bridge", "deck", "platform", "ramp")
 MESH_BBOX_TYPES = {"MESH", "CURVE", "SURFACE", "FONT", "META"}
 
 
@@ -144,6 +145,10 @@ def repair_animation_ir(
             for constraint in constraints
             if constraint.constraint_type == ContactConstraintType.SUPPORT and constraint.object_id in bboxes
         }
+        support_tokens = _support_tokens(repaired, support_id)
+        if len(distinct_support_ids) < 2 and not any(token in support_tokens for token in CROSSING_SUPPORT_TOKENS):
+            skipped.append(f"{event.id}: single support ride on {support_id} does not need crossing repair.")
+            continue
         plan = None
         if len(distinct_support_ids) >= 3:
             plan = _build_support_sequence_plan(
@@ -528,20 +533,11 @@ def _is_vec3(value: Any) -> bool:
 
 
 def _event_support_constraint(constraints: list[Any], ir: GenerationIR, *, event: Any | None = None) -> Any | None:
-    objects_by_id = {obj.id: obj for obj in ir.scene.objects}
     candidates: list[tuple[int, Any]] = []
     for constraint in constraints:
         if constraint.constraint_type != ContactConstraintType.SUPPORT:
             continue
-        support = objects_by_id.get(constraint.object_id)
-        text = " ".join(
-            [
-                str(constraint.object_id),
-                str(getattr(support, "label", "") or ""),
-                str(getattr(support, "description", "") or ""),
-            ]
-        ).lower()
-        tokens = set(text.replace("_", " ").replace("-", " ").split())
+        tokens = _support_tokens(ir, constraint.object_id)
         if any(token in tokens for token in SUPPORT_TOKENS):
             score = 1
             if any(token in tokens for token in ("ramp", "bridge", "deck", "platform")):
@@ -557,6 +553,19 @@ def _event_support_constraint(constraints: list[Any], ir: GenerationIR, *, event
     if not candidates:
         return None
     return max(candidates, key=lambda item: item[0])[1]
+
+
+def _support_tokens(ir: GenerationIR, object_id: str) -> set[str]:
+    objects_by_id = {obj.id: obj for obj in ir.scene.objects}
+    support = objects_by_id.get(object_id)
+    text = " ".join(
+        [
+            str(object_id),
+            str(getattr(support, "label", "") or ""),
+            str(getattr(support, "description", "") or ""),
+        ]
+    ).lower()
+    return set(text.replace("_", " ").replace("-", " ").split())
 
 
 def _location(transform: TransformSpec | None) -> tuple[float, float, float] | None:

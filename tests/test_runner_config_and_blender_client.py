@@ -574,8 +574,33 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         script = _animation_contact_repair_script(report)
 
         self.assertIn("LL3M deterministic animation contact repair", script)
-        self.assertIn('"box": -0.0405', script)
+        self.assertIn('"constant_deltas": {"box": -0.0405}', script)
         self.assertIn("point.co.y += float(dz)", script)
+
+    def test_animation_contact_repair_script_aligns_single_support_keyframes(self) -> None:
+        report = ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            [
+                ValidationIssue(
+                    code="ANIMATION_PENETRATES_SUPPORT",
+                    message="crate penetrates table",
+                    target_id="crate",
+                    evidence={"target_id": "table", "z_gap": -0.15},
+                ),
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_PENETRATION",
+                    message="crate intersects table",
+                    target_id="crate",
+                    evidence={"object_id": "table", "axis": "z", "penetration_depth": 0.1},
+                ),
+            ],
+        )
+
+        script = _animation_contact_repair_script(report)
+
+        self.assertIn('"support_pairs": {"crate": "table"}', script)
+        self.assertIn("_ll3m_contact_repair_align_keyed_support", script)
+        self.assertIn("support_box[5] - subject_box[2] + 0.001", script)
 
     def test_animation_contact_repair_skips_multi_support_subjects(self) -> None:
         report = ValidationReport.failed(

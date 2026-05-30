@@ -146,6 +146,35 @@ def scene_graph_with_ground() -> dict:
     return graph
 
 
+def table_slide_ir() -> GenerationIR:
+    ir = bridge_ir()
+    ir.prompt = SourcePrompt(text="a crate slides across a wide table while staying on top the entire time")
+    ir.scene.objects = [
+        ObjectSpec(id="crate", description="red crate", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+        ObjectSpec(id="table", description="wide gray table", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+    ]
+    event = ir.animation.events[0]
+    event.id = "crate_slide"
+    event.subject_ids = ["crate"]
+    event.description = "crate slides on the table for the entire animation"
+    event.start_transform = TransformSpec(location=(-1.0, 0.0, 1.2))
+    event.end_transform = TransformSpec(location=(1.0, 0.0, 1.2))
+    event.contact_constraints = [
+        ContactConstraintSpec("crate_table_support", ContactConstraintType.SUPPORT, "crate", "table", 1, 120),
+        ContactConstraintSpec("crate_table_nonpen", ContactConstraintType.NONPENETRATION, "crate", "table", 1, 120),
+    ]
+    return ir
+
+
+def table_slide_graph() -> dict:
+    return {
+        "objects": [
+            {"name": "crate", "ll3m_id": "crate", "bbox": {"min": [-1.2, -0.2, 1.0], "max": [-0.8, 0.2, 1.4]}},
+            {"name": "table", "ll3m_id": "table", "bbox": {"min": [-1.4, -0.8, 0.8], "max": [1.4, 0.8, 1.0]}},
+        ]
+    }
+
+
 class AnimationRepairTest(unittest.TestCase):
     def test_repair_builds_outside_lift_crossing_path(self) -> None:
         repaired, plan = repair_animation_ir(bridge_ir(), scene_graph())
@@ -269,6 +298,15 @@ class AnimationRepairTest(unittest.TestCase):
 
         self.assertFalse(plan.applied, plan.to_dict())
         self.assertIn("no deck/platform support constraint", plan.skipped[0])
+
+    def test_single_table_support_ride_does_not_get_bridge_crossing_path(self) -> None:
+        repaired, plan = repair_animation_ir(table_slide_ir(), table_slide_graph())
+
+        self.assertFalse(plan.applied, plan.to_dict())
+        self.assertIn("single support ride on table", plan.skipped[0])
+        event = repaired.animation.events[0]
+        self.assertEqual(event.start_transform.location, (-1.0, 0.0, 1.2))
+        self.assertEqual(event.end_transform.location, (1.0, 0.0, 1.2))
 
     def test_support_sequence_repair_uses_scene_graph_centers_when_crossing_plan_fails(self) -> None:
         ir = bridge_ir()
