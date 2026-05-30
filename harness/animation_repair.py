@@ -154,6 +154,18 @@ def repair_animation_ir(
             margin=margin,
         )
         if plan is None:
+            plan = _build_support_sequence_plan(
+                event_id=event.id,
+                subject_id=subject_id,
+                primary_support_id=support_id,
+                subject_bbox=subject_bbox,
+                subject_root_to_bottom=_scene_root_to_bottom(scene_graph, subject_id, subject_bbox, start_location),
+                bboxes=bboxes,
+                constraints=constraints,
+                start_frame=int(event.start_frame),
+                end_frame=int(event.end_frame),
+            )
+        if plan is None:
             skipped.append(f"{event.id}: could not build support crossing plan.")
             continue
 
@@ -328,16 +340,22 @@ def _ll3m_repair_support_top(support_id):
 def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
     keyframes = list(plan.get("keyframes", []))
     support_top = _ll3m_repair_support_top(plan.get("support_id"))
-    if support_top is None:
-        return keyframes
     root_to_bottom = _ll3m_repair_root_to_bottom(root, objects)
-    support_z = support_top + root_to_bottom + 0.001
+    support_z = support_top + root_to_bottom + 0.001 if support_top is not None else None
     support_start = int(plan.get("support_start_frame", 0))
     support_end = int(plan.get("support_end_frame", 0))
     for keyframe in keyframes:
         frame = int(keyframe.get("frame", 0))
         location = list(keyframe.get("location", [0.0, 0.0, 0.0]))
-        if support_start <= frame <= support_end:
+        label = str(keyframe.get("label", ""))
+        label_prefix = "centered on support "
+        if label.startswith(label_prefix):
+            label_support_top = _ll3m_repair_support_top(label[len(label_prefix):].strip())
+            if label_support_top is not None:
+                location[2] = label_support_top + root_to_bottom + 0.001
+                keyframe["location"] = location
+                continue
+        if support_z is not None and support_start <= frame <= support_end:
             location[2] = support_z
             keyframe["location"] = location
     return keyframes
@@ -656,6 +674,74 @@ def _build_support_crossing_plan(
     )
 
 
+def _build_support_sequence_plan(
+    *,
+    event_id: str,
+    subject_id: str,
+    primary_support_id: str,
+    subject_bbox: BBox,
+    subject_root_to_bottom: float,
+    bboxes: dict[str, BBox],
+    constraints: list[Any],
+    start_frame: int,
+    end_frame: int,
+) -> RepairedEventPlan | None:
+    support_constraints = [
+        constraint
+        for constraint in constraints
+        if constraint.constraint_type == ContactConstraintType.SUPPORT and constraint.object_id in bboxes
+    ]
+    if len(support_constraints) < 2:
+        return None
+    support_constraints.sort(key=lambda constraint: (int(constraint.start_frame), int(constraint.end_frame)))
+    ordered = support_constraints
+    if len({constraint.object_id for constraint in ordered}) < 2:
+        return None
+    centers = [bboxes[constraint.object_id].center for constraint in ordered]
+    dx = abs(centers[-1][0] - centers[0][0])
+    dy = abs(centers[-1][1] - centers[0][1])
+    travel_axis = "x" if dx >= dy else "y"
+    lane_axis = "y" if travel_axis == "x" else "x"
+    t_index = AXIS_INDEX[travel_axis]
+    if abs(centers[-1][t_index] - centers[0][t_index]) <= 1e-6:
+        return None
+
+    keyframes: list[RepairKeyframe] = []
+    for constraint in ordered:
+        bbox = bboxes[constraint.object_id]
+        location = list(bbox.center)
+        location[2] = bbox.max[2] + subject_root_to_bottom + 0.001
+        for frame in (int(constraint.start_frame), int(constraint.end_frame)):
+            frame = min(max(frame, start_frame), end_frame)
+            keyframes.append(RepairKeyframe(frame, _vec3(location), f"centered on support {constraint.object_id}"))
+    keyframes = sorted(keyframes, key=lambda item: item.frame)
+    unique_keyframes: list[RepairKeyframe] = []
+    for keyframe in keyframes:
+        if unique_keyframes and keyframe.frame == unique_keyframes[-1].frame:
+            unique_keyframes[-1] = keyframe
+            continue
+        if unique_keyframes and keyframe.frame < unique_keyframes[-1].frame:
+            continue
+        unique_keyframes.append(keyframe)
+    unique_keyframes[-1] = RepairKeyframe(end_frame, unique_keyframes[-1].location, unique_keyframes[-1].label)
+    primary_constraints = [constraint for constraint in ordered if constraint.object_id == primary_support_id]
+    support_start_frame = min(int(constraint.start_frame) for constraint in primary_constraints) if primary_constraints else unique_keyframes[0].frame
+    support_end_frame = max(int(constraint.end_frame) for constraint in primary_constraints) if primary_constraints else unique_keyframes[-1].frame
+    return RepairedEventPlan(
+        event_id=event_id,
+        subject_id=subject_id,
+        support_id=primary_support_id,
+        travel_axis=travel_axis,
+        lane_axis=lane_axis,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        support_start_frame=support_start_frame,
+        support_end_frame=support_end_frame,
+        keyframes=tuple(unique_keyframes),
+        notes=("deterministic support sequence repair from scene graph support centers",),
+    )
+
+
 def _phase_frames(start_frame: int, end_frame: int) -> tuple[int, int, int, int, int, int, int]:
     span = max(6, end_frame - start_frame)
     offsets = [0.0, 0.18, 0.30, 0.50, 0.70, 0.82, 1.0]
@@ -717,6 +803,7 @@ def _ensure_sampled_frames(ir: GenerationIR, plan: RepairedEventPlan) -> None:
     if not ir.animation:
         return
     frames = set(ir.animation.verifier.sampled_frames or [])
-    frames.update({plan.start_frame, plan.support_start_frame, plan.keyframes[3].frame, plan.support_end_frame, plan.end_frame})
+    middle_keyframe = plan.keyframes[len(plan.keyframes) // 2]
+    frames.update({plan.start_frame, plan.support_start_frame, middle_keyframe.frame, plan.support_end_frame, plan.end_frame})
     frames = {frame for frame in frames if 1 <= frame <= ir.animation.duration_frames}
     ir.animation.verifier.sampled_frames = sorted(frames)

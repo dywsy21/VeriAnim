@@ -230,6 +230,7 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertIn("_ll3m_repair_support_top", script)
         self.assertIn("_ll3m_repair_recalibrate_keyframes", script)
         self.assertIn("_ll3m_repair_bpy.context.view_layer.update()", script)
+        self.assertIn("centered on support", script)
 
     def test_repair_can_use_animation_level_contact_constraints(self) -> None:
         ir = bridge_ir()
@@ -267,6 +268,40 @@ class AnimationRepairTest(unittest.TestCase):
 
         self.assertFalse(plan.applied, plan.to_dict())
         self.assertIn("no deck/platform support constraint", plan.skipped[0])
+
+    def test_support_sequence_repair_uses_scene_graph_centers_when_crossing_plan_fails(self) -> None:
+        ir = bridge_ir()
+        ir.scene.objects = [
+            ObjectSpec(id="car", description="toy car", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ObjectSpec(id="road", description="lower road", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ObjectSpec(id="ramp", description="ramp", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ObjectSpec(id="platform", description="platform", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+        ]
+        event = ir.animation.events[0]
+        event.target_ids = ["road", "ramp", "platform"]
+        event.end_transform = TransformSpec(location=(3.0, 0.0, 1.15))
+        event.contact_constraints = [
+            ContactConstraintSpec("road_support", ContactConstraintType.SUPPORT, "car", "road", 1, 30),
+            ContactConstraintSpec("ramp_support", ContactConstraintType.SUPPORT, "car", "ramp", 45, 95),
+            ContactConstraintSpec("platform_support", ContactConstraintType.SUPPORT, "car", "platform", 105, 120),
+        ]
+        graph = {
+            "objects": [
+                {"name": "car", "ll3m_id": "car", "bbox": {"min": [-1.0, -0.2, 0.4], "max": [-0.5, 0.2, 0.8]}},
+                {"name": "road", "ll3m_id": "road", "bbox": {"min": [-1.0, -0.7, 0.0], "max": [1.0, 0.7, 0.1]}},
+                {"name": "ramp", "ll3m_id": "ramp", "bbox": {"min": [2.5, -0.7, 0.3], "max": [3.5, 0.7, 0.9]}},
+                {"name": "platform", "ll3m_id": "platform", "bbox": {"min": [5.0, -0.7, 0.3], "max": [7.0, 0.7, 0.9]}},
+            ]
+        }
+
+        repaired, plan = repair_animation_ir(ir, graph)
+
+        self.assertTrue(plan.applied, plan.to_dict())
+        locations = [keyframe.transform.location for keyframe in repaired.animation.events[0].path.keyframes]
+        self.assertEqual([keyframe.frame for keyframe in repaired.animation.events[0].path.keyframes], [1, 30, 45, 95, 105, 120])
+        self.assertEqual([location[0] for location in locations], [0.0, 0.0, 3.0, 3.0, 6.0, 6.0])
+        self.assertEqual((plan.plans[0].support_start_frame, plan.plans[0].support_end_frame), (45, 95))
+        self.assertEqual(repaired.animation.events[0].end_transform.location, locations[-1])
 
     def test_terminal_support_constraints_set_ground_height_endpoints(self) -> None:
         repaired, plan = repair_animation_ir(bridge_ir_with_terminal_ground_support(), scene_graph_with_ground())
