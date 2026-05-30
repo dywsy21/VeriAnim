@@ -138,28 +138,48 @@ def repair_animation_ir(
             skipped.append(f"{event.id}: missing start/end location.")
             continue
 
-        plan = _build_support_crossing_plan(
-            event_id=event.id,
-            subject_id=subject_id,
-            support_id=support_id,
-            subject_bbox=subject_bbox,
-            support_bbox=support_bbox,
-            subject_root_to_bottom=_scene_root_to_bottom(scene_graph, subject_id, subject_bbox, start_location),
-            bboxes=bboxes,
-            constraints=constraints,
-            start_location=start_location,
-            end_location=end_location,
-            start_frame=int(event.start_frame),
-            end_frame=int(event.end_frame),
-            margin=margin,
-        )
+        subject_root_to_bottom = _scene_root_to_bottom(scene_graph, subject_id, subject_bbox, start_location)
+        distinct_support_ids = {
+            constraint.object_id
+            for constraint in constraints
+            if constraint.constraint_type == ContactConstraintType.SUPPORT and constraint.object_id in bboxes
+        }
+        plan = None
+        if len(distinct_support_ids) >= 3:
+            plan = _build_support_sequence_plan(
+                event_id=event.id,
+                subject_id=subject_id,
+                primary_support_id=support_id,
+                subject_bbox=subject_bbox,
+                subject_root_to_bottom=subject_root_to_bottom,
+                bboxes=bboxes,
+                constraints=constraints,
+                start_frame=int(event.start_frame),
+                end_frame=int(event.end_frame),
+            )
+        if plan is None:
+            plan = _build_support_crossing_plan(
+                event_id=event.id,
+                subject_id=subject_id,
+                support_id=support_id,
+                subject_bbox=subject_bbox,
+                support_bbox=support_bbox,
+                subject_root_to_bottom=subject_root_to_bottom,
+                bboxes=bboxes,
+                constraints=constraints,
+                start_location=start_location,
+                end_location=end_location,
+                start_frame=int(event.start_frame),
+                end_frame=int(event.end_frame),
+                margin=margin,
+            )
         if plan is None:
             plan = _build_support_sequence_plan(
                 event_id=event.id,
                 subject_id=subject_id,
                 primary_support_id=support_id,
                 subject_bbox=subject_bbox,
-                subject_root_to_bottom=_scene_root_to_bottom(scene_graph, subject_id, subject_bbox, start_location),
+                subject_root_to_bottom=subject_root_to_bottom,
                 bboxes=bboxes,
                 constraints=constraints,
                 start_frame=int(event.start_frame),

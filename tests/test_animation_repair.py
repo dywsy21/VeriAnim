@@ -303,6 +303,34 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertEqual((plan.plans[0].support_start_frame, plan.plans[0].support_end_frame), (45, 95))
         self.assertEqual(repaired.animation.events[0].end_transform.location, locations[-1])
 
+    def test_three_phase_support_motion_prefers_sequence_repair(self) -> None:
+        ir = bridge_ir()
+        ir.scene.objects.extend(
+            [
+                ObjectSpec(id="road", description="road", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+                ObjectSpec(id="platform", description="platform", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ]
+        )
+        event = ir.animation.events[0]
+        event.target_ids = ["road", "bridge_deck", "platform"]
+        event.contact_constraints = [
+            ContactConstraintSpec("road_support", ContactConstraintType.SUPPORT, "car", "road", 1, 30),
+            ContactConstraintSpec("deck_support", ContactConstraintType.SUPPORT, "car", "bridge_deck", 37, 84),
+            ContactConstraintSpec("platform_support", ContactConstraintType.SUPPORT, "car", "platform", 100, 120),
+        ]
+        graph = scene_graph()
+        graph["objects"].extend(
+            [
+                {"name": "road", "ll3m_id": "road", "bbox": {"min": [-4.0, -0.8, 0.0], "max": [-2.0, 0.8, 0.2]}},
+                {"name": "platform", "ll3m_id": "platform", "bbox": {"min": [2.0, -0.8, 0.5], "max": [4.0, 0.8, 0.7]}},
+            ]
+        )
+
+        repaired, plan = repair_animation_ir(ir, graph)
+
+        self.assertTrue(plan.applied, plan.to_dict())
+        self.assertEqual([keyframe.frame for keyframe in repaired.animation.events[0].path.keyframes], [1, 30, 37, 84, 100, 120])
+
     def test_terminal_support_constraints_set_ground_height_endpoints(self) -> None:
         repaired, plan = repair_animation_ir(bridge_ir_with_terminal_ground_support(), scene_graph_with_ground())
 
