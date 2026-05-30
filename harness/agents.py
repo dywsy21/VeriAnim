@@ -849,7 +849,8 @@ class VideoVerifierAgent:
             "Inspect geometry strictly: fail if objects float above supports, sink into platforms, visibly intersect when they should rest on top, pass through each other, or if a bridge/ramp/door does not visibly connect to its target support before another object uses it. "
             "For vehicles or objects crossing a bridge/ramp/platform, fail if wheels/body penetrate the surface, hover without contact, or the path crosses a visible gap that has not been bridged. "
             "Every required animated subject must be visible enough to verify at its start, during its motion, and at its required final state; fail if an object leaves the camera view before its final state can be judged. "
-            "Do not infer success from transform traces alone when the video/GIF or sampled frames do not visibly show the final state."
+            "Do not infer success from transform traces alone when the video/GIF or sampled frames do not visibly show the final state. "
+            "Transform trace locations are object origins or centers, not bottom contact points; never compute floating or penetration from center z values alone. Use visible geometry and the deterministic report for contact judgments."
         )
         frame_manifest = [
             {"index": index + 1, "path": str(path), "name": path.name}
