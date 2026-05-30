@@ -1319,6 +1319,20 @@ def motion_support_targets(event):
     return [target for target in (event.get("target_ids", []) or []) if target and is_static_destination_target(target)]
 
 def frames_for_motion_support(event, target_id, frames):
+    constraint_windows = []
+    for constraint in [*(event.get("contact_constraints", []) or []), *(IR.get("animation", {{}}).get("contact_constraints", []) or [])]:
+        if constraint.get("constraint_type") != "support" or constraint.get("object_id") != target_id:
+            continue
+        constraint_windows.append((int(constraint.get("start_frame", 1)), int(constraint.get("end_frame", 1))))
+    if constraint_windows:
+        selected = [
+            frame
+            for frame in frames
+            if any(start <= int(frame) <= end for start, end in constraint_windows)
+        ]
+        if selected:
+            return selected
+        return [max(start for start, _end in constraint_windows)]
     haystack = target_haystack(target_id)
     end_frame = int(event.get("end_frame", frames[-1] if frames else 1))
     if any(token in haystack for token in ("marker", "landing", "output", "destination", "right platform")):
