@@ -39,7 +39,7 @@ from harness.ir import (
 )
 from harness.preflight import format_issue, has_errors, run_preflight
 from harness.runner import _runner_lock
-from harness.session import InteractiveHarnessSession
+from harness.session import InteractiveHarnessSession, _animation_contact_repair_script
 from harness.artifacts import ArtifactStore
 
 
@@ -549,6 +549,31 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         execute_code.assert_called_once()
         self.assertTrue(reports[0].passed)
         self.assertIn("RENDER_NO_SCREENSHOTS", {issue.code for report in reports for issue in report.issues})
+
+    def test_animation_contact_repair_script_shifts_consistent_z_gap_keyframes(self) -> None:
+        report = ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            [
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_FLOATING",
+                    message="box floating",
+                    target_id="box",
+                    evidence={"z_gap": 0.04},
+                ),
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_FLOATING",
+                    message="box floating",
+                    target_id="box",
+                    evidence={"z_gap": 0.041},
+                ),
+            ],
+        )
+
+        script = _animation_contact_repair_script(report)
+
+        self.assertIn("LL3M deterministic animation contact repair", script)
+        self.assertIn('"box": -0.0405', script)
+        self.assertIn("point.co.y += float(dz)", script)
 
     def test_animation_stage_writes_repair_artifact_and_appends_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

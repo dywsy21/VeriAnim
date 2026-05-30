@@ -473,7 +473,7 @@ class CoderAgent:
             "For Blender 4.5, the raw Workbench enum is BLENDER_WORKBENCH; never use the invalid literal WORKBENCH and never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
-            "If setting Blender keyframe interpolation, use valid Blender enum strings such as LINEAR, BEZIER, SINE, QUAD, CUBIC, QUART, QUINT, EXPO, CIRC, BACK, BOUNCE, ELASTIC, or CONSTANT. Never assign EASE_IN_OUT to keyframe interpolation; it is an IR wording alias, not a Blender enum. "
+            "If setting Blender keyframe interpolation, use valid Blender interpolation enum strings such as LINEAR, BEZIER, SINE, QUAD, CUBIC, QUART, QUINT, EXPO, CIRC, BACK, BOUNCE, ELASTIC, or CONSTANT. If setting keyframe easing, use Blender easing enum strings such as AUTO, EASE_IN, EASE_OUT, or EASE_IN_OUT; never assign SINE to easing. "
             "Write at least two concrete keyframe_insert call sites for each animated subject, such as one at the start frame and one at the end frame. Do not put all keyframe_insert calls behind a single loop or a single helper invocation, because the harness static completeness check must see multiple actual keyframe call sites before Blender execution. "
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. "
             "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
@@ -2635,8 +2635,8 @@ def _sanitize_generated_blender_code(code: str) -> str:
         'scene.render.engine = "WORKBENCH"': 'scene.render.engine = "BLENDER_WORKBENCH"',
         "bpy.context.scene.render.engine = 'WORKBENCH'": "bpy.context.scene.render.engine = 'BLENDER_WORKBENCH'",
         'bpy.context.scene.render.engine = "WORKBENCH"': 'bpy.context.scene.render.engine = "BLENDER_WORKBENCH"',
-        ".easing = 'EASE_IN_OUT'": ".easing = 'SINE'",
-        '.easing = "EASE_IN_OUT"': '.easing = "SINE"',
+        ".easing = 'SINE'": ".easing = 'EASE_IN_OUT'",
+        '.easing = "SINE"': '.easing = "EASE_IN_OUT"',
         ".interpolation = 'EASE_IN_OUT'": ".interpolation = 'SINE'",
         '.interpolation = "EASE_IN_OUT"': '.interpolation = "SINE"',
     }

@@ -29,6 +29,8 @@ class HarnessEvent:
 EventCallback = Callable[[HarnessEvent], None]
 _ANIMATION_REPAIR_MARKER = "# LL3M deterministic animation path repair"
 _STATIC_SUPPORT_REPAIR_MARKER = "# LL3M deterministic static support repair"
+_ANIMATION_CONTACT_REPAIR_MARKER = "# LL3M deterministic animation contact repair"
+_REPAIR_MARKERS = (_STATIC_SUPPORT_REPAIR_MARKER, _ANIMATION_REPAIR_MARKER, _ANIMATION_CONTACT_REPAIR_MARKER)
 
 
 def _agent_model_record(config: AgentModelConfig) -> dict[str, Any]:
@@ -59,7 +61,7 @@ def _strip_appended_repair_block(code: str, marker: str) -> str:
         line_start += 1
     following_markers = [
         index
-        for other_marker in (_STATIC_SUPPORT_REPAIR_MARKER, _ANIMATION_REPAIR_MARKER)
+        for other_marker in _REPAIR_MARKERS
         if other_marker != marker
         for index in [code.find(other_marker, start + len(marker))]
         if index >= 0
@@ -70,6 +72,94 @@ def _strip_appended_repair_block(code: str, marker: str) -> str:
         end = next_line_start + 1 if next_line_start >= 0 else next_start
         return code[:line_start].rstrip() + "\n\n" + code[end:].lstrip()
     return code[:line_start].rstrip()
+
+
+def _animation_contact_repair_script(report: ValidationReport) -> str:
+    deltas: dict[str, list[float]] = {}
+    for issue in report.issues:
+        if issue.code not in {"CONTACT_CONSTRAINT_FLOATING", "CONTACT_CONSTRAINT_SUPPORT_PENETRATION"}:
+            continue
+        target_id = issue.target_id
+        if not target_id:
+            continue
+        try:
+            z_gap = float(issue.evidence.get("z_gap"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        delta = -z_gap
+        if abs(delta) > 0.2:
+            continue
+        deltas.setdefault(target_id, []).append(delta)
+    repairs: dict[str, float] = {}
+    for target_id, values in deltas.items():
+        if len(values) < 2:
+            continue
+        average = sum(values) / len(values)
+        if max(abs(value - average) for value in values) > 0.03:
+            continue
+        if abs(average) > 1e-5:
+            repairs[target_id] = average
+    if not repairs:
+        return ""
+    payload = json.dumps(repairs, ensure_ascii=True, sort_keys=True)
+    return f"""
+{_ANIMATION_CONTACT_REPAIR_MARKER}
+import json as _ll3m_contact_repair_json
+import bpy as _ll3m_contact_repair_bpy
+
+_LL3M_ANIMATION_CONTACT_REPAIRS = _ll3m_contact_repair_json.loads({payload!r})
+
+def _ll3m_contact_repair_find_root(ll3m_id):
+    marker = str(ll3m_id)
+    exact = _ll3m_contact_repair_bpy.data.objects.get(marker)
+    if exact is not None:
+        return exact
+    for obj in _ll3m_contact_repair_bpy.data.objects:
+        if str(obj.get("ll3m_id", "")) == marker:
+            return obj
+    for obj in _ll3m_contact_repair_bpy.data.objects:
+        if obj.name.startswith(marker):
+            return obj
+    return None
+
+def _ll3m_contact_repair_iter_fcurves(action):
+    if not action:
+        return
+    seen = set()
+    if hasattr(action, "fcurves"):
+        for fcurve in action.fcurves:
+            marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+            if marker not in seen:
+                seen.add(marker)
+                yield fcurve
+    for layer in getattr(action, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for bag in getattr(strip, "channelbags", []):
+                for fcurve in getattr(bag, "fcurves", []):
+                    marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+                    if marker not in seen:
+                        seen.add(marker)
+                        yield fcurve
+
+def _ll3m_contact_repair_shift_z(obj, dz):
+    obj.location.z += float(dz)
+    action = obj.animation_data.action if obj.animation_data else None
+    for fcurve in _ll3m_contact_repair_iter_fcurves(action):
+        if fcurve.data_path != "location" or fcurve.array_index != 2:
+            continue
+        for point in fcurve.keyframe_points:
+            point.co.y += float(dz)
+            point.handle_left.y += float(dz)
+            point.handle_right.y += float(dz)
+        fcurve.update()
+
+for _ll3m_contact_repair_id, _ll3m_contact_repair_dz in _LL3M_ANIMATION_CONTACT_REPAIRS.items():
+    _ll3m_contact_repair_obj = _ll3m_contact_repair_find_root(_ll3m_contact_repair_id)
+    if _ll3m_contact_repair_obj is not None:
+        _ll3m_contact_repair_shift_z(_ll3m_contact_repair_obj, _ll3m_contact_repair_dz)
+
+_ll3m_contact_repair_bpy.context.view_layer.update()
+""".strip()
 
 
 class InteractiveHarnessSession:
@@ -446,6 +536,27 @@ class InteractiveHarnessSession:
         self._emit_report(repaired_report)
         return repaired_report
 
+    def _try_animation_contact_repair(self, label: str, anim_report: ValidationReport) -> ValidationReport | None:
+        if anim_report.passed or self.code is None or not self.store or not self.ir:
+            return None
+        repair_code = _animation_contact_repair_script(anim_report)
+        if not repair_code:
+            return None
+        self.store.write_text(f"code/{label}_animation_contact_repair.py", repair_code)
+        execution = self.blender.execute_code(repair_code)
+        self.store.write_text(f"logs/{label}_animation_contact_repair_execution.txt", execution.diagnostic_text())
+        if not execution.ok:
+            return None
+        self.code = _strip_appended_repair_block(self.code, _ANIMATION_CONTACT_REPAIR_MARKER).rstrip() + "\n\n" + repair_code + "\n"
+        self._last_executed_code = self.code
+        self.store.write_text(f"code/{label}_scene_with_animation_contact_repair.py", self.code)
+        repaired_report, transform_trace = self.blender.validate_animation(self.ir)
+        self.store.write_json(f"reports/{label}_animation_deterministic_after_contact_repair.json", report_to_dict(repaired_report))
+        self.store.write_json(f"reports/{label}_animation_trace_after_contact_repair.json", transform_trace)
+        self._emit("repair", "Applied deterministic animation contact z repair")
+        self._emit_report(repaired_report)
+        return repaired_report
+
     def _static_code_report(self) -> ValidationReport:
         assert self.ir is not None
         assert self.code is not None
@@ -594,6 +705,10 @@ class InteractiveHarnessSession:
             if deformation_statistics:
                 self.store.write_json(f"reports/{label}_deformation_statistics.json", deformation_statistics)
             self._emit_report(anim_report)
+            repaired_anim_report = self._try_animation_contact_repair(label, anim_report)
+            if repaired_anim_report is not None:
+                anim_report = repaired_anim_report
+                reports[-1] = anim_report
 
             if self.ir.animation.verifier.enabled:
                 self._emit("render", "Rendering animation sampled frames" + (", GIF, and MP4 preview" if not self.skip_video else ""))
