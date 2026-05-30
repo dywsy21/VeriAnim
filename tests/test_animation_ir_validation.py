@@ -498,6 +498,20 @@ class AnimationIRValidationTest(unittest.TestCase):
         self.assertIn("allowed = globally_allowed_overlap_pairs(frame)", animation_script)
         self.assertNotIn('rtype in ("attached_to", "touching", "inside", "contains", "on_top_of")', animation_script)
 
+    def test_pick_place_targets_do_not_imply_persistent_support_or_interaction(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        event = ir.animation.events[0]
+        event.description = "gripper picks and carries cube from table to tray"
+        event.expected_visual_result = "cube stays attached to gripper during carry and is placed on tray"
+        event.target_ids = ["table", "tray"]
+
+        animation_script = _animation_validation_script(ir)
+
+        self.assertIn('if any(token in text for token in ("pick", "gripper", "grasp", "carry", "carried", "transfer")):', animation_script)
+        self.assertIn('for constraint in event.get("contact_constraints", []) or []:', animation_script)
+        self.assertIn('if target_id == sid:', animation_script)
+        self.assertNotIn('targets = list(event.get("target_ids", []) or [])', animation_script)
+
 
 if __name__ == "__main__":
     unittest.main()

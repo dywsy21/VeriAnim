@@ -1314,6 +1314,8 @@ def motion_support_targets(event):
         str(event.get("expected_visual_result", "")),
         " ".join(event.get("constraints", []) or []),
     ]).lower()
+    if any(token in text for token in ("pick", "gripper", "grasp", "carry", "carried", "transfer")):
+        return []
     if not any(token in text for token in ("drive", "drives", "cross", "roll", "rolls", "slide", "slides", "move", "moves", "travel")):
         return []
     return [target for target in (event.get("target_ids", []) or []) if target and is_static_destination_target(target)]
@@ -1674,7 +1676,14 @@ def interaction_targets(event):
         return []
     if not any(token in text for token in ("grasp", "gripper", "lift", "carry", "pick", "place", "transfer")):
         return []
-    targets = list(event.get("target_ids", []) or [])
+    targets = []
+    for constraint in event.get("contact_constraints", []) or []:
+        ctype = str(constraint.get("constraint_type", ""))
+        if ctype not in ("touching", "attachment", "carry_contact"):
+            continue
+        for target in (constraint.get("subject_id"), constraint.get("object_id")):
+            if target and target not in targets:
+                targets.append(target)
     if not targets and any(token in text for token in ("gripper", "lift", "carry", "pick", "place", "transfer")):
         for obj_spec in IR.get("scene", {{}}).get("objects", []):
             haystack = f"{{obj_spec.get('id', '')}} {{obj_spec.get('description', '')}} {{obj_spec.get('label', '')}}".lower()
@@ -1740,8 +1749,10 @@ for event in events:
             if not subj_objs:
                 continue
             for target_id in targets:
+                if target_id == sid:
+                    continue
                 target_objs = find_objects(target_id)
-                if "gripper" in str(event.get("description", "")).lower() or "gripper" in str(event.get("expected_visual_result", "")).lower():
+                if "gripper" in str(target_id).lower() and ("gripper" in str(event.get("description", "")).lower() or "gripper" in str(event.get("expected_visual_result", "")).lower()):
                     target_objs = gripper_subset(target_objs)
                 if not target_objs:
                     continue
