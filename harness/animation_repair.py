@@ -739,13 +739,28 @@ def _build_support_sequence_plan(
     if abs(centers[-1][t_index] - centers[0][t_index]) <= 1e-6:
         return None
 
+    phase_windows: list[tuple[Any, int, int]] = []
+    for index, constraint in enumerate(ordered):
+        phase_start = min(max(int(constraint.start_frame), start_frame), end_frame)
+        phase_end = min(max(int(constraint.end_frame), start_frame), end_frame)
+        if index + 1 < len(ordered):
+            next_start = min(max(int(ordered[index + 1].start_frame), start_frame), end_frame)
+            if phase_end >= next_start:
+                phase_end = max(phase_start, next_start - 1)
+        if index > 0 and phase_windows:
+            previous_end = phase_windows[-1][2]
+            phase_start = max(phase_start, min(end_frame, previous_end + 1))
+            phase_end = max(phase_start, phase_end)
+        constraint.start_frame = phase_start
+        constraint.end_frame = phase_end
+        phase_windows.append((constraint, phase_start, phase_end))
+
     keyframes: list[RepairKeyframe] = []
-    for constraint in ordered:
+    for constraint, phase_start, phase_end in phase_windows:
         bbox = bboxes[constraint.object_id]
         location = list(bbox.center)
         location[2] = bbox.max[2] + subject_root_to_bottom + 0.001
-        for frame in (int(constraint.start_frame), int(constraint.end_frame)):
-            frame = min(max(frame, start_frame), end_frame)
+        for frame in (phase_start, phase_end):
             keyframes.append(RepairKeyframe(frame, _vec3(location), f"centered on support {constraint.object_id}"))
     keyframes = sorted(keyframes, key=lambda item: item.frame)
     unique_keyframes: list[RepairKeyframe] = []

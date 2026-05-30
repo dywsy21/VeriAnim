@@ -396,6 +396,42 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertTrue(plan.applied, plan.to_dict())
         self.assertEqual([keyframe.frame for keyframe in repaired.animation.events[0].path.keyframes], [1, 30, 37, 84, 100, 120])
 
+    def test_overlapping_support_windows_become_monotonic_sequence(self) -> None:
+        ir = bridge_ir()
+        ir.scene.objects = [
+            ObjectSpec(id="car", description="toy car", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ObjectSpec(id="road", description="lower road", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ObjectSpec(id="ramp", description="ramp", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+            ObjectSpec(id="platform", description="platform", collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX)),
+        ]
+        event = ir.animation.events[0]
+        event.target_ids = ["road", "ramp", "platform"]
+        event.contact_constraints = [
+            ContactConstraintSpec("road_support", ContactConstraintType.SUPPORT, "car", "road", 1, 32),
+            ContactConstraintSpec("ramp_support", ContactConstraintType.SUPPORT, "car", "ramp", 28, 92),
+            ContactConstraintSpec("platform_support", ContactConstraintType.SUPPORT, "car", "platform", 88, 120),
+        ]
+        graph = {
+            "objects": [
+                {"name": "car", "ll3m_id": "car", "bbox": {"min": [-2.2, -0.2, 0.0], "max": [-1.8, 0.2, 0.15]}},
+                {"name": "road", "ll3m_id": "road", "bbox": {"min": [-4.0, -1.0, 0.0], "max": [0.0, 1.0, 0.0]}},
+                {"name": "ramp", "ll3m_id": "ramp", "bbox": {"min": [0.0, -1.0, 0.0], "max": [3.0, 1.0, 1.0]}},
+                {"name": "platform", "ll3m_id": "platform", "bbox": {"min": [3.0, -1.0, 0.0], "max": [6.0, 1.0, 1.0]}},
+            ]
+        }
+
+        repaired, plan = repair_animation_ir(ir, graph)
+
+        self.assertTrue(plan.applied, plan.to_dict())
+        event = repaired.animation.events[0]
+        self.assertEqual([keyframe.frame for keyframe in event.path.keyframes], [1, 27, 28, 87, 88, 120])
+        self.assertEqual([keyframe.transform.location[0] for keyframe in event.path.keyframes], [-2.0, -2.0, 1.5, 1.5, 4.5, 4.5])
+        self.assertEqual([(c.id, c.start_frame, c.end_frame) for c in event.contact_constraints], [
+            ("road_support", 1, 27),
+            ("ramp_support", 28, 87),
+            ("platform_support", 88, 120),
+        ])
+
     def test_terminal_support_constraints_set_ground_height_endpoints(self) -> None:
         repaired, plan = repair_animation_ir(bridge_ir_with_terminal_ground_support(), scene_graph_with_ground())
 
