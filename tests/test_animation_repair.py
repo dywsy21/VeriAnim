@@ -231,6 +231,7 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertIn("_ll3m_repair_recalibrate_keyframes", script)
         self.assertIn("_ll3m_repair_bpy.context.view_layer.update()", script)
         self.assertIn("centered on support", script)
+        self.assertIn("max(root_extent * 2.0, 10.0)", script)
 
     def test_repair_can_use_animation_level_contact_constraints(self) -> None:
         ir = bridge_ir()

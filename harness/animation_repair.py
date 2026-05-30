@@ -317,7 +317,7 @@ def _ll3m_repair_normalize_child_offsets(root, objects, reference_location):
     center /= len(direct_children)
     reference = _ll3m_repair_Vector(tuple(float(value) for value in reference_location))
     root_extent = max(float(value) for value in getattr(root, "dimensions", (1.0, 1.0, 1.0)) if float(value) >= 0.0)
-    threshold = max(root_extent * 2.0, 1.0)
+    threshold = max(root_extent * 2.0, 10.0)
     if center.length <= max(root_extent * 0.75, 0.25):
         return
     if (center - reference).length > threshold:

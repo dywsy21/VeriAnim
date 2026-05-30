@@ -11,6 +11,7 @@ from unittest import mock
 
 from blender.client import BlenderClient
 from blender import ll3m_utils
+from harness.animation_repair import repair_animation_ir
 from harness.blender_runtime import BlenderRunResult, BlenderRuntime
 from harness.config import AgentModelConfig, HarnessConfig
 from harness.ir import (
@@ -40,6 +41,7 @@ from harness.ir import (
 from harness.preflight import format_issue, has_errors, run_preflight
 from harness.runner import _runner_lock
 from harness.session import InteractiveHarnessSession, _animation_contact_repair_script
+from harness.static_support_repair import repair_static_support
 from harness.artifacts import ArtifactStore
 
 
@@ -600,6 +602,34 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         self.assertIn("_ll3m_repair_keyframe.get(\"location\"", script)
         support = repaired_ir["animation"]["events"][0]["contact_constraints"][0]
         self.assertEqual((support["start_frame"], support["end_frame"]), (37, 84))
+
+    def test_animation_repair_owns_subject_path_without_appending_static_support_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True, skip_vision=True, skip_video=True)
+            session.ir = bridge_animation_ir()
+            _, animation_plan = repair_animation_ir(bridge_animation_ir(), bridge_scene_graph())
+            static_report = ValidationReport.failed(
+                VerificationMode.DETERMINISTIC,
+                [
+                    ValidationIssue(
+                        code="RELATION_ON_TOP_OF_FAILED",
+                        message="mug is not on table",
+                        relation_id="mug_on_table",
+                        target_id="mug",
+                        evidence={"z_gap": 0.5, "overlap_x": 0.3, "overlap_y": 0.3, "support_z": 0.5},
+                    )
+                ],
+            )
+            session._animation_repair_plan = animation_plan
+            session._static_support_repair_plan = repair_static_support(
+                support_repair_ir(), support_repair_scene_graph(), static_report
+            )
+
+            code = session._append_static_support_repair(
+                "LL3M_METADATA = {}\n# LL3M deterministic static support repair\nold\n"
+            )
+
+        self.assertNotIn("LL3M deterministic static support repair", code)
 
 
 class BackgroundCommandQueueTest(unittest.TestCase):

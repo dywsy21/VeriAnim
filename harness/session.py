@@ -486,6 +486,8 @@ class InteractiveHarnessSession:
     def _append_static_support_repair(self, code: str) -> str:
         if not self._static_support_repair_plan or not self._static_support_repair_plan.applied:
             return code
+        if self.ir and self.ir.animation and self._animation_repair_plan and self._animation_repair_plan.applied:
+            return _strip_appended_repair_block(code, _STATIC_SUPPORT_REPAIR_MARKER)
         repair_code = blender_static_support_repair_script(self._static_support_repair_plan)
         if not repair_code:
             return code
