@@ -250,6 +250,24 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertEqual(plan.plans[0].support_id, "bridge_deck")
         self.assertEqual(repaired.animation.events[0].contact_constraints[0].object_id, "bridge_deck")
 
+    def test_support_crossing_repair_does_not_treat_suitable_as_table(self) -> None:
+        ir = bridge_ir()
+        ir.scene.objects[1].id = "conveyor_belt"
+        ir.scene.objects[1].description = "long conveyor belt suitable for items to ride on"
+        ir.animation.events[0].contact_constraints[0].object_id = "conveyor_belt"
+        ir.animation.events[0].contact_constraints[1].object_id = "conveyor_belt"
+        graph = {
+            "objects": [
+                {"name": "car", "ll3m_id": "car", "bbox": {"min": [-2.5, -0.2, 0.5], "max": [-1.5, 0.2, 0.9]}},
+                {"name": "conveyor_belt", "ll3m_id": "conveyor_belt", "bbox": {"min": [-2.5, -0.8, 0.0], "max": [2.5, 0.8, 0.5]}},
+            ]
+        }
+
+        _, plan = repair_animation_ir(ir, graph)
+
+        self.assertFalse(plan.applied, plan.to_dict())
+        self.assertIn("no deck/platform support constraint", plan.skipped[0])
+
     def test_terminal_support_constraints_set_ground_height_endpoints(self) -> None:
         repaired, plan = repair_animation_ir(bridge_ir_with_terminal_ground_support(), scene_graph_with_ground())
 

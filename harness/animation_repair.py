@@ -503,11 +503,12 @@ def _event_support_constraint(constraints: list[Any], ir: GenerationIR, *, event
                 str(getattr(support, "description", "") or ""),
             ]
         ).lower()
-        if any(token in text for token in SUPPORT_TOKENS):
+        tokens = set(text.replace("_", " ").replace("-", " ").split())
+        if any(token in tokens for token in SUPPORT_TOKENS):
             score = 1
-            if any(token in text for token in ("ramp", "bridge", "deck", "platform")):
+            if any(token in tokens for token in ("ramp", "bridge", "deck", "platform")):
                 score += 4
-            if any(token in text for token in ("road", "ground")):
+            if any(token in tokens for token in ("road", "ground")):
                 score -= 2
             if event is not None:
                 event_start = int(getattr(event, "start_frame", 0))
