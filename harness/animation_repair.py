@@ -90,6 +90,7 @@ AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
 INDEX_AXIS = ("x", "y", "z")
 SUPPORT_TOKENS = ("bridge", "deck", "platform", "ramp", "road", "table", "shelf")
 CROSSING_SUPPORT_TOKENS = ("bridge", "deck", "platform", "ramp")
+SINGLE_RIDE_SUPPORT_TOKENS = ("belt", "conveyor", "shelf", "table")
 MESH_BBOX_TYPES = {"MESH", "CURVE", "SURFACE", "FONT", "META"}
 
 
@@ -146,7 +147,10 @@ def repair_animation_ir(
             if constraint.constraint_type == ContactConstraintType.SUPPORT and constraint.object_id in bboxes
         }
         support_tokens = _support_tokens(repaired, support_id)
-        if len(distinct_support_ids) < 2 and not any(token in support_tokens for token in CROSSING_SUPPORT_TOKENS):
+        if len(distinct_support_ids) < 2 and (
+            any(token in support_tokens for token in SINGLE_RIDE_SUPPORT_TOKENS)
+            or not any(token in support_tokens for token in CROSSING_SUPPORT_TOKENS)
+        ):
             skipped.append(f"{event.id}: single support ride on {support_id} does not need crossing repair.")
             continue
         plan = None

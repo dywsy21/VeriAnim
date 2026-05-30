@@ -175,6 +175,26 @@ def table_slide_graph() -> dict:
     }
 
 
+def conveyor_platform_ride_ir() -> GenerationIR:
+    ir = table_slide_ir()
+    ir.scene.objects[1].id = "conveyor_belt"
+    ir.scene.objects[1].description = "long flat gray conveyor belt platform"
+    event = ir.animation.events[0]
+    event.id = "box_ride_belt"
+    event.contact_constraints = [
+        ContactConstraintSpec("belt_support", ContactConstraintType.SUPPORT, "crate", "conveyor_belt", 1, 120),
+        ContactConstraintSpec("belt_nonpen", ContactConstraintType.NONPENETRATION, "crate", "conveyor_belt", 1, 120),
+    ]
+    return ir
+
+
+def conveyor_platform_ride_graph() -> dict:
+    graph = table_slide_graph()
+    graph["objects"][1]["name"] = "conveyor_belt"
+    graph["objects"][1]["ll3m_id"] = "conveyor_belt"
+    return graph
+
+
 class AnimationRepairTest(unittest.TestCase):
     def test_repair_builds_outside_lift_crossing_path(self) -> None:
         repaired, plan = repair_animation_ir(bridge_ir(), scene_graph())
@@ -307,6 +327,12 @@ class AnimationRepairTest(unittest.TestCase):
         event = repaired.animation.events[0]
         self.assertEqual(event.start_transform.location, (-1.0, 0.0, 1.2))
         self.assertEqual(event.end_transform.location, (1.0, 0.0, 1.2))
+
+    def test_single_conveyor_platform_ride_does_not_get_bridge_crossing_path(self) -> None:
+        _, plan = repair_animation_ir(conveyor_platform_ride_ir(), conveyor_platform_ride_graph())
+
+        self.assertFalse(plan.applied, plan.to_dict())
+        self.assertIn("single support ride on conveyor_belt", plan.skipped[0])
 
     def test_support_sequence_repair_uses_scene_graph_centers_when_crossing_plan_fails(self) -> None:
         ir = bridge_ir()
