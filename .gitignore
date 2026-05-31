@@ -15,3 +15,22 @@ runs-summary/
 qwen3-omni.md
 local-docs
 .*
+
+# latex build files
+*.aux
+*.lof
+*.log
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+*.lb
+*.dvi
+*.fdb_latexmk
+*.synctex.gz
+*.pdf
+

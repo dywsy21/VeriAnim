@@ -558,6 +558,10 @@ def world_bbox(obj_or_objs: Any | Iterable[Any], *, include_children: bool = Tru
 
     from mathutils import Vector  # type: ignore[import-not-found]
 
+    try:
+        _bpy().context.view_layer.update()
+    except Exception:
+        pass
     points: list[Vector] = []
     for obj in _iter_bbox_objects(obj_or_objs, include_children=include_children):
         matrix = getattr(obj, "matrix_world", None)
