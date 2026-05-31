@@ -512,6 +512,16 @@ class AnimationIRValidationTest(unittest.TestCase):
         self.assertIn('if target_id == sid:', animation_script)
         self.assertNotIn('targets = list(event.get("target_ids", []) or [])', animation_script)
 
+    def test_contact_constraints_are_checked_across_window_frames(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        animation_script = _animation_validation_script(ir)
+
+        self.assertIn('if ctype in ("touching", "attachment", "carry_contact", "nonpenetration"):', animation_script)
+        self.assertIn("frames.update(range(max(1, start), min(duration, end) + 1, step))", animation_script)
+        self.assertIn("frames.add(min(duration, end))", animation_script)
+        self.assertIn("def pairwise_embedded_contact(subject_objs, object_objs):", animation_script)
+        self.assertIn("CONTACT_CONSTRAINT_EMBEDDED_CONTACT", animation_script)
+
 
 if __name__ == "__main__":
     unittest.main()

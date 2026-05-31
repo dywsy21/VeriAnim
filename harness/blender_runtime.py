@@ -1279,6 +1279,39 @@ def pairwise_mesh_penetration(subject_objs, object_objs):
                 worst = (depth, overlaps, axis, [subject_mesh.name, object_mesh.name])
     return worst
 
+def bbox_center(box):
+    return (box[0] + box[1]) * 0.5
+
+def point_inside_bbox(point, box):
+    return (
+        box[0].x <= point.x <= box[1].x
+        and box[0].y <= point.y <= box[1].y
+        and box[0].z <= point.z <= box[1].z
+    )
+
+def pairwise_embedded_contact(subject_objs, object_objs):
+    subject_meshes = mesh_like_descendants(subject_objs) or subject_objs
+    object_meshes = mesh_like_descendants(object_objs) or object_objs
+    for subject_mesh in subject_meshes:
+        sb = aggregate_minmax([subject_mesh])
+        if not sb:
+            continue
+        for object_mesh in object_meshes:
+            ob = aggregate_minmax([object_mesh])
+            if not ob:
+                continue
+            overlaps = bbox_overlaps(sb, ob)
+            if overlaps[0] <= 0 or overlaps[1] <= 0 or overlaps[2] <= 0:
+                continue
+            subject_center_inside = point_inside_bbox(bbox_center(sb), ob)
+            object_center_inside = point_inside_bbox(bbox_center(ob), sb)
+            if subject_center_inside or object_center_inside:
+                return True, overlaps, [getattr(subject_mesh, "name", None), getattr(object_mesh, "name", None)], {{
+                    "subject_center_inside_object": subject_center_inside,
+                    "object_center_inside_subject": object_center_inside,
+                }}
+    return False, (0.0, 0.0, 0.0), None, {{}}
+
 def xy_overlap(a, b):
     return (
         min(a[1].x, b[1].x) - max(a[0].x, b[0].x),
@@ -1439,6 +1472,11 @@ def contact_constraint_frames(constraint):
     start = int(constraint.get("start_frame", 1))
     end = int(constraint.get("end_frame", start))
     frames = {{start, end, int((start + end) / 2)}}
+    ctype = str(constraint.get("constraint_type", ""))
+    if ctype in ("touching", "attachment", "carry_contact", "nonpenetration"):
+        step = 1 if duration <= 180 else max(1, int(duration / 180))
+        frames.update(range(max(1, start), min(duration, end) + 1, step))
+        frames.add(min(duration, end))
     for frame in (anim.get("verifier", {{}}).get("sampled_frames", []) or []):
         frame = int(frame)
         if start <= frame <= end:
@@ -1459,6 +1497,7 @@ def check_contact_constraint(constraint):
     if max_gap is None:
         max_gap = 0.10 if ctype in ("touching", "attachment", "carry_contact") else 0.08
     max_gap = float(max_gap)
+    embedded_contact_reported = False
     for frame in contact_constraint_frames(constraint):
         bpy.context.scene.frame_set(frame)
         sb = aggregate_minmax(subject_objs)
@@ -1527,6 +1566,17 @@ def check_contact_constraint(constraint):
                     subject_id,
                     frame,
                     {{"object_id": object_id, "penetration_depth": depth, "axis": axis, "overlaps": list(overlaps), "mesh_pair": mesh_pair, "max_penetration": max_penetration}},
+                )
+            embedded, embedded_overlaps, embedded_pair, embedded_flags = pairwise_embedded_contact(subject_objs, object_objs)
+            if embedded and not embedded_contact_reported:
+                embedded_contact_reported = True
+                issue(
+                    "CONTACT_CONSTRAINT_EMBEDDED_CONTACT",
+                    f"Contact constraint '{{constraint.get('id')}}' has '{{subject_id}}' embedded inside '{{object_id}}'.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "overlaps": list(embedded_overlaps), "mesh_pair": embedded_pair, **embedded_flags}},
                 )
         elif ctype == "inside":
             max_escape = float(constraint.get("max_gap", 0.02) or 0.02)
