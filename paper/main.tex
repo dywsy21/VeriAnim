@@ -1,0 +1,153 @@
+\documentclass{article}
+\usepackage{iclr2026_conference,times}
+
+\input{math_commands.tex}
+
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{xcolor}
+
+\title{Primitive-Constrained Verification and Repair for LLM-Generated Rigid-Body Animations}
+
+\author{Anonymous Authors\\
+Anonymous Institution\\
+\texttt{anonymous@example.com}
+}
+
+%\iclrfinalcopy
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Large language models can generate executable Blender scripts for simple 3D scenes, but rigid-body animations produced by direct keyframing frequently contain geometric failures such as support penetration, floating objects, detached grippers, and carried objects falling through conveyors or trays. We present an early system for constrained synthesis of rigid-body animations from language. The system represents animation intent as a scene-and-motion intermediate representation, generates Blender programs, verifies them with deterministic geometry checks and video-language feedback, and repairs failures through contact-aware keyframe rewriting. Our current implementation adds a library of reusable rigid-motion primitives for support-constrained sliding, support sequences, pick-carry-place motions, pushing, dropping, and hinged rotations. These primitives compute motion from actual world-space bounding boxes rather than prompt-level guesses, exposing contact geometry to both generation and repair. Preliminary Blender smoke tests show that the primitives eliminate several common support-height and gripper-embedding errors on representative tabletop motions. We outline a benchmark and ablation plan for evaluating whether primitive-constrained generation improves pass rate, contact correctness, and refinement efficiency over unconstrained LLM keyframing.
+\end{abstract}
+
+\section{Introduction}
+
+Recent language models are capable of writing nontrivial graphics programs, including Blender scripts that construct 3D scenes and insert animation keyframes. This makes language a promising interface for procedural animation: a user can ask for a robot arm to pick up a cube, a box to slide across a table, or a vehicle to cross a bridge, and the model can synthesize executable code. However, in practice, direct code generation is brittle. The generated scene may look plausible in isolated frames while violating basic rigid-body constraints between frames. Common failures include objects falling through supports, thin gripper fingers intersecting carried objects, diagonal paths crossing through bridge decks, and final placements that satisfy language superficially but miss geometric contact.
+
+The core difficulty is that language models tend to predict keyframes as text, while rigid animation correctness depends on continuous geometry. A root object's location is not necessarily its contact point. A centered cube must be placed at support top plus half height. A gripper can appear attached from one camera angle while its fingers are embedded in the object it carries. A path that is nonpenetrating at start and end can still intersect an obstacle during interpolation. These errors are systematic rather than incidental.
+
+We investigate a constrained alternative: instead of asking the LLM to invent all keyframes, we expose a small set of rigid animation primitives with explicit geometric semantics. The model can still write Blender code, but common motions such as support sliding, support transfer, pushing, dropping, hinged rotation, and pick-carry-place are expressed through helpers that compute placements from actual world-space bounding boxes. The harness then validates the resulting animation using deterministic checks over sampled and dense frames, optionally asks a video-language model to judge visual plausibility, and applies contact-aware repairs when violations are found.
+
+This draft describes the current system state and the research plan needed to turn it into a full empirical paper. Our intended contribution is not a new physics simulator. Rather, we aim to show that a pragmatic combination of primitive-constrained program generation, deterministic geometric verification, and targeted repair can substantially improve the reliability of LLM-generated rigid-body animations in procedural 3D environments.
+
+\section{Related Work}
+
+\paragraph{Language models as program generators.}
+Large language models have been used as code generators and tool-using agents \citep{chen2021evaluating,austin2021program,yao2023react,schick2023toolformer}. Blender scripting is a natural target for such systems because scenes and animations can be specified as executable programs. Our setting differs from general code generation because correctness depends on spatial and temporal geometry, not only syntactic execution.
+
+\paragraph{Text-to-3D and generative scene synthesis.}
+Text-conditioned 3D generation methods produce shapes, assets, or scenes from natural language \citep{poole2022dreamfusion,lin2023magic3d}. These methods emphasize asset generation and visual fidelity. Our work instead focuses on executable rigid-body animation programs with explicit object identities, contact constraints, and verifiable temporal behavior.
+
+\paragraph{Embodied planning and simulation.}
+Robotics and embodied-agent systems often combine language models with symbolic plans, simulators, or motion primitives \citep{huang2022inner,ahn2022can}. We take inspiration from this decomposition but target offline graphics animation rather than robot control. Our primitives are kinematic and visual: they enforce support and contact geometry in Blender scripts, but they do not yet solve full dynamics.
+
+\paragraph{Animation and physical plausibility.}
+Physics engines and animation tools can simulate rigid bodies, constraints, and collisions, but LLM-generated scripts frequently bypass these engines and instead insert keyframes directly. Our system adds a verification-and-repair layer around keyframed animation. This is complementary to physics simulation: deterministic geometry checks can identify failures even when no simulator is used, while future versions may use simulation to synthesize or validate keyframes.
+
+\section{Methodology}
+
+\subsection{Harness Overview}
+
+The harness follows a generate--verify--repair loop. Given a user prompt, a planner produces an intermediate representation (IR) containing scene objects, collision proxies, spatial relations, animation events, sampled frames, contact constraints, and visual/video verification questions. A coder then emits a Blender Python script. The script is executed in a live Blender process, producing a scene graph, screenshots, sampled animation frames, and optionally a GIF or MP4 preview.
+
+Verification has three layers. First, static code checks ensure that the script is complete, contains metadata, and creates visible animation operations when animation is requested. Second, deterministic Blender checks evaluate object geometry, support relations, final placements, sampled animation transforms, dense interpolation frames, nonpenetration, and carry/contact constraints. Third, optional vision and video verifiers judge rendered frames or videos for semantic failures that geometry alone may miss.
+
+When deterministic animation checks fail, the repair module can rewrite keyframes or insert contact-preserving transitions. Existing repairs handle support alignment, bridge/deck crossings, monotonic support sequences, conveyor riding, and embedded carry-contact failures. The new primitive library complements repair: it gives the coder and refiner safer building blocks so fewer invalid keyframes are generated in the first place.
+
+\subsection{Rigid Animation Primitives}
+
+We added reusable primitives to \texttt{blender/ll3m\_utils.py}. The library deliberately stays independent of the harness IR. It exposes low-level Blender helpers that generated scripts can call directly:
+
+\begin{itemize}
+    \item \textbf{Bounding-box support utilities}: \texttt{world\_bbox}, \texttt{bbox\_top}, \texttt{bbox\_bottom}, \texttt{bbox\_center}, \texttt{bbox\_size}, and \texttt{align\_bottom\_to\_top}.
+    \item \textbf{Keyframe utilities}: \texttt{set\_frame\_range}, \texttt{insert\_location\_keyframe}, \texttt{insert\_rotation\_keyframe}, \texttt{insert\_scale\_keyframe}, and interpolation setters.
+    \item \textbf{Free and path motion}: \texttt{animate\_translate} and \texttt{animate\_follow\_path}.
+    \item \textbf{Support-constrained motion}: \texttt{animate\_support\_slide} and \texttt{animate\_support\_sequence}.
+    \item \textbf{Interaction primitives}: \texttt{animate\_pick\_place}, \texttt{animate\_attached\_carry}, \texttt{animate\_push}, and \texttt{animate\_drop\_to\_support}.
+    \item \textbf{Articulated rigid motion}: \texttt{animate\_rotate\_about\_axis} and \texttt{animate\_hinge}.
+    \item \textbf{Gripper geometry}: \texttt{space\_gripper\_fingers\_around\_subject}, which positions two finger child meshes outside the carried object's bounding box to avoid visible embedding.
+\end{itemize}
+
+All support primitives compute contact heights from evaluated world-space bounding boxes. This avoids a common failure where the model treats an object's origin as its bottom contact point. The bounding-box function updates Blender's view layer before reading \texttt{matrix\_world}, because smoke tests showed that freshly created or reparented objects can otherwise expose stale transforms.
+
+\subsection{Static Compatibility}
+
+The harness previously required concrete \texttt{keyframe\_insert} calls to pass static animation checks. This discouraged the use of high-level animation helpers. We updated the static checker so listed \texttt{ll3m.animate\_*} and \texttt{ll3m.insert\_*keyframe} calls count as explicit animation operations. The prompt contract shown to coder and refiner agents now lists the primitive API and instructs models to prefer it for support, pick-place, push, drop, and hinge motions.
+
+\subsection{Deterministic Checks and Repair}
+
+The deterministic validator samples planned frames and dense interpolation windows. It checks that supported objects have positive footprint overlap and small vertical contact gap, that nonpenetration pairs do not overlap beyond tolerance, and that carry-contact pairs do not hide severe embedding behind an allowed contact relation. Prior work in the harness added dense contact-window checks, embedded carry-contact detection, monotonic support sequence repair, and support-aligned keyframe rewriting. These mechanisms remain responsible for catching invalid scripts that do not use the new primitives or that combine them incorrectly.
+
+\section{Experiments}
+
+\subsection{Preliminary Smoke Tests}
+
+We ran local Blender smoke tests on three primitive families. These are not a final benchmark; they are implementation checks designed to reveal geometry bugs before larger evaluation.
+
+\begin{table}[t]
+\centering
+\caption{Preliminary primitive smoke tests. Gaps are object bottom minus support top at key frames; positive values near 0.001 indicate intended clearance.}
+\label{tab:smoke}
+\begin{tabular}{p{0.20\linewidth}p{0.20\linewidth}p{0.24\linewidth}p{0.16\linewidth}}
+\toprule
+Primitive & Scenario & Checked property & Result \\
+\midrule
+support slide & cube slides on table & support gap at frames 1/48/96 & 0.001 / 0.001 / 0.001 \\
+pick-place & gripper carries cube to tray & source/final support gap & 0.001 / 0.001 in isolated rerun \\
+finger spacing & two fingers around cube & x-axis finger-cube overlap & negative overlap, no embedding \\
+push & pusher moves box on table & support gap at frames 1/56 & 0.001 / 0.001 \\
+drop-to-support & box drops to table & final support gap at frame 96 & 0.001 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The tests surfaced an important implementation issue. The first version of the bbox helper read object transforms immediately after object creation, before Blender's dependency graph had updated. This caused support primitives to place objects above the table by roughly the object's initial offset. We fixed this by updating the active view layer inside \texttt{world\_bbox}. This illustrates the value of testing generated animation behavior rather than only testing Python importability.
+
+\subsection{Planned Benchmark}
+
+The full evaluation will use a curated prompt suite rather than broad multi-model benchmarking. We will avoid expensive sweeps over many LLM providers and instead compare system variants under a fixed model configuration. The benchmark will cover common rigid-body animation categories:
+
+\begin{itemize}
+    \item support slide and conveyor ride;
+    \item support-to-support transfer across table, tray, platform, bridge, or ramp;
+    \item pick, carry, and place with grippers or simple end effectors;
+    \item push and pull interactions;
+    \item drop, settle, and final support contact;
+    \item hinged doors, levers, lids, and barriers;
+    \item stacking or placing objects into shallow containers.
+\end{itemize}
+
+Each prompt will include expected objects, final relations, required contact windows, and sampled frames. The main metrics will be deterministic pass rate, penetration rate, support violation rate, final relation success, carry-contact consistency, number of refinement rounds, and rendered-video preference or failure labels from a fixed video verifier. A small human audit can be used for calibration.
+
+\subsection{Ablations}
+
+The most important ablations are:
+
+\begin{itemize}
+    \item direct LLM keyframes without primitives;
+    \item primitives without deterministic repair;
+    \item deterministic repair without primitives;
+    \item primitives plus repair;
+    \item no dense interpolation checks;
+    \item no embedded carry-contact checks;
+    \item no video verifier.
+\end{itemize}
+
+These ablations test whether primitives reduce first-pass failures, whether repair catches residual errors, and whether dense/contact-specific checks are necessary beyond sparse sampled-frame validation.
+
+\section{Limitations}
+
+The current primitives are kinematic, not physically simulated. They create visually plausible rigid motions by construction but do not model forces, friction, mass, torque, or collision response. Complex grasping still depends on the generated scene geometry: a gripper with unusual finger topology may need custom spacing or additional constraints. Slanted ramps, concave containers, and articulated multi-link arms require richer geometric reasoning than axis-aligned bbox alignment. Finally, video-language verification is useful for semantic quality but can miss short contact failures, so it should supplement deterministic geometry rather than replace it.
+
+\section{Conclusion}
+
+This draft presents an early system for making LLM-generated rigid-body animations more reliable through primitive-constrained generation, deterministic verification, and targeted repair. The current implementation adds a reusable Blender primitive library for common rigid motions and integrates it with the harness prompt contract and static checks. Preliminary smoke tests show that bbox-derived support and gripper-spacing primitives can prevent several recurring failure modes. The next step is a controlled benchmark with ablations that quantify how much each component improves contact correctness and generation reliability.
+
+\bibliography{references}
+\bibliographystyle{iclr2026_conference}
+
+\end{document}
