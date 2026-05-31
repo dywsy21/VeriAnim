@@ -709,7 +709,7 @@ class InteractiveHarnessSession:
                 issues.append(
                     ValidationIssue(
                         code="CODE_MISSING_ANIMATION_KEYFRAMES",
-                        message="Animation script has too few actual keyframe_insert calls for the planned events.",
+                        message="Animation script has too few actual keyframe operations or ll3m animation primitive calls for the planned events.",
                         severity=Severity.CRITICAL,
                     )
                 )
@@ -951,6 +951,21 @@ def _undefined_module_references(tree: ast.AST) -> list[str]:
 
 
 def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
+    ll3m_animation_helpers = {
+        "insert_location_keyframe",
+        "insert_rotation_keyframe",
+        "insert_scale_keyframe",
+        "animate_translate",
+        "animate_follow_path",
+        "animate_support_slide",
+        "animate_support_sequence",
+        "animate_attached_carry",
+        "animate_pick_place",
+        "animate_push",
+        "animate_drop_to_support",
+        "animate_rotate_about_axis",
+        "animate_hinge",
+    }
     helper_names: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef):
@@ -970,6 +985,10 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
             calls.append(node)
         elif isinstance(node.func, ast.Name) and node.func.id in helper_names:
             calls.append(node)
+        elif isinstance(node.func, ast.Attribute) and node.func.attr in ll3m_animation_helpers:
+            calls.append(node)
+            if node.func.attr.startswith("animate_"):
+                calls.append(node)
     return calls
 
 

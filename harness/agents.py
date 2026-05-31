@@ -74,6 +74,38 @@ Primitive coordinate rules:
   height for support alignment; do not pass unsupported `scale=` to `add_cube`
   because this helper does not accept that keyword.
 
+Rigid animation and support helpers:
+- `scene = ll3m.set_frame_range(scene=None, start=1, end=120, fps=None)`
+- `bbox = ll3m.world_bbox(obj_or_objs, include_children=True)` returning `min`, `max`, `center`, `size`, `top`, and `bottom`
+- `center = ll3m.bbox_center(obj_or_objs)`, `size = ll3m.bbox_size(obj_or_objs)`, `z = ll3m.bbox_top(obj_or_objs)`, `z = ll3m.bbox_bottom(obj_or_objs)`
+- `obj = ll3m.move_bottom_to_z(obj, z, margin=0.001)` and `obj = ll3m.align_bottom_to_top(subject, support, margin=0.001)`
+- `fingers = ll3m.space_gripper_fingers_around_subject(gripper, subject, axis="X", fingers=None, gap=0.02, align_z="center")`
+- `obj = ll3m.insert_location_keyframe(obj, frame, location, interpolation="LINEAR")`
+- `obj = ll3m.insert_rotation_keyframe(obj, frame, rotation, interpolation="LINEAR")`
+- `obj = ll3m.insert_scale_keyframe(obj, frame, scale, interpolation="LINEAR")`
+- `obj = ll3m.set_keyframe_interpolation(obj, interpolation="LINEAR", easing=None)` or `ll3m.set_linear_interpolation(obj)`
+- `obj = ll3m.animate_translate(obj, [(frame, location), ...], interpolation="LINEAR")`
+- `obj = ll3m.animate_follow_path(obj, [point0, point1, ...], start_frame, end_frame, interpolation="LINEAR")`
+- `obj = ll3m.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame, margin=0.001)`
+- `obj = ll3m.animate_support_sequence(subject, [{"support": support, "frame": frame, "xy": (x,y)}, ...], margin=0.001)`
+- `(driver, carried) = ll3m.animate_attached_carry(driver, carried, [(frame, driver_location), ...], offset=(0,0,-0.5))`
+- `(gripper, carried) = ll3m.animate_pick_place(gripper, carried, source_support, dest_support, source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, clearance=0.05, gripper_offset=None)`
+- `(pusher, pushed) = ll3m.animate_push(pusher, pushed, support, start_xy, end_xy, start_frame, end_frame, pusher_offset=(-0.8,0,0))`
+- `obj = ll3m.animate_drop_to_support(subject, support, start_location, start_frame, end_frame, end_xy=None)`
+- `obj = ll3m.animate_rotate_about_axis(obj, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
+- `obj = ll3m.animate_hinge(obj, hinge_origin, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
+
+Use these rigid animation helpers for common box-on-table, conveyor, slide,
+push, drop, pick-carry-place, door/lever, and support-to-support motions. They
+compute contact heights from actual object bboxes, which is safer than guessing
+z values from the prompt. For unusual motions, combine helper calls with native
+`bpy` keyframes, but keep at least two visible animation keyframe operations in
+the script.
+For grippers with finger child meshes, call
+`space_gripper_fingers_around_subject` after parenting/creating the fingers and
+before `animate_pick_place`; this prevents thin fingers from being visibly
+embedded in the carried object.
+
 Cameras, lights, and rendering:
 - `camera = ll3m.add_camera(name="camera_main", location=(3,-4,2.5), look_at_target=(0,0,0), lens=35, collection=None, make_active=True)`
 - `camera = ll3m.create_camera(name, location=..., look_at=..., lens=35, collection=None, make_active=True)`
@@ -474,7 +506,7 @@ class CoderAgent:
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
             "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
             "If setting Blender keyframe interpolation, use valid Blender interpolation enum strings such as LINEAR, BEZIER, SINE, QUAD, CUBIC, QUART, QUINT, EXPO, CIRC, BACK, BOUNCE, ELASTIC, or CONSTANT. If setting keyframe easing, use Blender easing enum strings such as AUTO, EASE_IN, EASE_OUT, or EASE_IN_OUT; never assign SINE to easing. "
-            "Write at least two concrete keyframe_insert call sites for each animated subject, such as one at the start frame and one at the end frame. Do not put all keyframe_insert calls behind a single loop or a single helper invocation, because the harness static completeness check must see multiple actual keyframe call sites before Blender execution. "
+            "Write at least two concrete animation operations for each animated subject, such as explicit keyframe_insert calls, ll3m.insert_*_keyframe calls, or ll3m.animate_* primitive calls. Do not hide all keyframes behind an unlisted custom helper, because the harness static completeness check must see concrete animation operations before Blender execution. "
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. "
             "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
             "For horizontal supports, compute placements from world-space bbox dimensions after creating and scaling objects: support_top_z = support.location.z + support_height/2, then subject.location.z = support_top_z + subject_height/2 plus a tiny clearance margin; keep subject x/y inside the support footprint. "
@@ -522,7 +554,7 @@ Script requirements:
 - Set frame_start/frame_end/fps if animation exists.
 - Insert keyframes for AnimationSpec events when present. For translate/rotate/scale, mutate the object's location/rotation_euler/scale at start and end frames, insert keyframes, and ensure sampled frames visibly change.
 - If editing interpolation values, use Blender enum values such as `LINEAR` or `BEZIER`; do not use `EASE_IN_OUT`.
-- Use explicit keyframe statements for at least the start and end pose of every animated subject. Do not rely on one loop containing a single `keyframe_insert` call for all keyframes; unroll the main start/middle/end insertions or call a helper separately for each required keyframe.
+- Use explicit keyframe statements or listed `ll3m.animate_*` primitives for at least the start and end pose of every animated subject. Do not rely on one loop containing a single `keyframe_insert` call for all keyframes; unroll the main start/middle/end insertions or call listed helpers separately for each required keyframe.
 - For robotic pick-and-place, keep a continuous articulated chain from arm base to gripper. Do not detach the gripper from the arm just to make it follow the package.
 - For appear/disappear events, keyframe hide_viewport/hide_render and/or near-zero scale before activation; material emission alone is not enough if the verifier can still see the light.
 - For horizontal support/contact, create and scale the support and subject first, then align bbox top/bottom: subject bottom equals support top with positive x/y footprint overlap and no penetration.
@@ -588,7 +620,7 @@ class RefinerAgent:
             "For 'on floor of a room/greenhouse/enclosure' relations, place wheels/tanks/props on the interior floor plane, not on the roof or top of the enclosing walls. "
             "For ramp failures, do not convert the slanted ramp contact into a horizontal on_top_of stack. Keep the sliding object on the ramp surface along the path and fix start/middle/end frames with support/nonpenetration constraints. "
             "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
-            "For CODE_MISSING_ANIMATION_KEYFRAMES, unroll keyframe insertion so the script contains multiple concrete keyframe_insert call sites or multiple explicit helper calls. A single keyframe_insert inside one loop over a keyframe list is still treated as too few by the static completeness check. "
+            "For CODE_MISSING_ANIMATION_KEYFRAMES, unroll keyframe insertion or use listed ll3m animation primitives so the script contains multiple concrete animation operations. A single keyframe_insert inside one loop over a keyframe list is still treated as too few by the static completeness check. "
             "For Blender interpolation errors, replace IR aliases such as EASE_IN_OUT with valid Blender interpolation enum values like BEZIER or LINEAR, or remove custom interpolation edits entirely. "
             "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames, or parent/constraint the package to the gripper for that segment, so screenshots show continuous contact. "
             "Keep the gripper attached to the robotic arm at every sampled frame; moving the gripper as a detached block is a failure. "
@@ -680,7 +712,7 @@ Current script:
             "Keep the existing validated scene code as the base. Do not call clear_scene again, delete objects, or recreate the static geometry when adding only animation; append or minimally edit animation code around the existing root objects. "
             "Preserve helper imports such as `from blender import ll3m_utils as ll3m`; use `ll3m.configure_render(scene, engine='workbench')` for default render setup. "
             "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
-            "Write explicit keyframe_insert statements for at least the start and end pose of every animated subject. Do not hide all keyframes behind a single loop over a list; the pre-execution static check must see multiple actual keyframe call sites or multiple explicit helper calls. "
+            "Write explicit keyframe_insert statements or listed ll3m animation primitive calls for at least the start and end pose of every animated subject. Do not hide all keyframes behind a single loop over a list; the pre-execution static check must see multiple actual keyframe call sites or multiple explicit helper calls. "
             "For bridge, deck, platform, floor, table, and ramp contact windows, derive animation keyframes from actual world bounding boxes in the validated scene. Align the moving root's aggregate bbox bottom to the active support top at each support-contact frame, and keep start/end positions fully outside a bridge/deck footprint by subject half extent plus margin unless the IR says the object is on that support at those frames. "
             "If the static bridge has vertical sides and no ramp, do not animate a single straight segment from ground to deck that intersects the bridge volume. Add transition keyframes at the same outside x/y: first ground outside, then deck height outside, then horizontal entry over the deck. Use the reverse sequence for exit. "
             "Before adding car keyframes, verify bridge supports do not occupy the car's lane. If supports are on the same y centerline as the car path, move them to side/corner locations or treat them as decorative non-collision parts before animating the crossing. "
@@ -707,7 +739,7 @@ Relevant Blender 4.5.4 notes:
 Requirements:
 - Keep the validated static scene intact.
 - Add frame_start, frame_end, fps, and explicit keyframes for every animation event.
-- For each animated subject, write separate concrete statements for start, middle if present, and end keyframe insertion. Avoid a single `for keyframe in keyframes: obj.keyframe_insert(...)` loop as the only keyframe call site.
+- For each animated subject, write separate concrete statements for start, middle if present, and end keyframe insertion, or use listed `ll3m.animate_*` primitives. Avoid a single `for keyframe in keyframes: obj.keyframe_insert(...)` loop as the only keyframe call site.
 - If you set interpolation, use Blender enum values such as `LINEAR` or `BEZIER`; never use `EASE_IN_OUT`.
 - For appear/disappear events, keyframe actual visibility or near-zero scale, not emission only.
 - For contact/carry events, keep the interacting objects visibly connected at sampled frames.

@@ -37,6 +37,31 @@ def _rgba(color: Sequence[float] | None, alpha: float | None = None) -> tuple[fl
     return tuple(max(0.0, min(1.0, value)) for value in values)  # type: ignore[return-value]
 
 
+def _object_sequence(obj_or_objs: Any | Iterable[Any]) -> list[Any]:
+    if obj_or_objs is None:
+        return []
+    if isinstance(obj_or_objs, (str, bytes)) or hasattr(obj_or_objs, "bound_box"):
+        return [obj_or_objs]
+    try:
+        return [item for item in obj_or_objs if item is not None]
+    except TypeError:
+        return [obj_or_objs]
+
+
+def _iter_bbox_objects(obj_or_objs: Any | Iterable[Any], *, include_children: bool = True) -> list[Any]:
+    objects: list[Any] = []
+    pending = _object_sequence(obj_or_objs)
+    while pending:
+        obj = pending.pop(0)
+        if obj in objects:
+            continue
+        if getattr(obj, "bound_box", None) is not None:
+            objects.append(obj)
+        if include_children:
+            pending.extend(getattr(obj, "children", []) or [])
+    return objects
+
+
 def normalize_engine_name(engine: str | None) -> str:
     """Return a Blender render engine enum value, preferring Workbench by default."""
 
@@ -514,6 +539,398 @@ def add_uv_sphere(
         ll3m_part=ll3m_part,
         ll3m_role=ll3m_role,
     )
+
+
+def set_frame_range(scene: Any | None = None, start: int = 1, end: int = 120, fps: int | None = None) -> Any:
+    """Set the active animation frame range and optional fps."""
+
+    bpy = _bpy()
+    scene = scene or bpy.context.scene
+    scene.frame_start = int(start)
+    scene.frame_end = int(end)
+    if fps is not None:
+        scene.render.fps = int(fps)
+    return scene
+
+
+def world_bbox(obj_or_objs: Any | Iterable[Any], *, include_children: bool = True) -> dict[str, tuple[float, float, float] | float]:
+    """Return an aggregate world-space bounding box for one object or object group."""
+
+    from mathutils import Vector  # type: ignore[import-not-found]
+
+    points: list[Vector] = []
+    for obj in _iter_bbox_objects(obj_or_objs, include_children=include_children):
+        matrix = getattr(obj, "matrix_world", None)
+        for corner in getattr(obj, "bound_box", []) or []:
+            point = Vector(tuple(float(value) for value in corner[:3]))
+            points.append(matrix @ point if matrix is not None else point)
+    if not points:
+        loc = getattr(obj_or_objs, "location", (0.0, 0.0, 0.0))
+        x, y, z = _vector(loc)
+        return {
+            "min": (x, y, z),
+            "max": (x, y, z),
+            "center": (x, y, z),
+            "size": (0.0, 0.0, 0.0),
+            "top": z,
+            "bottom": z,
+        }
+    min_xyz = tuple(min(point[index] for point in points) for index in range(3))
+    max_xyz = tuple(max(point[index] for point in points) for index in range(3))
+    center = tuple((min_xyz[index] + max_xyz[index]) / 2.0 for index in range(3))
+    size = tuple(max_xyz[index] - min_xyz[index] for index in range(3))
+    return {"min": min_xyz, "max": max_xyz, "center": center, "size": size, "top": max_xyz[2], "bottom": min_xyz[2]}
+
+
+def bbox_center(obj_or_objs: Any | Iterable[Any], *, include_children: bool = True) -> tuple[float, float, float]:
+    return world_bbox(obj_or_objs, include_children=include_children)["center"]  # type: ignore[return-value]
+
+
+def bbox_size(obj_or_objs: Any | Iterable[Any], *, include_children: bool = True) -> tuple[float, float, float]:
+    return world_bbox(obj_or_objs, include_children=include_children)["size"]  # type: ignore[return-value]
+
+
+def bbox_top(obj_or_objs: Any | Iterable[Any], *, include_children: bool = True) -> float:
+    return float(world_bbox(obj_or_objs, include_children=include_children)["top"])
+
+
+def bbox_bottom(obj_or_objs: Any | Iterable[Any], *, include_children: bool = True) -> float:
+    return float(world_bbox(obj_or_objs, include_children=include_children)["bottom"])
+
+
+def move_bottom_to_z(obj: Any, z: float, *, margin: float = 0.001, include_children: bool = True) -> Any:
+    """Move an object root so its aggregate bbox bottom sits at ``z + margin``."""
+
+    delta = float(z) + float(margin) - bbox_bottom(obj, include_children=include_children)
+    obj.location.z += delta
+    return obj
+
+
+def align_bottom_to_top(subject: Any, support: Any | Iterable[Any], *, margin: float = 0.001, include_children: bool = True) -> Any:
+    """Place ``subject`` on top of ``support`` using actual world bboxes."""
+
+    return move_bottom_to_z(subject, bbox_top(support, include_children=include_children), margin=margin, include_children=include_children)
+
+
+def space_gripper_fingers_around_subject(
+    gripper: Any,
+    subject: Any,
+    *,
+    axis: str = "X",
+    fingers: Sequence[Any] | None = None,
+    gap: float = 0.02,
+    align_z: str | None = "center",
+) -> list[Any]:
+    """Move two gripper finger children outside a subject bbox to avoid embedding."""
+
+    axis_index = {"X": 0, "Y": 1, "Z": 2}[str(axis).upper()]
+    if fingers is None:
+        fingers = [
+            child
+            for child in getattr(gripper, "children", []) or []
+            if "finger" in str(getattr(child, "name", "")).lower() or str(child.get("ll3m_part", "")).lower() == "finger"
+        ]
+    selected = list(fingers)[:2]
+    if len(selected) < 2:
+        return selected
+    subject_size = bbox_size(subject)[axis_index]
+    for sign, finger in zip((-1.0, 1.0), selected):
+        if getattr(finger, "parent", None) is gripper and hasattr(finger, "matrix_parent_inverse"):
+            finger.matrix_parent_inverse.identity()
+        finger_size = bbox_size(finger, include_children=False)[axis_index]
+        finger.location[axis_index] = sign * (subject_size / 2.0 + finger_size / 2.0 + float(gap))
+        if align_z == "center":
+            subject_center_z = bbox_center(subject)[2]
+            finger_center_z = bbox_center(finger, include_children=False)[2]
+            finger.location.z += subject_center_z - finger_center_z
+        elif align_z == "top":
+            finger.location.z += bbox_top(subject) - bbox_top(finger, include_children=False)
+    return selected
+
+
+def _iter_action_fcurves(action: Any) -> Iterable[Any]:
+    for fcurve in getattr(action, "fcurves", []) or []:
+        yield fcurve
+    for layer in getattr(action, "layers", []) or []:
+        for strip in getattr(layer, "strips", []) or []:
+            channelbags = getattr(strip, "channelbags", []) or getattr(strip, "channel_bags", []) or []
+            for bag in channelbags:
+                for fcurve in getattr(bag, "fcurves", []) or []:
+                    yield fcurve
+
+
+def set_keyframe_interpolation(obj: Any, interpolation: str = "LINEAR", easing: str | None = None) -> Any:
+    """Set interpolation/easing on all keyframes in an object's action."""
+
+    action = getattr(getattr(obj, "animation_data", None), "action", None)
+    if action is None:
+        return obj
+    for fcurve in _iter_action_fcurves(action):
+        for key in getattr(fcurve, "keyframe_points", []) or []:
+            key.interpolation = str(interpolation).upper()
+            if easing is not None:
+                key.easing = str(easing).upper()
+    return obj
+
+
+def set_linear_interpolation(obj: Any) -> Any:
+    return set_keyframe_interpolation(obj, "LINEAR")
+
+
+def insert_location_keyframe(obj: Any, frame: int, location: Sequence[float], interpolation: str = "LINEAR") -> Any:
+    obj.location = _vector(location)
+    obj.keyframe_insert(data_path="location", frame=int(frame))
+    return set_keyframe_interpolation(obj, interpolation)
+
+
+def insert_rotation_keyframe(obj: Any, frame: int, rotation: Sequence[float], interpolation: str = "LINEAR") -> Any:
+    obj.rotation_euler = _vector(rotation)
+    obj.keyframe_insert(data_path="rotation_euler", frame=int(frame))
+    return set_keyframe_interpolation(obj, interpolation)
+
+
+def insert_scale_keyframe(obj: Any, frame: int, scale: Sequence[float], interpolation: str = "LINEAR") -> Any:
+    obj.scale = _vector(scale, default=1.0)
+    obj.keyframe_insert(data_path="scale", frame=int(frame))
+    return set_keyframe_interpolation(obj, interpolation)
+
+
+def animate_translate(obj: Any, keyframes: Sequence[Mapping[str, Any] | Sequence[Any]], interpolation: str = "LINEAR") -> Any:
+    """Animate rigid translation from ``[(frame, location), ...]`` or dict keyframes."""
+
+    for keyframe in keyframes:
+        if isinstance(keyframe, Mapping):
+            frame = int(keyframe["frame"])
+            location = keyframe["location"]
+        else:
+            frame = int(keyframe[0])
+            location = keyframe[1]
+        insert_location_keyframe(obj, frame, location, interpolation)
+    return obj
+
+
+def animate_follow_path(obj: Any, points: Sequence[Sequence[float]], start_frame: int, end_frame: int, interpolation: str = "LINEAR") -> Any:
+    """Animate translation along evenly timed path points."""
+
+    if len(points) < 2:
+        raise ValueError("animate_follow_path requires at least two points")
+    span = int(end_frame) - int(start_frame)
+    keyframes = []
+    for index, point in enumerate(points):
+        frame = int(round(int(start_frame) + span * index / (len(points) - 1)))
+        keyframes.append((frame, point))
+    return animate_translate(obj, keyframes, interpolation)
+
+
+def _location_on_support(subject: Any, support: Any, xy: Sequence[float], *, margin: float = 0.001) -> tuple[float, float, float]:
+    bottom = bbox_bottom(subject)
+    z = getattr(subject.location, "z", _vector(subject.location)[2]) + bbox_top(support) + float(margin) - bottom
+    x, y = _vector(xy, length=2)
+    return (x, y, z)
+
+
+def animate_support_slide(
+    subject: Any,
+    support: Any,
+    start_xy: Sequence[float],
+    end_xy: Sequence[float],
+    start_frame: int,
+    end_frame: int,
+    *,
+    margin: float = 0.001,
+    interpolation: str = "LINEAR",
+) -> Any:
+    """Slide a rigid object across a horizontal support while preserving contact."""
+
+    start = _location_on_support(subject, support, start_xy, margin=margin)
+    end = _location_on_support(subject, support, end_xy, margin=margin)
+    return animate_translate(subject, [(start_frame, start), (end_frame, end)], interpolation)
+
+
+def animate_support_sequence(
+    subject: Any,
+    supports_with_windows: Sequence[Mapping[str, Any] | Sequence[Any]],
+    *,
+    margin: float = 0.001,
+    interpolation: str = "LINEAR",
+) -> Any:
+    """Animate support-to-support motion from windows containing support, frame, and xy."""
+
+    keyframes = []
+    for item in supports_with_windows:
+        if isinstance(item, Mapping):
+            support = item["support"]
+            frame = int(item["frame"])
+            xy = item["xy"]
+        else:
+            support, frame, xy = item[0], int(item[1]), item[2]
+        keyframes.append((frame, _location_on_support(subject, support, xy, margin=margin)))
+    return animate_translate(subject, keyframes, interpolation)
+
+
+def animate_attached_carry(
+    driver: Any,
+    carried: Any,
+    frame_locations: Sequence[Mapping[str, Any] | Sequence[Any]],
+    offset: Sequence[float] = (0.0, 0.0, -0.5),
+    *,
+    interpolation: str = "LINEAR",
+) -> tuple[Any, Any]:
+    """Animate a driver and a carried object with a fixed world-space offset."""
+
+    ox, oy, oz = _vector(offset)
+    driver_keys = []
+    carried_keys = []
+    for item in frame_locations:
+        if isinstance(item, Mapping):
+            frame = int(item["frame"])
+            location = _vector(item["location"])
+        else:
+            frame = int(item[0])
+            location = _vector(item[1])
+        driver_keys.append((frame, location))
+        carried_keys.append((frame, (location[0] + ox, location[1] + oy, location[2] + oz)))
+    animate_translate(driver, driver_keys, interpolation)
+    animate_translate(carried, carried_keys, interpolation)
+    return driver, carried
+
+
+def animate_pick_place(
+    gripper: Any,
+    carried: Any,
+    source_support: Any,
+    dest_support: Any,
+    *,
+    source_xy: Sequence[float] | None = None,
+    dest_xy: Sequence[float] | None = None,
+    frames: Sequence[int] = (1, 25, 45, 80, 100, 120),
+    carry_height: float = 1.0,
+    clearance: float = 0.05,
+    gripper_offset: Sequence[float] | None = None,
+    margin: float = 0.001,
+    interpolation: str = "LINEAR",
+) -> tuple[Any, Any]:
+    """Kinematic pick, carry, and place motion that avoids support penetration."""
+
+    if len(frames) != 6:
+        raise ValueError("animate_pick_place frames must contain six frames: approach, grasp, lift, carry, lower, release")
+    source_center = bbox_center(source_support)
+    dest_center = bbox_center(dest_support)
+    sx, sy = _vector(source_xy or source_center[:2], length=2)
+    dx, dy = _vector(dest_xy or dest_center[:2], length=2)
+    carried_height = bbox_size(carried)[2]
+    source_z = bbox_top(source_support) + carried_height / 2.0 + float(margin)
+    dest_z = bbox_top(dest_support) + carried_height / 2.0 + float(margin)
+    lift_z = max(source_z, dest_z) + float(carry_height)
+    if gripper_offset is None:
+        gripper_offset = (0.0, 0.0, carried_height / 2.0 + float(clearance))
+    gx, gy, gz = _vector(gripper_offset)
+    carried_keys = [
+        (frames[0], (sx, sy, source_z)),
+        (frames[1], (sx, sy, source_z)),
+        (frames[2], (sx, sy, lift_z)),
+        (frames[3], (dx, dy, lift_z)),
+        (frames[4], (dx, dy, dest_z)),
+        (frames[5], (dx, dy, dest_z)),
+    ]
+    gripper_keys = [(frame, (loc[0] + gx, loc[1] + gy, loc[2] + gz)) for frame, loc in carried_keys]
+    animate_translate(carried, carried_keys, interpolation)
+    animate_translate(gripper, gripper_keys, interpolation)
+    return gripper, carried
+
+
+def animate_push(
+    pusher: Any,
+    pushed: Any,
+    support: Any,
+    start_xy: Sequence[float],
+    end_xy: Sequence[float],
+    start_frame: int,
+    end_frame: int,
+    *,
+    pusher_offset: Sequence[float] = (-0.8, 0.0, 0.0),
+    margin: float = 0.001,
+    interpolation: str = "LINEAR",
+) -> tuple[Any, Any]:
+    """Animate one rigid object pushing another across a support."""
+
+    pushed_start = _location_on_support(pushed, support, start_xy, margin=margin)
+    pushed_end = _location_on_support(pushed, support, end_xy, margin=margin)
+    ox, oy, oz = _vector(pusher_offset)
+    pusher_start = (pushed_start[0] + ox, pushed_start[1] + oy, pushed_start[2] + oz)
+    pusher_end = (pushed_end[0] + ox, pushed_end[1] + oy, pushed_end[2] + oz)
+    animate_translate(pushed, [(start_frame, pushed_start), (end_frame, pushed_end)], interpolation)
+    animate_translate(pusher, [(start_frame, pusher_start), (end_frame, pusher_end)], interpolation)
+    return pusher, pushed
+
+
+def animate_drop_to_support(
+    subject: Any,
+    support: Any,
+    start_location: Sequence[float],
+    start_frame: int,
+    end_frame: int,
+    *,
+    end_xy: Sequence[float] | None = None,
+    margin: float = 0.001,
+    interpolation: str = "QUAD",
+) -> Any:
+    """Kinematic drop ending with the subject resting on a support."""
+
+    sx, sy, _ = _vector(start_location)
+    ex, ey = _vector(end_xy or (sx, sy), length=2)
+    end_location = _location_on_support(subject, support, (ex, ey), margin=margin)
+    return animate_translate(subject, [(start_frame, start_location), (end_frame, end_location)], interpolation)
+
+
+def animate_rotate_about_axis(
+    obj: Any,
+    axis: str | Sequence[float],
+    angle: float,
+    start_frame: int,
+    end_frame: int,
+    *,
+    start_rotation: Sequence[float] | None = None,
+    interpolation: str = "LINEAR",
+) -> Any:
+    """Animate Euler rotation around a principal axis or vector."""
+
+    start = _vector(start_rotation or getattr(obj, "rotation_euler", (0.0, 0.0, 0.0)))
+    end = list(start)
+    if isinstance(axis, str):
+        index = {"X": 0, "Y": 1, "Z": 2}[axis.upper()]
+        end[index] += float(angle)
+    else:
+        ax = _vector(axis)
+        dominant = max(range(3), key=lambda idx: abs(ax[idx]))
+        end[dominant] += math.copysign(float(angle), ax[dominant] or 1.0)
+    insert_rotation_keyframe(obj, start_frame, start, interpolation)
+    insert_rotation_keyframe(obj, end_frame, end, interpolation)
+    return obj
+
+
+def animate_hinge(
+    obj: Any,
+    hinge_origin: Sequence[float],
+    axis: str | Sequence[float],
+    angle: float,
+    start_frame: int,
+    end_frame: int,
+    *,
+    interpolation: str = "LINEAR",
+) -> Any:
+    """Animate a hinged rigid object. Set the origin to ``hinge_origin`` first."""
+
+    bpy = _bpy()
+    cursor_location = tuple(bpy.context.scene.cursor.location)
+    bpy.context.scene.cursor.location = _vector(hinge_origin)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    try:
+        bpy.ops.object.origin_set(type="ORIGIN_CURSOR", center="MEDIAN")
+    finally:
+        bpy.context.scene.cursor.location = cursor_location
+    return animate_rotate_about_axis(obj, axis, angle, start_frame, end_frame, interpolation=interpolation)
 
 
 def look_at(obj: Any, target: Sequence[float] | Any) -> Any:

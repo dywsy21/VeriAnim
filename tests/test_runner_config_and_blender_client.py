@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import ast
 import json
 import os
 import queue
@@ -14,6 +15,7 @@ from blender import ll3m_utils
 from harness.animation_repair import repair_animation_ir
 from harness.blender_runtime import BlenderRunResult, BlenderRuntime
 from harness.config import AgentModelConfig, HarnessConfig
+from harness.session import _count_effective_keyframe_calls
 from harness.ir import (
     AnimationAction,
     AnimationEventSpec,
@@ -120,6 +122,33 @@ class BlenderUtilsTest(unittest.TestCase):
         self.assertEqual(ll3m_utils.normalize_engine_name("WORKBENCH"), "BLENDER_WORKBENCH")
         self.assertEqual(ll3m_utils.normalize_engine_name("eevee"), "BLENDER_EEVEE_NEXT")
         self.assertEqual(ll3m_utils.normalize_engine_name("BLENDER_EEVEE"), "BLENDER_EEVEE")
+
+    def test_ll3m_utils_exposes_rigid_animation_primitives(self) -> None:
+        for name in (
+            "world_bbox",
+            "align_bottom_to_top",
+            "space_gripper_fingers_around_subject",
+            "insert_location_keyframe",
+            "animate_translate",
+            "animate_support_slide",
+            "animate_support_sequence",
+            "animate_attached_carry",
+            "animate_pick_place",
+            "animate_push",
+            "animate_drop_to_support",
+            "animate_rotate_about_axis",
+            "animate_hinge",
+        ):
+            self.assertTrue(callable(getattr(ll3m_utils, name)))
+
+    def test_static_keyframe_counter_accepts_ll3m_animation_primitives(self) -> None:
+        tree = ast.parse(
+            """
+from blender import ll3m_utils as ll3m
+ll3m.animate_pick_place(gripper, cube, table, tray)
+"""
+        )
+        self.assertGreaterEqual(len(_count_effective_keyframe_calls(tree)), 2)
 
     def test_render_spec_defaults_to_workbench(self) -> None:
         self.assertEqual(RenderSpec().engine, RenderEngine.WORKBENCH)
