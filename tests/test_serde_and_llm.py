@@ -415,6 +415,25 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         self.assertEqual(view["target_object_ids"], ["ball"])
         self.assertEqual(view["relation_ids"], ["ball_final_near_box"])
 
+    def test_planner_sanitizer_drops_bbox_contact_for_non_contact_relation(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["relations"] = [
+            {
+                "id": "ball_not_intersecting_box",
+                "relation_type": "not_intersecting",
+                "subject_id": "ball",
+                "object_id": "box",
+                "verification_method": "bbox_contact",
+            }
+        ]
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+        report = ir.validate()
+
+        self.assertEqual(ir.scene.relations[0].verification_method.value, "auto")
+        self.assertTrue(report.passed, [issue.code for issue in report.issues])
+
     def test_blender_code_sanitizer_rewrites_invalid_keyframe_interpolation_enum(self) -> None:
         code = """
 for fc in obj.animation_data.action.fcurves:

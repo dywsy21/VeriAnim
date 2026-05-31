@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Any
+import tokenize
+from typing import Any, Callable
 
 from .config import HarnessConfig
 from .ir import (
@@ -1582,6 +1584,12 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         }
         valid_methods = {item.value for item in RelationVerificationMethod}
         relation["verification_method"] = method_aliases.get(method, method if method in valid_methods else "auto")
+        if relation["verification_method"] == "bbox_contact" and relation["relation_type"] not in {
+            "on_top_of",
+            "touching",
+            "attached_to",
+        }:
+            relation["verification_method"] = "auto"
         priority = str(relation.get("visual_priority", "required")).strip().lower().replace("-", "_").replace(" ", "_")
         relation["visual_priority"] = importance_aliases.get(priority, priority if priority in valid_importance else "required")
     _normalize_view_type_fields(scene)
@@ -2642,15 +2650,110 @@ def _sanitize_generated_blender_code(code: str) -> str:
     }
     for bad, good in replacements.items():
         code = code.replace(bad, good)
+    code = _patch_ll3m_utils_import_aliases(code)
+    code = _patch_ll3m_helper_keyword_compatibility(code)
+    code = _patch_ll3m_look_at_object_targets(code)
     code = _patch_cone_diameter_keywords(code)
     code = _patch_fcurve_interpolation_assignments(code)
     code = _patch_common_blender_api_hallucinations(code)
+    code = _patch_mathutils_vector_hallucinations(code)
+    code = _patch_wave_modifier_falloff(code)
     code = _patch_mode_set_context(code)
     code = _patch_context_sensitive_ops(code)
     code = _patch_direct_action_fcurve_loops(code)
     code = _patch_common_ir_id_drift(code)
     code = _append_active_camera_fallback(code)
     return code
+
+
+def _patch_ll3m_utils_import_aliases(code: str) -> str:
+    code = re.sub(
+        r"^([ \t]*)from blender import llm_utils(\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?([ \t]*(?:#.*)?)$",
+        r"\1from blender import ll3m_utils\2\3",
+        code,
+        flags=re.MULTILINE,
+    )
+    code = re.sub(
+        r"^([ \t]*)import blender\.llm_utils(\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?([ \t]*(?:#.*)?)$",
+        r"\1import blender.ll3m_utils\2\3",
+        code,
+        flags=re.MULTILINE,
+    )
+    return code
+
+
+def _patch_ll3m_helper_keyword_compatibility(code: str) -> str:
+    """Route common generated helper keyword drift through local wrappers."""
+
+    code = _regex_sub_unprotected(
+        r"\b((?:ll3m|llm)\.make_material)\(\s*spec_dict\s*=",
+        r"\1(",
+        code,
+    )
+    needs_wrapper = bool(re.search(r"\b(?:ll3m|llm)\.add_(?:cube|plane)\(", code)) and bool(
+        re.search(r"\b(?:scale|rotation)\s*=", code)
+    )
+    if not needs_wrapper:
+        return code
+    patched = _regex_sub_unprotected(r"\b(?:ll3m|llm)\.add_cube\(", "ll3m_safe_add_cube(", code)
+    patched = _regex_sub_unprotected(r"\b(?:ll3m|llm)\.add_plane\(", "ll3m_safe_add_plane(", patched)
+    if patched == code or "def ll3m_safe_add_cube(" in patched:
+        return patched
+    helper = '''
+def _ll3m_safe_utils():
+    utils = globals().get("ll3m") or globals().get("llm")
+    if utils is None:
+        raise RuntimeError("LL3M helper alias ll3m/llm is not available")
+    return utils
+
+
+def ll3m_safe_add_cube(*args, scale=None, **kwargs):
+    obj = _ll3m_safe_utils().add_cube(*args, **kwargs)
+    if scale is not None:
+        obj.scale = scale
+    return obj
+
+
+def ll3m_safe_add_plane(*args, scale=None, rotation=None, **kwargs):
+    obj = _ll3m_safe_utils().add_plane(*args, **kwargs)
+    if rotation is not None:
+        obj.rotation_euler = rotation
+    if scale is not None:
+        obj.scale = scale
+    return obj
+'''.lstrip()
+    return helper + "\n" + patched
+
+
+def _patch_ll3m_look_at_object_targets(code: str) -> str:
+    if not re.search(r"\b(?:ll3m|llm)\.look_at\(", code):
+        return code
+    patched = _regex_sub_unprotected(r"\b(?:ll3m|llm)\.look_at\(", "ll3m_safe_look_at(", code)
+    if patched == code:
+        return code
+    helpers: list[str] = []
+    if "def _ll3m_safe_utils(" not in patched:
+        helpers.append(
+            '''
+def _ll3m_safe_utils():
+    utils = globals().get("ll3m") or globals().get("llm")
+    if utils is None:
+        raise RuntimeError("LL3M helper alias ll3m/llm is not available")
+    return utils
+'''.lstrip()
+        )
+    if "def ll3m_safe_look_at(" not in patched:
+        helpers.append(
+            '''
+def ll3m_safe_look_at(obj, target):
+    if hasattr(target, "location"):
+        target = target.location
+    return _ll3m_safe_utils().look_at(obj, target)
+'''.lstrip()
+        )
+    if helpers:
+        patched = "\n".join(helpers) + "\n" + patched
+    return patched
 
 
 def _patch_cone_diameter_keywords(code: str) -> str:
@@ -2718,6 +2821,36 @@ def ll3m_remove_datablock(data_block):
         flags=re.MULTILINE,
     )
     return code
+
+
+def _patch_mathutils_vector_hallucinations(code: str) -> str:
+    code = _regex_sub_unprotected(
+        r"(\b[A-Za-z_][A-Za-z0-9_.]*\.matrix_world\s*@\s*)(?:mathutils\.)?Vector\(([A-Za-z_][A-Za-z0-9_]*)\)(\s+for\s+\2\s+in\s+[^\]\n]+\.data\.vertices)",
+        r"\1\2.co\3",
+        code,
+    )
+    code = _regex_sub_unprotected(r"\bmathutils\.Vector\(\s*\)", "mathutils.Vector((0.0, 0.0, 0.0))", code)
+    code = _regex_sub_unprotected(r"(?<!\.)\bVector\(\s*\)", "Vector((0.0, 0.0, 0.0))", code)
+    return code
+
+
+def _patch_wave_modifier_falloff(code: str) -> str:
+    pattern = re.compile(
+        r"^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\.falloff\s*=\s*([^\n#]*)(.*)$",
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    lines: list[str] = []
+    for line in code.splitlines(keepends=True):
+        line_body = line[:-1] if line.endswith("\n") else line
+        newline = "\n" if line.endswith("\n") else ""
+        match = pattern.match(line_body)
+        if match and "wave" in match.group(2).lower():
+            lines.append(
+                f"{match.group(1)}# LL3M sanitizer: removed unsupported WaveModifier falloff assignment{match.group(4)}{newline}"
+            )
+        else:
+            lines.append(line)
+    return "".join(lines)
 
 
 def _patch_mode_set_context(code: str) -> str:
@@ -2854,19 +2987,128 @@ def ll3m_iter_action_fcurves(action):
                 for fcurve in getattr(bag, "fcurves", []):
                     yield fcurve
 '''.strip()
-    if ".animation_data.action.fcurves" in code and "def ll3m_iter_action_fcurves(" not in code:
-        code = helper + "\n\n" + code
-    code = re.sub(
-        r"for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.animation_data\.action\.fcurves\s*:",
-        r"for \1 in ll3m_iter_action_fcurves(\2.animation_data.action):",
-        code,
-    )
-    code = re.sub(
-        r"for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.action\.fcurves\s*:",
-        r"for \1 in ll3m_iter_action_fcurves(\2.action):",
-        code,
-    )
-    return code
+    already_has_helper = "def ll3m_iter_action_fcurves(" in code
+    lines = code.splitlines(keepends=True)
+    helper_body_lines = _fcurve_iterator_body_line_indexes(lines)
+    patched_lines: list[str] = []
+    changed = False
+    patterns: list[tuple[re.Pattern[str], str]] = [
+        (
+            re.compile(r"^([ \t]*)for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.animation_data\.action\.fcurves\s*:(.*)$"),
+            r"\1for \2 in ll3m_iter_action_fcurves(\3.animation_data.action):\4",
+        ),
+        (
+            re.compile(r"^([ \t]*)for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.action\.fcurves\s*:(.*)$"),
+            r"\1for \2 in ll3m_iter_action_fcurves(\3.action):\4",
+        ),
+        (
+            re.compile(r"^([ \t]*)for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.fcurves\s*:(.*)$"),
+            r"\1for \2 in ll3m_iter_action_fcurves(\3):\4",
+        ),
+    ]
+    for line_index, line in enumerate(lines):
+        if line_index in helper_body_lines:
+            patched_lines.append(line)
+            continue
+        line_body = line[:-1] if line.endswith("\n") else line
+        newline = "\n" if line.endswith("\n") else ""
+        patched_body = line_body
+        for pattern, replacement in patterns:
+            patched_body = pattern.sub(replacement, patched_body)
+        if patched_body != line_body:
+            changed = True
+        patched_lines.append(patched_body + newline)
+    patched = "".join(patched_lines)
+    if changed and not already_has_helper:
+        patched = helper + "\n\n" + patched
+    return patched
+
+
+def _fcurve_iterator_body_line_indexes(lines: list[str]) -> set[int]:
+    indexes: set[int] = set()
+    def_pattern = re.compile(r"^([ \t]*)def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+    for line in lines:
+        match = def_pattern.match(line)
+        if not match:
+            continue
+        function_name = match.group(2)
+        lowered = function_name.lower()
+        if "iter" in lowered and "fcurve" in lowered:
+            indexes.update(_function_body_line_indexes(lines, function_name))
+    return indexes
+
+
+def _function_body_line_indexes(lines: list[str], function_name: str) -> set[int]:
+    indexes: set[int] = set()
+    def_pattern = re.compile(rf"^([ \t]*)def\s+{re.escape(function_name)}\s*\(")
+    start_index: int | None = None
+    def_indent = 0
+    for index, line in enumerate(lines):
+        match = def_pattern.match(line)
+        if match:
+            start_index = index
+            def_indent = len(match.group(1).replace("\t", "    "))
+            indexes.add(index)
+            continue
+        if start_index is None or index <= start_index:
+            continue
+        if not line.strip():
+            indexes.add(index)
+            continue
+        indent = len(line[: len(line) - len(line.lstrip(" \t"))].replace("\t", "    "))
+        if indent <= def_indent:
+            break
+        indexes.add(index)
+    return indexes
+
+
+def _regex_sub_unprotected(
+    pattern: str,
+    repl: str | Callable[[re.Match[str]], str],
+    code: str,
+    *,
+    flags: int = 0,
+) -> str:
+    protected_spans = _string_and_comment_spans(code)
+
+    def replace(match: re.Match[str]) -> str:
+        if _overlaps_any(match.start(), match.end(), protected_spans):
+            return match.group(0)
+        if callable(repl):
+            return repl(match)
+        return match.expand(repl)
+
+    return re.sub(pattern, replace, code, flags=flags)
+
+
+def _string_and_comment_spans(code: str) -> list[tuple[int, int]]:
+    line_offsets: list[int] = []
+    offset = 0
+    for line in code.splitlines(keepends=True):
+        line_offsets.append(offset)
+        offset += len(line)
+    if not line_offsets:
+        line_offsets.append(0)
+    spans: list[tuple[int, int]] = []
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(code).readline)
+        for token in tokens:
+            if token.type not in {tokenize.STRING, tokenize.COMMENT}:
+                continue
+            start_line, start_col = token.start
+            end_line, end_col = token.end
+            if start_line - 1 >= len(line_offsets) or end_line - 1 >= len(line_offsets):
+                continue
+            start = line_offsets[start_line - 1] + start_col
+            end = line_offsets[end_line - 1] + end_col
+            spans.append((start, end))
+    except tokenize.TokenError:
+        return []
+    return spans
+
+
+def _overlaps_any(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start < span_end and end > span_start for span_start, span_end in spans)
 
 
 def _report_from_model(data: dict[str, Any], mode: VerificationMode) -> ValidationReport:

@@ -122,7 +122,7 @@ def repair_animation_ir(
             continue
         subject_id = event.subject_ids[0]
         constraints = _event_constraints(repaired, event, subject_id)
-        support_constraint = _event_support_constraint(constraints, repaired)
+        support_constraint = _event_support_constraint(constraints, repaired, event)
         if support_constraint is None:
             skipped.append(f"{event.id}: no deck/platform support constraint.")
             continue
@@ -179,6 +179,7 @@ def repair_animation_ir(
             "Deterministically repaired to cover only deck-overlap frames.",
         )
         _normalize_nonpenetration_windows(constraints, plan)
+        _normalize_terminal_support_windows(constraints, plan)
         _ensure_sampled_frames(repaired, plan)
         plans.append(plan)
 
@@ -220,6 +221,24 @@ def _ll3m_repair_add_match(matches, obj):
         if child not in matches:
             matches.append(child)
 
+def _ll3m_repair_add_parent_roots(matches, marker):
+    for obj in list(matches):
+        parent = getattr(obj, "parent", None)
+        while parent is not None:
+            matching_children = [
+                child
+                for child in getattr(parent, "children", [])
+                if child in matches
+                or str(child.get("ll3m_id", "")) == marker
+                or child.name.startswith(marker)
+            ]
+            if len(matching_children) >= 2 or parent.name.startswith(marker) or "root" in parent.name.lower():
+                if parent not in matches:
+                    matches.insert(0, parent)
+                _ll3m_repair_add_match(matches, parent)
+                break
+            parent = getattr(parent, "parent", None)
+
 def _ll3m_repair_find_objects(ll3m_id):
     marker = str(ll3m_id)
     matches = []
@@ -233,6 +252,7 @@ def _ll3m_repair_find_objects(ll3m_id):
     for obj in _ll3m_repair_bpy.data.objects:
         if obj not in matches and obj.name.startswith(marker):
             _ll3m_repair_add_match(matches, obj)
+    _ll3m_repair_add_parent_roots(matches, marker)
     return matches
 
 def _ll3m_repair_iter_action_fcurves(action):
@@ -281,7 +301,7 @@ def _ll3m_repair_normalize_child_offsets(root, objects, reference_location):
     threshold = max(root_extent * 2.0, 1.0)
     if center.length <= max(root_extent * 0.75, 0.25):
         return
-    if (center - reference).length > threshold:
+    if getattr(root, "type", "") != "EMPTY" and (center - reference).length > threshold:
         return
     try:
         basis = root.matrix_world.to_3x3().inverted()
@@ -290,6 +310,51 @@ def _ll3m_repair_normalize_child_offsets(root, objects, reference_location):
     for child in direct_children:
         offset = child.location - center
         child.location = basis @ offset if basis is not None else offset
+
+def _ll3m_repair_select_anchor(ll3m_id, objects):
+    marker = str(ll3m_id)
+    exact = _ll3m_repair_bpy.data.objects.get(marker)
+    if exact in objects:
+        return exact
+    candidates = [obj for obj in objects if str(obj.get("ll3m_id", "")) == marker]
+    named_roots = [
+        obj
+        for obj in objects
+        if (obj.name == marker or "root" in obj.name.lower())
+        and any(child in objects for child in _ll3m_repair_descendants(obj))
+    ]
+    if named_roots:
+        named_roots.sort(key=lambda obj: (0 if obj.name == marker else 1, 0 if "root" in obj.name.lower() else 1, obj.name))
+        return named_roots[0]
+    parent_roots = [obj for obj in objects if getattr(obj, "parent", None) not in objects]
+    with_children = [
+        obj
+        for obj in parent_roots
+        if any(child in objects for child in _ll3m_repair_descendants(obj))
+    ]
+    if with_children:
+        return with_children[0]
+    empty_roots = [obj for obj in parent_roots if getattr(obj, "type", "") == "EMPTY"]
+    if empty_roots:
+        return empty_roots[0]
+    return (parent_roots or candidates or objects or [None])[0]
+
+def _ll3m_repair_uses_flat_group(anchor, objects):
+    if anchor is None:
+        return False
+    if any(child in objects for child in _ll3m_repair_descendants(anchor)):
+        return False
+    parent_roots = [obj for obj in objects if getattr(obj, "parent", None) not in objects]
+    return len(parent_roots) > 1
+
+def _ll3m_repair_apply_flat_group_keyframes(anchor, objects, keyframes):
+    anchor_location = _ll3m_repair_Vector(anchor.location)
+    offsets = [(obj, _ll3m_repair_Vector(obj.location) - anchor_location) for obj in objects]
+    for obj, offset in offsets:
+        for keyframe in keyframes:
+            location = _ll3m_repair_Vector(tuple(float(value) for value in keyframe.get("location", [0.0, 0.0, 0.0]))) + offset
+            _ll3m_repair_insert_location(obj, list(location), keyframe.get("frame", 1))
+        _ll3m_repair_set_linear_location(obj)
 
 def _ll3m_repair_world_bbox(objects):
     _ll3m_repair_bpy.context.view_layer.update()
@@ -325,12 +390,26 @@ def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
         return keyframes
     root_to_bottom = _ll3m_repair_root_to_bottom(root, objects)
     support_z = support_top + root_to_bottom + 0.001
+    terminal_z = None
+    for terminal_id in ("ground", "floor", "terrain"):
+        terminal_top = _ll3m_repair_support_top(terminal_id)
+        if terminal_top is not None:
+            terminal_z = terminal_top + root_to_bottom + 0.001
+            break
     support_start = int(plan.get("support_start_frame", 0))
     support_end = int(plan.get("support_end_frame", 0))
     for keyframe in keyframes:
         frame = int(keyframe.get("frame", 0))
         location = list(keyframe.get("location", [0.0, 0.0, 0.0]))
-        if support_start <= frame <= support_end:
+        label = str(keyframe.get("label", "")).lower()
+        if label == "ground outside support footprint" and terminal_z is not None:
+            location[2] = terminal_z
+            keyframe["location"] = location
+        elif (
+            support_start <= frame <= support_end
+            or "lift outside support footprint" in label
+            or "support height" in label
+        ):
             location[2] = support_z
             keyframe["location"] = location
     return keyframes
@@ -420,23 +499,27 @@ def _blender_repair_event_block(plan_index: int, plan: RepairedEventPlan) -> str
     return f"""
 _ll3m_repair_plan = _LL3M_ANIMATION_REPAIR_PLAN["plans"][{plan_index}]
 _ll3m_repair_objects = _ll3m_repair_find_objects({subject_literal})
-_ll3m_repair_roots = [obj for obj in _ll3m_repair_objects if str(obj.get("ll3m_id", "")) == {subject_literal}]
-_ll3m_repair_obj = (_ll3m_repair_roots or _ll3m_repair_objects or [None])[0]
+_ll3m_repair_obj = _ll3m_repair_select_anchor({subject_literal}, _ll3m_repair_objects)
 if _ll3m_repair_obj is not None:
+    _ll3m_repair_obj["ll3m_id"] = {subject_literal}
     for _ll3m_repair_clear_obj in _ll3m_repair_objects:
         _ll3m_repair_clear_location_animation(_ll3m_repair_clear_obj)
-    _ll3m_repair_normalize_child_offsets(
-        _ll3m_repair_obj,
-        _ll3m_repair_objects,
-        ({plan.keyframes[0].location[0]!r}, {plan.keyframes[0].location[1]!r}, {plan.keyframes[0].location[2]!r}),
-    )
-    for _ll3m_repair_keyframe in _ll3m_repair_recalibrate_keyframes(_ll3m_repair_plan, _ll3m_repair_obj, _ll3m_repair_objects):
-        _ll3m_repair_insert_location(
+    if _ll3m_repair_uses_flat_group(_ll3m_repair_obj, _ll3m_repair_objects):
+        _ll3m_repair_keyframes = _ll3m_repair_recalibrate_keyframes(_ll3m_repair_plan, _ll3m_repair_obj, _ll3m_repair_objects)
+        _ll3m_repair_apply_flat_group_keyframes(_ll3m_repair_obj, _ll3m_repair_objects, _ll3m_repair_keyframes)
+    else:
+        _ll3m_repair_normalize_child_offsets(
             _ll3m_repair_obj,
-            _ll3m_repair_keyframe.get("location", [0.0, 0.0, 0.0]),
-            _ll3m_repair_keyframe.get("frame", 1),
+            _ll3m_repair_objects,
+            ({plan.keyframes[0].location[0]!r}, {plan.keyframes[0].location[1]!r}, {plan.keyframes[0].location[2]!r}),
         )
-    _ll3m_repair_set_linear_location(_ll3m_repair_obj)
+        for _ll3m_repair_keyframe in _ll3m_repair_recalibrate_keyframes(_ll3m_repair_plan, _ll3m_repair_obj, _ll3m_repair_objects):
+            _ll3m_repair_insert_location(
+                _ll3m_repair_obj,
+                _ll3m_repair_keyframe.get("location", [0.0, 0.0, 0.0]),
+                _ll3m_repair_keyframe.get("frame", 1),
+            )
+        _ll3m_repair_set_linear_location(_ll3m_repair_obj)
     _ll3m_repair_bpy.context.view_layer.update()
 """.strip()
 
@@ -482,22 +565,66 @@ def _is_vec3(value: Any) -> bool:
     return isinstance(value, (list, tuple)) and len(value) == 3 and all(isinstance(v, (int, float)) for v in value)
 
 
-def _event_support_constraint(constraints: list[Any], ir: GenerationIR) -> Any | None:
+def _event_support_constraint(constraints: list[Any], ir: GenerationIR, event: Any) -> Any | None:
     objects_by_id = {obj.id: obj for obj in ir.scene.objects}
+    scored: list[tuple[int, Any]] = []
     for constraint in constraints:
         if constraint.constraint_type != ContactConstraintType.SUPPORT:
             continue
         support = objects_by_id.get(constraint.object_id)
-        text = " ".join(
-            [
-                str(constraint.object_id),
-                str(getattr(support, "label", "") or ""),
-                str(getattr(support, "description", "") or ""),
-            ]
-        ).lower()
-        if any(token in text for token in SUPPORT_TOKENS):
-            return constraint
-    return None
+        score = _support_constraint_score(constraint, support, event)
+        if score > 0:
+            scored.append((score, constraint))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return scored[0][1]
+
+
+def _support_constraint_score(constraint: Any, support: Any, event: Any) -> int:
+    object_id = str(getattr(constraint, "object_id", "") or "").lower()
+    label = str(getattr(support, "label", "") or "").lower()
+    category = str(getattr(support, "category", "") or "").lower()
+    role = str(getattr(support, "role", "") or "").lower()
+    support_description = str(getattr(support, "description", "") or "").lower()
+    constraint_text = " ".join(
+        [
+            str(getattr(constraint, "id", "") or ""),
+            str(getattr(constraint, "description", "") or ""),
+        ]
+    ).lower()
+
+    score = 0
+    if any(token in object_id for token in SUPPORT_TOKENS):
+        score += 100
+    if any(token in label for token in SUPPORT_TOKENS):
+        score += 80
+    if any(token in category for token in SUPPORT_TOKENS):
+        score += 60
+    if any(token in constraint_text for token in SUPPORT_TOKENS):
+        score += 50
+    if any(token in support_description for token in SUPPORT_TOKENS):
+        score += 15
+    if "support" in role:
+        score += 5
+
+    ground_like_text = " ".join([object_id, label, category])
+    if any(token in ground_like_text for token in ("ground", "floor", "terrain")):
+        score -= 80
+
+    event_start = int(getattr(event, "start_frame", 1))
+    event_end = int(getattr(event, "end_frame", event_start))
+    event_mid = int(round((event_start + event_end) * 0.5))
+    constraint_start = int(getattr(constraint, "start_frame", event_start))
+    constraint_end = int(getattr(constraint, "end_frame", event_end))
+    if constraint_start <= event_mid <= constraint_end:
+        score += 40
+    elif constraint_start <= event_end and constraint_end >= event_start:
+        score += 10
+    if constraint_start == constraint_end and constraint_start in {event_start, event_end}:
+        score -= 25
+
+    return score
 
 
 def _location(transform: TransformSpec | None) -> tuple[float, float, float] | None:
@@ -690,6 +817,30 @@ def _normalize_nonpenetration_windows(constraints: list[Any], plan: RepairedEven
         if constraint.constraint_type == ContactConstraintType.NONPENETRATION and constraint.object_id == plan.support_id:
             constraint.start_frame = plan.start_frame
             constraint.end_frame = plan.end_frame
+
+
+def _normalize_terminal_support_windows(constraints: list[Any], plan: RepairedEventPlan) -> None:
+    for constraint in constraints:
+        if constraint.constraint_type != ContactConstraintType.SUPPORT:
+            continue
+        if constraint.object_id == plan.support_id:
+            continue
+        start_frame = int(constraint.start_frame)
+        end_frame = int(constraint.end_frame)
+        if start_frame <= plan.start_frame <= end_frame and end_frame < plan.support_start_frame:
+            constraint.start_frame = plan.start_frame
+            constraint.end_frame = plan.start_frame
+            constraint.description = _append_note(
+                constraint.description,
+                "Deterministically narrowed to the repaired ground start frame.",
+            )
+        elif start_frame > plan.support_end_frame and start_frame <= plan.end_frame <= end_frame:
+            constraint.start_frame = plan.end_frame
+            constraint.end_frame = plan.end_frame
+            constraint.description = _append_note(
+                constraint.description,
+                "Deterministically narrowed to the repaired ground end frame.",
+            )
 
 
 def _ensure_sampled_frames(ir: GenerationIR, plan: RepairedEventPlan) -> None:

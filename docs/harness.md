@@ -135,6 +135,19 @@ Before execution, generated Blender code also goes through a narrow deterministi
 compatibility sanitizer. One covered case maps invalid keyframe interpolation
 assignments such as `key.interpolation = 'EASE_IN_OUT'` to Blender-supported
 `SINE`; valid interpolation values such as `LINEAR` are preserved.
+The same sanitizer handles selected historical helper/API compatibility issues:
+`llm_utils` import aliases, `make_material(spec_dict=...)`, primitive helper
+`scale`/`rotation` keyword drift, unsupported `WaveModifier.falloff`, empty
+`Vector()` calls, vertex `.co` access for bbox loops, direct `Action.fcurves`
+loops on Blender's layered action API, and object-target `ll3m.look_at` calls.
+These are deterministic rewrites of known invalid Blender API patterns, not a
+general semantic repair layer.
+
+To inspect historical execution failures, run:
+
+```bash
+python scripts/summarize_execution_failures.py --max-examples 2
+```
 
 `LL3M_MAX_STAGNANT_REFINEMENT_ROUNDS` stops a verifier loop when the same
 failure signature repeats without progress, preventing repeated expensive
@@ -276,6 +289,9 @@ Planner IR sanitization also covers a narrow deterministic stability case:
 when generated IR references a common `floor` or `ground` support but omits that
 object, the sanitizer inserts a horizontal support plane with bbox collision
 metadata. It may also drop stale verifier-only camera/view/relation references.
+If a non-contact relation such as `not_intersecting` is paired with
+`bbox_contact`, the sanitizer resets the verification method to `auto` so
+strict IR validation can apply the relation semantics correctly.
 It does not invent arbitrary missing objects; those remain structural
 validation errors.
 

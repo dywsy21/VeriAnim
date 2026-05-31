@@ -108,6 +108,13 @@ def bridge_ir_with_terminal_ground_support() -> GenerationIR:
     return ir
 
 
+def bridge_ir_with_wide_terminal_ground_support() -> GenerationIR:
+    ir = bridge_ir_with_terminal_ground_support()
+    ir.animation.contact_constraints[0].end_frame = 20
+    ir.animation.contact_constraints[1].start_frame = 100
+    return ir
+
+
 def scene_graph() -> dict:
     return {
         "objects": [
@@ -144,6 +151,57 @@ def scene_graph_with_ground() -> dict:
         }
     )
     return graph
+
+
+def bridge_ir_with_ground_description_mentioning_bridge() -> GenerationIR:
+    ir = bridge_ir()
+    ir.scene.objects[1].id = "bridge"
+    ir.scene.objects[1].label = "Bridge"
+    ir.scene.objects[1].description = "a low bridge with a flat deck"
+    for constraint in ir.animation.events[0].contact_constraints:
+        constraint.object_id = "bridge"
+    ir.scene.objects.append(
+        ObjectSpec(
+            id="ground",
+            label="Ground",
+            description="flat ground under the bridge",
+            collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX),
+        )
+    )
+    ir.animation.contact_constraints.append(
+        ContactConstraintSpec(
+            id="final_car_ground_support",
+            constraint_type=ContactConstraintType.SUPPORT,
+            subject_id="car",
+            object_id="ground",
+            start_frame=120,
+            end_frame=120,
+            description="car ends resting on the ground",
+        )
+    )
+    return ir
+
+
+def scene_graph_with_bridge_and_ground() -> dict:
+    return {
+        "objects": [
+            {
+                "name": "car",
+                "ll3m_id": "car",
+                "bbox": {"min": [-2.6, -0.3, 0.0], "max": [-1.4, 0.3, 0.4]},
+            },
+            {
+                "name": "bridge",
+                "ll3m_id": "bridge",
+                "bbox": {"min": [-1.0, -0.75, 0.0], "max": [1.0, 0.75, 0.5]},
+            },
+            {
+                "name": "ground",
+                "ll3m_id": "ground",
+                "bbox": {"min": [-5.0, -5.0, 0.0], "max": [5.0, 5.0, 0.0]},
+            },
+        ]
+    }
 
 
 class AnimationRepairTest(unittest.TestCase):
@@ -186,6 +244,10 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertIn("LINEAR", script)
         self.assertIn("_ll3m_repair_descendants", script)
         self.assertIn("_ll3m_repair_normalize_child_offsets", script)
+        self.assertIn("_ll3m_repair_add_parent_roots", script)
+        self.assertIn("_ll3m_repair_select_anchor", script)
+        self.assertIn('_ll3m_repair_obj["ll3m_id"]', script)
+        self.assertIn("_ll3m_repair_apply_flat_group_keyframes", script)
 
     def test_repair_uses_aggregate_child_bbox_for_subject_root(self) -> None:
         graph = {
@@ -227,8 +289,15 @@ class AnimationRepairTest(unittest.TestCase):
 
         self.assertIn("_ll3m_repair_descendants", script)
         self.assertIn("_ll3m_repair_normalize_child_offsets", script)
+        self.assertIn("_ll3m_repair_add_parent_roots", script)
+        self.assertIn("_ll3m_repair_select_anchor", script)
+        self.assertIn("_ll3m_repair_uses_flat_group", script)
+        self.assertIn("_ll3m_repair_apply_flat_group_keyframes", script)
         self.assertIn("_ll3m_repair_support_top", script)
         self.assertIn("_ll3m_repair_recalibrate_keyframes", script)
+        self.assertIn('for terminal_id in ("ground", "floor", "terrain")', script)
+        self.assertIn('or "lift outside support footprint" in label', script)
+        self.assertIn('or "support height" in label', script)
         self.assertIn("_ll3m_repair_bpy.context.view_layer.update()", script)
 
     def test_repair_can_use_animation_level_contact_constraints(self) -> None:
@@ -248,6 +317,27 @@ class AnimationRepairTest(unittest.TestCase):
         keyframes = repaired.animation.events[0].path.keyframes
         self.assertAlmostEqual(keyframes[0].transform.location[2], 0.201)
         self.assertAlmostEqual(keyframes[-1].transform.location[2], 0.201)
+
+    def test_wide_terminal_support_constraints_are_narrowed_to_endpoints(self) -> None:
+        repaired, plan = repair_animation_ir(bridge_ir_with_wide_terminal_ground_support(), scene_graph_with_ground())
+
+        self.assertTrue(plan.applied, plan.to_dict())
+        self.assertEqual(
+            [(constraint.id, constraint.start_frame, constraint.end_frame) for constraint in repaired.animation.contact_constraints],
+            [("car_ground_start", 1, 1), ("car_ground_end", 120, 120)],
+        )
+
+    def test_bridge_crossing_prefers_bridge_support_over_ground_description(self) -> None:
+        repaired, plan = repair_animation_ir(
+            bridge_ir_with_ground_description_mentioning_bridge(),
+            scene_graph_with_bridge_and_ground(),
+        )
+
+        self.assertTrue(plan.applied, plan.to_dict())
+        self.assertEqual(plan.plans[0].support_id, "bridge")
+        support = repaired.animation.events[0].contact_constraints[0]
+        self.assertEqual(support.object_id, "bridge")
+        self.assertEqual((support.start_frame, support.end_frame), (37, 84))
 
 
 if __name__ == "__main__":
