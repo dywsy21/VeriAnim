@@ -1567,6 +1567,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
     for obj in scene.get("objects", []) or []:
         if not isinstance(obj, dict):
             continue
+        _sanitize_object_dimensions(obj)
         category = str(obj.get("category", "generic")).lower()
         obj["category"] = category_aliases.get(category, category if category in valid_categories else "generic")
         role = str(obj.get("role", "secondary")).lower()
@@ -1670,6 +1671,68 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
                 material["texture_query"] = " ".join(str(item) for item in hints[:4])
             else:
                 material["texture_query"] = str(material.get("description") or material.get("id") or "material texture")
+
+
+def _sanitize_object_dimensions(obj: dict[str, Any]) -> None:
+    _sanitize_dimension_aliases(obj, "dimensions")
+    collision = obj.get("collision")
+    if isinstance(collision, dict):
+        _sanitize_dimension_aliases(collision, "dimensions")
+    for part in obj.get("parts", []) or []:
+        if isinstance(part, dict):
+            _sanitize_dimension_aliases(part, "dimension")
+
+
+def _sanitize_dimension_aliases(owner: dict[str, Any], key: str) -> None:
+    dimensions = owner.get(key)
+    if not isinstance(dimensions, dict):
+        return
+
+    def number(name: str) -> float | None:
+        value = dimensions.get(name)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+        return None
+
+    size = dimensions.get("size")
+    if not _is_vec3(size):
+        radius = number("radius")
+        diameter = number("diameter")
+        width = number("width") or number("x")
+        length = number("length") or number("y")
+        height = number("height") or number("depth") or number("z")
+        if radius is not None:
+            diameter = radius * 2.0
+        if diameter is not None:
+            width = width or diameter
+            length = length or diameter
+            height = height or diameter
+        if width is not None or length is not None or height is not None:
+            width = width or length or height or 1.0
+            length = length or width or height or 1.0
+            height = height or width or length or 1.0
+            dimensions["size"] = [width, length, height]
+
+    for invalid_key in (
+        "radius",
+        "diameter",
+        "width",
+        "length",
+        "height",
+        "depth",
+        "x",
+        "y",
+        "z",
+    ):
+        dimensions.pop(invalid_key, None)
+
+
+def _is_vec3(value: Any) -> bool:
+    return (
+        isinstance(value, (list, tuple))
+        and len(value) == 3
+        and all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value)
+    )
 
 
 _COMMON_SUPPORT_IDS = {

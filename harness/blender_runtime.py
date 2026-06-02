@@ -553,14 +553,36 @@ def _relation_frame_overrides(ir: GenerationIR) -> dict[str, int]:
         return {}
     start_frame = 1
     end_frame = int(ir.animation.duration_frames)
-    if ir.animation.events or ir.animation.camera_events:
-        start_frame = min(int(event.start_frame) for event in [*ir.animation.events, *ir.animation.camera_events])
-        end_frame = max(int(event.end_frame) for event in [*ir.animation.events, *ir.animation.camera_events])
+    events = [*ir.animation.events, *ir.animation.camera_events]
+    if events:
+        start_frame = min(int(event.start_frame) for event in events)
+        end_frame = max(int(event.end_frame) for event in events)
 
     overrides: dict[str, int] = {}
+    subject_visibility_frames: dict[str, int] = {}
+    for event in events:
+        if event.action.value == "appear":
+            visible_frame = int(event.end_frame)
+        elif event.action.value == "disappear":
+            visible_frame = int(event.start_frame)
+        else:
+            continue
+        for subject_id in event.subject_ids:
+            previous = subject_visibility_frames.get(subject_id)
+            subject_visibility_frames[subject_id] = visible_frame if previous is None else max(previous, visible_frame)
+
     for relation in ir.scene.relations:
         if relation.frame is not None:
             overrides[relation.id] = int(relation.frame)
+            continue
+        relation_subjects = (relation.subject_id, relation.object_id)
+        visible_frames = [
+            subject_visibility_frames[subject_id]
+            for subject_id in relation_subjects
+            if subject_id in subject_visibility_frames
+        ]
+        if visible_frames:
+            overrides[relation.id] = max(visible_frames)
             continue
         text = " ".join(
             part

@@ -179,6 +179,20 @@ class SerdeStrictDecodeTest(unittest.TestCase):
 
         self.assertEqual(ir.scene.relations[0].visual_priority.value, "preferred")
 
+    def test_planner_sanitizer_normalizes_dimension_aliases(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["objects"][0]["dimensions"] = {"width": 1.0, "length": 2.0, "height": 0.5}
+        payload["scene"]["objects"][0]["collision"] = {"proxy_type": "sphere"}
+        payload["scene"]["objects"][0]["collision"]["dimensions"] = {"radius": 0.25, "height": 1.5}
+        payload["scene"]["objects"][0]["parts"] = [{"id": "cap", "description": "round cap", "dimension": {"diameter": 0.4}}]
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertEqual(ir.scene.objects[0].dimensions.size, (1.0, 2.0, 0.5))
+        self.assertEqual(ir.scene.objects[0].collision.dimensions.size, (0.5, 0.5, 1.5))
+        self.assertEqual(ir.scene.objects[0].parts[0].dimension.size, (0.4, 0.4, 0.4))
+
     def test_planner_sanitizer_normalizes_stage_visual_mode_alias(self) -> None:
         payload = copy.deepcopy(self.data)
         payload["stages"] = [

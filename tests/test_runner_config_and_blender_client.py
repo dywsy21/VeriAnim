@@ -13,7 +13,7 @@ from unittest import mock
 from blender.client import BlenderClient
 from blender import ll3m_utils
 from harness.animation_repair import repair_animation_ir
-from harness.blender_runtime import BlenderRunResult, BlenderRuntime
+from harness.blender_runtime import BlenderRunResult, BlenderRuntime, _relation_frame_overrides
 from harness.config import AgentModelConfig, HarnessConfig
 from harness.session import _count_effective_keyframe_calls
 from harness.ir import (
@@ -320,6 +320,11 @@ class BlenderRuntimeStatusTest(unittest.TestCase):
         self.assertEqual(result.message, "bad")
         self.assertEqual(result.traceback, "Traceback...\nValueError: bad")
 
+    def test_relation_frame_overrides_use_visible_frame_for_appear_subjects(self) -> None:
+        overrides = _relation_frame_overrides(appear_relation_ir())
+
+        self.assertEqual(overrides["light_attach"], 60)
+
 
 def minimal_config(runs_dir: Path) -> HarnessConfig:
     model = AgentModelConfig(name="test", model="test/model", api_key="test-key")
@@ -359,6 +364,41 @@ def minimal_ir(*, animation: bool = False) -> GenerationIR:
             cameras=[CameraSpec(id="camera_main", target_object_ids=["cube"])],
         ),
         animation=AnimationSpec(duration_frames=3) if animation else None,
+    )
+
+
+def appear_relation_ir() -> GenerationIR:
+    return GenerationIR(
+        prompt=SourcePrompt(text="a status light appears on a panel"),
+        scene=SceneSpec(
+            objects=[
+                ObjectSpec(id="panel", description="control panel"),
+                ObjectSpec(id="status_light", description="red status light"),
+            ],
+            relations=[
+                SpatialRelationSpec(
+                    id="light_attach",
+                    relation_type=RelationType.ATTACHED_TO,
+                    subject_id="status_light",
+                    object_id="panel",
+                    description="status light mounted on the panel",
+                    required=True,
+                )
+            ],
+        ),
+        animation=AnimationSpec(
+            duration_frames=90,
+            events=[
+                AnimationEventSpec(
+                    id="light_appears",
+                    action=AnimationAction.APPEAR,
+                    subject_ids=["status_light"],
+                    start_frame=59,
+                    end_frame=60,
+                    description="status light appears",
+                )
+            ],
+        ),
     )
 
 
