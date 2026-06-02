@@ -2099,10 +2099,19 @@ def _ensure_visibility_keyframes(event: dict[str, Any], action: str) -> None:
             key in item["value"] for key in ("visible", "hide_viewport", "hide_render", "alpha")
         )
 
-    if any(has_visibility_value(item) for item in keyframes):
-        return
-    keyframes.extend(
-        [
+    def frame_value(item: Any) -> int | None:
+        if not isinstance(item, dict) or "frame" not in item:
+            return None
+        try:
+            return int(item["frame"])
+        except (TypeError, ValueError):
+            return None
+
+    has_start = any(has_visibility_value(item) and frame_value(item) == start for item in keyframes)
+    has_end = any(has_visibility_value(item) and frame_value(item) == end for item in keyframes)
+    additions = []
+    if not has_start:
+        additions.append(
             {
                 "frame": start,
                 "value": {
@@ -2113,7 +2122,10 @@ def _ensure_visibility_keyframes(event: dict[str, Any], action: str) -> None:
                 },
                 "interpolation": "constant",
                 "description": "visibility state before transition",
-            },
+            }
+        )
+    if not has_end:
+        additions.append(
             {
                 "frame": end,
                 "value": {
@@ -2124,9 +2136,9 @@ def _ensure_visibility_keyframes(event: dict[str, Any], action: str) -> None:
                 },
                 "interpolation": "constant",
                 "description": "visibility state after transition",
-            },
-        ]
-    )
+            }
+        )
+    keyframes.extend(additions)
 
 
 def _expand_event_range_to_keyframes(event: dict[str, Any]) -> None:

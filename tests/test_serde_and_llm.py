@@ -576,6 +576,29 @@ class ExtractJsonObjectTest(unittest.TestCase):
         self.assertEqual(event["end_frame"], 61)
         self.assertEqual([item["frame"] for item in event["path"]["keyframes"]], [60, 61])
 
+    def test_animation_sanitizer_completes_partial_visibility_event(self) -> None:
+        payload = {
+            "animation": {
+                "events": [
+                    {
+                        "id": "light_appear",
+                        "action": "appear",
+                        "subject_ids": ["light"],
+                        "start_frame": 59,
+                        "end_frame": 60,
+                        "path": {"keyframes": [{"frame": 60, "value": {"visible": True}}]},
+                    }
+                ]
+            }
+        }
+
+        from harness.agents import _sanitize_animation_data
+
+        _sanitize_animation_data(payload)
+        keyframes = payload["animation"]["events"][0]["path"]["keyframes"]
+        visible_frames = sorted(item["frame"] for item in keyframes if "visible" in item.get("value", {}))
+        self.assertEqual(visible_frames, [59, 60])
+
     def test_detects_text_only_multimodal_backend_error(self) -> None:
         exc = RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")
 
