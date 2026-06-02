@@ -440,15 +440,16 @@ for fc in obj.animation_data.action.fcurves:
     for key in fc.keyframe_points:
         key.interpolation = 'EASE_IN_OUT'
         key.easing = "EASE_IN_OUT"
+        other_key.easing = 'SINE'
 other_key.interpolation = "LINEAR"
 """
 
         sanitized = _sanitize_generated_blender_code(code)
 
         self.assertIn("key.interpolation = 'SINE'", sanitized)
-        self.assertIn('key.easing = "SINE"', sanitized)
+        self.assertIn('key.easing = "EASE_IN_OUT"', sanitized)
+        self.assertIn("other_key.easing = 'EASE_IN_OUT'", sanitized)
         self.assertIn('other_key.interpolation = "LINEAR"', sanitized)
-        self.assertNotIn("EASE_IN_OUT", sanitized)
 
 
 class MaterialAgentTextureSearchTest(unittest.TestCase):

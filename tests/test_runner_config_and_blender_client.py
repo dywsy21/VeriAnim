@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import ast
 import json
 import os
 import queue
@@ -11,8 +12,10 @@ from unittest import mock
 
 from blender.client import BlenderClient
 from blender import ll3m_utils
+from harness.animation_repair import repair_animation_ir
 from harness.blender_runtime import BlenderRunResult, BlenderRuntime
 from harness.config import AgentModelConfig, HarnessConfig
+from harness.session import _count_effective_keyframe_calls
 from harness.ir import (
     AnimationAction,
     AnimationEventSpec,
@@ -39,7 +42,8 @@ from harness.ir import (
 )
 from harness.preflight import format_issue, has_errors, run_preflight
 from harness.runner import _runner_lock
-from harness.session import InteractiveHarnessSession
+from harness.session import InteractiveHarnessSession, _animation_contact_repair_script
+from harness.static_support_repair import repair_static_support
 from harness.artifacts import ArtifactStore
 
 
@@ -118,6 +122,33 @@ class BlenderUtilsTest(unittest.TestCase):
         self.assertEqual(ll3m_utils.normalize_engine_name("WORKBENCH"), "BLENDER_WORKBENCH")
         self.assertEqual(ll3m_utils.normalize_engine_name("eevee"), "BLENDER_EEVEE_NEXT")
         self.assertEqual(ll3m_utils.normalize_engine_name("BLENDER_EEVEE"), "BLENDER_EEVEE")
+
+    def test_ll3m_utils_exposes_rigid_animation_primitives(self) -> None:
+        for name in (
+            "world_bbox",
+            "align_bottom_to_top",
+            "space_gripper_fingers_around_subject",
+            "insert_location_keyframe",
+            "animate_translate",
+            "animate_support_slide",
+            "animate_support_sequence",
+            "animate_attached_carry",
+            "animate_pick_place",
+            "animate_push",
+            "animate_drop_to_support",
+            "animate_rotate_about_axis",
+            "animate_hinge",
+        ):
+            self.assertTrue(callable(getattr(ll3m_utils, name)))
+
+    def test_static_keyframe_counter_accepts_ll3m_animation_primitives(self) -> None:
+        tree = ast.parse(
+            """
+from blender import ll3m_utils as ll3m
+ll3m.animate_pick_place(gripper, cube, table, tray)
+"""
+        )
+        self.assertGreaterEqual(len(_count_effective_keyframe_calls(tree)), 2)
 
     def test_render_spec_defaults_to_workbench(self) -> None:
         self.assertEqual(RenderSpec().engine, RenderEngine.WORKBENCH)
@@ -550,6 +581,79 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         self.assertTrue(reports[0].passed)
         self.assertIn("RENDER_NO_SCREENSHOTS", {issue.code for report in reports for issue in report.issues})
 
+    def test_animation_contact_repair_script_shifts_consistent_z_gap_keyframes(self) -> None:
+        report = ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            [
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_FLOATING",
+                    message="box floating",
+                    target_id="box",
+                    evidence={"z_gap": 0.04},
+                ),
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_FLOATING",
+                    message="box floating",
+                    target_id="box",
+                    evidence={"z_gap": 0.041},
+                ),
+            ],
+        )
+
+        script = _animation_contact_repair_script(report)
+
+        self.assertIn("LL3M deterministic animation contact repair", script)
+        self.assertIn('"constant_deltas": {"box": -0.0405}', script)
+        self.assertIn("point.co.y += float(dz)", script)
+
+    def test_animation_contact_repair_script_aligns_single_support_keyframes(self) -> None:
+        report = ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            [
+                ValidationIssue(
+                    code="ANIMATION_PENETRATES_SUPPORT",
+                    message="crate penetrates table",
+                    target_id="crate",
+                    evidence={"target_id": "table", "z_gap": -0.15},
+                ),
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_PENETRATION",
+                    message="crate intersects table",
+                    target_id="crate",
+                    evidence={"object_id": "table", "axis": "z", "penetration_depth": 0.1},
+                ),
+            ],
+        )
+
+        script = _animation_contact_repair_script(report)
+
+        self.assertIn('"support_pairs": {"crate": "table"}', script)
+        self.assertIn("_ll3m_contact_repair_align_keyed_support", script)
+        self.assertIn("support_box[5] - subject_box[2] + 0.001", script)
+
+    def test_animation_contact_repair_skips_multi_support_subjects(self) -> None:
+        report = ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            [
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_SUPPORT_PENETRATION",
+                    message="car penetrates ramp",
+                    target_id="car",
+                    evidence={"object_id": "ramp", "z_gap": -0.06},
+                ),
+                ValidationIssue(
+                    code="CONTACT_CONSTRAINT_FLOATING",
+                    message="car floats over platform",
+                    target_id="car",
+                    evidence={"object_id": "platform", "z_gap": 0.06},
+                ),
+            ],
+        )
+
+        script = _animation_contact_repair_script(report)
+
+        self.assertEqual(script, "")
+
     def test_animation_stage_writes_repair_artifact_and_appends_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True, skip_vision=True, skip_video=True)
@@ -575,6 +679,34 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         self.assertIn("_ll3m_repair_keyframe.get(\"location\"", script)
         support = repaired_ir["animation"]["events"][0]["contact_constraints"][0]
         self.assertEqual((support["start_frame"], support["end_frame"]), (37, 84))
+
+    def test_animation_repair_owns_subject_path_without_appending_static_support_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True, skip_vision=True, skip_video=True)
+            session.ir = bridge_animation_ir()
+            _, animation_plan = repair_animation_ir(bridge_animation_ir(), bridge_scene_graph())
+            static_report = ValidationReport.failed(
+                VerificationMode.DETERMINISTIC,
+                [
+                    ValidationIssue(
+                        code="RELATION_ON_TOP_OF_FAILED",
+                        message="mug is not on table",
+                        relation_id="mug_on_table",
+                        target_id="mug",
+                        evidence={"z_gap": 0.5, "overlap_x": 0.3, "overlap_y": 0.3, "support_z": 0.5},
+                    )
+                ],
+            )
+            session._animation_repair_plan = animation_plan
+            session._static_support_repair_plan = repair_static_support(
+                support_repair_ir(), support_repair_scene_graph(), static_report
+            )
+
+            code = session._append_static_support_repair(
+                "LL3M_METADATA = {}\n# LL3M deterministic static support repair\nold\n"
+            )
+
+        self.assertNotIn("LL3M deterministic static support repair", code)
 
 
 class BackgroundCommandQueueTest(unittest.TestCase):

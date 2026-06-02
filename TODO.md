@@ -2,7 +2,7 @@
 
 1. 继续跑更多run，检查会暴露出哪些rag和harness设计方面的问题
 2. 完善ir设计
-3. 跑benchmark
+3. 跑benchmark（harness基本敲定以后最后才能做）
 4. 穿模问题
 5. 渲染质量问题
 6. 论文

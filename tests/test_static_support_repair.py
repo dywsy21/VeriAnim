@@ -123,6 +123,22 @@ class StaticSupportRepairTest(unittest.TestCase):
         self.assertIn("LL3M deterministic static support repair", script)
         self.assertIn("_LL3M_STATIC_SUPPORT_REPAIR_PLAN", script)
         self.assertIn("_ll3m_static_repair_apply_delta", script)
+        self.assertIn("add_with_descendants", script)
+        self.assertIn("_ll3m_static_repair_current_delta", script)
+        self.assertIn("_ll3m_static_repair_normalize_child_offsets", script)
+
+    def test_blender_repair_script_shifts_location_keyframes(self) -> None:
+        plan = repair_static_support(support_ir(), graph_with_mug(), failed_report())
+
+        script = blender_static_support_repair_script(plan)
+
+        self.assertIn("_ll3m_static_repair_shift_location_keyframes", script)
+        self.assertIn('fcurve.data_path != "location"', script)
+        self.assertIn("seen_fcurves = set()", script)
+        self.assertIn("as_pointer", script)
+        self.assertIn("frame=frame", script)
+        self.assertIn("point.co.y += offset", script)
+        self.assertIn("remainder = vector - observed", script)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,13 @@ from pathlib import Path
 import unittest
 
 from harness.ir import GenerationIR
-from harness.blender_runtime import _relation_frame_overrides, _view_dicts, build_deformation_statistics
+from harness.blender_runtime import (
+    _animation_validation_script,
+    build_deformation_statistics,
+    _relation_frame_overrides,
+    _scene_validation_script,
+    _view_dicts,
+)
 from harness.serde import bridge_legacy_rigid_intent, from_dict
 
 
@@ -405,6 +411,31 @@ class AnimationIRValidationTest(unittest.TestCase):
 
         self.assertTrue(report.passed, report.to_dict() if hasattr(report, "to_dict") else report)
 
+    def test_relation_frame_overrides_recognize_inflected_start_and_stop_words(self) -> None:
+        data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
+        data["scene"]["relations"] = [
+            {
+                "id": "car_on_road",
+                "relation_type": "on_top_of",
+                "subject_id": data["scene"]["objects"][0]["id"],
+                "object_id": data["scene"]["objects"][1]["id"],
+                "description": "the car starts resting on the lower road",
+            },
+            {
+                "id": "car_on_platform",
+                "relation_type": "on_top_of",
+                "subject_id": data["scene"]["objects"][0]["id"],
+                "object_id": data["scene"]["objects"][1]["id"],
+                "description": "the car stops on the platform",
+            },
+        ]
+        ir = from_dict(GenerationIR, data)
+
+        overrides = _relation_frame_overrides(ir)
+
+        self.assertEqual(overrides["car_on_road"], 1)
+        self.assertEqual(overrides["car_on_platform"], ir.animation.duration_frames)
+
     def test_contact_constraint_unknown_object_and_bad_frames_are_invalid(self) -> None:
         data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))
         data["animation"]["events"][0]["contact_constraints"] = [
@@ -441,6 +472,55 @@ class AnimationIRValidationTest(unittest.TestCase):
 
         self.assertFalse(report.passed)
         self.assertIn("INVALID_COLLISION_MARGIN", codes)
+
+    def test_generated_validation_scripts_compile(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+
+        compile(_scene_validation_script(ir), "<scene_validation_script>", "exec")
+        compile(_animation_validation_script(ir), "<animation_validation_script>", "exec")
+
+    def test_generated_validation_scripts_use_physical_evaluated_bboxes(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        scene_script = _scene_validation_script(ir)
+        animation_script = _animation_validation_script(ir)
+
+        for script in (scene_script, animation_script):
+            self.assertIn("evaluated_depsgraph_get", script)
+            self.assertIn("to_mesh()", script)
+            self.assertIn("is_physical_bbox_object", script)
+
+    def test_global_nonpenetration_exemptions_are_frame_aware(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        animation_script = _animation_validation_script(ir)
+
+        self.assertIn("def globally_allowed_overlap_pairs(frame):", animation_script)
+        self.assertIn("if start <= frame <= end:", animation_script)
+        self.assertIn("allowed = globally_allowed_overlap_pairs(frame)", animation_script)
+        self.assertNotIn('rtype in ("attached_to", "touching", "inside", "contains", "on_top_of")', animation_script)
+
+    def test_pick_place_targets_do_not_imply_persistent_support_or_interaction(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        event = ir.animation.events[0]
+        event.description = "gripper picks and carries cube from table to tray"
+        event.expected_visual_result = "cube stays attached to gripper during carry and is placed on tray"
+        event.target_ids = ["table", "tray"]
+
+        animation_script = _animation_validation_script(ir)
+
+        self.assertIn('if any(token in text for token in ("pick", "gripper", "grasp", "carry", "carried", "transfer")):', animation_script)
+        self.assertIn('for constraint in event.get("contact_constraints", []) or []:', animation_script)
+        self.assertIn('if target_id == sid:', animation_script)
+        self.assertNotIn('targets = list(event.get("target_ids", []) or [])', animation_script)
+
+    def test_contact_constraints_are_checked_across_window_frames(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        animation_script = _animation_validation_script(ir)
+
+        self.assertIn('if ctype in ("touching", "attachment", "carry_contact", "nonpenetration"):', animation_script)
+        self.assertIn("frames.update(range(max(1, start), min(duration, end) + 1, step))", animation_script)
+        self.assertIn("frames.add(min(duration, end))", animation_script)
+        self.assertIn("def pairwise_embedded_contact(subject_objs, object_objs):", animation_script)
+        self.assertIn("CONTACT_CONSTRAINT_EMBEDDED_CONTACT", animation_script)
 
 
 if __name__ == "__main__":

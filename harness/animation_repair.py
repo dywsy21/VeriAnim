@@ -88,7 +88,9 @@ class AnimationRepairPlan:
 
 AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
 INDEX_AXIS = ("x", "y", "z")
-SUPPORT_TOKENS = ("bridge", "deck", "platform", "table", "shelf")
+SUPPORT_TOKENS = ("bridge", "deck", "platform", "ramp", "road", "table", "shelf")
+CROSSING_SUPPORT_TOKENS = ("bridge", "deck", "platform", "ramp")
+SINGLE_RIDE_SUPPORT_TOKENS = ("belt", "conveyor", "shelf", "table")
 MESH_BBOX_TYPES = {"MESH", "CURVE", "SURFACE", "FONT", "META"}
 
 
@@ -122,7 +124,7 @@ def repair_animation_ir(
             continue
         subject_id = event.subject_ids[0]
         constraints = _event_constraints(repaired, event, subject_id)
-        support_constraint = _event_support_constraint(constraints, repaired, event)
+        support_constraint = _event_support_constraint(constraints, repaired, event=event)
         if support_constraint is None:
             skipped.append(f"{event.id}: no deck/platform support constraint.")
             continue
@@ -138,21 +140,60 @@ def repair_animation_ir(
             skipped.append(f"{event.id}: missing start/end location.")
             continue
 
-        plan = _build_support_crossing_plan(
-            event_id=event.id,
-            subject_id=subject_id,
-            support_id=support_id,
-            subject_bbox=subject_bbox,
-            support_bbox=support_bbox,
-            subject_root_to_bottom=_scene_root_to_bottom(scene_graph, subject_id, subject_bbox, start_location),
-            bboxes=bboxes,
-            constraints=constraints,
-            start_location=start_location,
-            end_location=end_location,
-            start_frame=int(event.start_frame),
-            end_frame=int(event.end_frame),
-            margin=margin,
-        )
+        subject_root_to_bottom = _scene_root_to_bottom(scene_graph, subject_id, subject_bbox, start_location)
+        distinct_support_ids = {
+            constraint.object_id
+            for constraint in constraints
+            if constraint.constraint_type == ContactConstraintType.SUPPORT and constraint.object_id in bboxes
+        }
+        support_tokens = _support_tokens(repaired, support_id)
+        if len(distinct_support_ids) < 2 and (
+            any(token in support_tokens for token in SINGLE_RIDE_SUPPORT_TOKENS)
+            or not any(token in support_tokens for token in CROSSING_SUPPORT_TOKENS)
+        ):
+            skipped.append(f"{event.id}: single support ride on {support_id} does not need crossing repair.")
+            continue
+        plan = None
+        if len(distinct_support_ids) >= 3:
+            plan = _build_support_sequence_plan(
+                event_id=event.id,
+                subject_id=subject_id,
+                primary_support_id=support_id,
+                subject_bbox=subject_bbox,
+                subject_root_to_bottom=subject_root_to_bottom,
+                bboxes=bboxes,
+                constraints=constraints,
+                start_frame=int(event.start_frame),
+                end_frame=int(event.end_frame),
+            )
+        if plan is None:
+            plan = _build_support_crossing_plan(
+                event_id=event.id,
+                subject_id=subject_id,
+                support_id=support_id,
+                subject_bbox=subject_bbox,
+                support_bbox=support_bbox,
+                subject_root_to_bottom=subject_root_to_bottom,
+                bboxes=bboxes,
+                constraints=constraints,
+                start_location=start_location,
+                end_location=end_location,
+                start_frame=int(event.start_frame),
+                end_frame=int(event.end_frame),
+                margin=margin,
+            )
+        if plan is None:
+            plan = _build_support_sequence_plan(
+                event_id=event.id,
+                subject_id=subject_id,
+                primary_support_id=support_id,
+                subject_bbox=subject_bbox,
+                subject_root_to_bottom=subject_root_to_bottom,
+                bboxes=bboxes,
+                constraints=constraints,
+                start_frame=int(event.start_frame),
+                end_frame=int(event.end_frame),
+            )
         if plan is None:
             skipped.append(f"{event.id}: could not build support crossing plan.")
             continue
@@ -258,16 +299,23 @@ def _ll3m_repair_find_objects(ll3m_id):
 def _ll3m_repair_iter_action_fcurves(action):
     if not action:
         return
+    seen = set()
     if hasattr(action, "fcurves"):
         for fcurve in action.fcurves:
-            yield action.fcurves, fcurve
+            marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+            if marker not in seen:
+                seen.add(marker)
+                yield action.fcurves, fcurve
     for layer in getattr(action, "layers", []):
         for strip in getattr(layer, "strips", []):
             for bag in getattr(strip, "channelbags", []):
                 collection = getattr(bag, "fcurves", None)
                 if collection:
                     for fcurve in collection:
-                        yield collection, fcurve
+                        marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+                        if marker not in seen:
+                            seen.add(marker)
+                            yield collection, fcurve
 
 def _ll3m_repair_remove_fcurve(collection, fcurve):
     try:
@@ -298,7 +346,7 @@ def _ll3m_repair_normalize_child_offsets(root, objects, reference_location):
     center /= len(direct_children)
     reference = _ll3m_repair_Vector(tuple(float(value) for value in reference_location))
     root_extent = max(float(value) for value in getattr(root, "dimensions", (1.0, 1.0, 1.0)) if float(value) >= 0.0)
-    threshold = max(root_extent * 2.0, 1.0)
+    threshold = max(root_extent * 2.0, 10.0)
     if center.length <= max(root_extent * 0.75, 0.25):
         return
     if getattr(root, "type", "") != "EMPTY" and (center - reference).length > threshold:
@@ -386,30 +434,22 @@ def _ll3m_repair_support_top(support_id):
 def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
     keyframes = list(plan.get("keyframes", []))
     support_top = _ll3m_repair_support_top(plan.get("support_id"))
-    if support_top is None:
-        return keyframes
     root_to_bottom = _ll3m_repair_root_to_bottom(root, objects)
-    support_z = support_top + root_to_bottom + 0.001
-    terminal_z = None
-    for terminal_id in ("ground", "floor", "terrain"):
-        terminal_top = _ll3m_repair_support_top(terminal_id)
-        if terminal_top is not None:
-            terminal_z = terminal_top + root_to_bottom + 0.001
-            break
+    support_z = support_top + root_to_bottom + 0.001 if support_top is not None else None
     support_start = int(plan.get("support_start_frame", 0))
     support_end = int(plan.get("support_end_frame", 0))
     for keyframe in keyframes:
         frame = int(keyframe.get("frame", 0))
         location = list(keyframe.get("location", [0.0, 0.0, 0.0]))
-        label = str(keyframe.get("label", "")).lower()
-        if label == "ground outside support footprint" and terminal_z is not None:
-            location[2] = terminal_z
-            keyframe["location"] = location
-        elif (
-            support_start <= frame <= support_end
-            or "lift outside support footprint" in label
-            or "support height" in label
-        ):
+        label = str(keyframe.get("label", ""))
+        label_prefix = "centered on support "
+        if label.startswith(label_prefix):
+            label_support_top = _ll3m_repair_support_top(label[len(label_prefix):].strip())
+            if label_support_top is not None:
+                location[2] = label_support_top + root_to_bottom + 0.001
+                keyframe["location"] = location
+                continue
+        if support_z is not None and support_start <= frame <= support_end:
             location[2] = support_z
             keyframe["location"] = location
     return keyframes
@@ -526,17 +566,17 @@ if _ll3m_repair_obj is not None:
 
 def _event_constraints(ir: GenerationIR, event: Any, subject_id: str) -> list[Any]:
     constraints: list[Any] = []
+    constraints.extend(
+        constraint
+        for constraint in event.contact_constraints
+        if constraint.subject_id == subject_id or constraint.subject_id in event.subject_ids
+    )
     if ir.animation:
         constraints.extend(
             constraint
             for constraint in ir.animation.contact_constraints
             if constraint.subject_id == subject_id or constraint.subject_id in event.subject_ids
         )
-    constraints.extend(
-        constraint
-        for constraint in event.contact_constraints
-        if constraint.subject_id == subject_id or constraint.subject_id in event.subject_ids
-    )
     return constraints
 
 
@@ -565,66 +605,40 @@ def _is_vec3(value: Any) -> bool:
     return isinstance(value, (list, tuple)) and len(value) == 3 and all(isinstance(v, (int, float)) for v in value)
 
 
-def _event_support_constraint(constraints: list[Any], ir: GenerationIR, event: Any) -> Any | None:
-    objects_by_id = {obj.id: obj for obj in ir.scene.objects}
-    scored: list[tuple[int, Any]] = []
+def _event_support_constraint(constraints: list[Any], ir: GenerationIR, *, event: Any | None = None) -> Any | None:
+    candidates: list[tuple[int, Any]] = []
     for constraint in constraints:
         if constraint.constraint_type != ContactConstraintType.SUPPORT:
             continue
-        support = objects_by_id.get(constraint.object_id)
-        score = _support_constraint_score(constraint, support, event)
-        if score > 0:
-            scored.append((score, constraint))
-    if not scored:
+        tokens = _support_tokens(ir, constraint.object_id)
+        if any(token in tokens for token in SUPPORT_TOKENS):
+            score = 1
+            if any(token in tokens for token in ("ramp", "bridge", "deck", "platform")):
+                score += 4
+            if any(token in tokens for token in ("road", "ground")):
+                score -= 2
+            if event is not None:
+                event_start = int(getattr(event, "start_frame", 0))
+                event_end = int(getattr(event, "end_frame", 0))
+                if int(constraint.start_frame) > event_start and int(constraint.end_frame) < event_end:
+                    score += 3
+            candidates.append((score, constraint))
+    if not candidates:
         return None
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return scored[0][1]
+    return max(candidates, key=lambda item: item[0])[1]
 
 
-def _support_constraint_score(constraint: Any, support: Any, event: Any) -> int:
-    object_id = str(getattr(constraint, "object_id", "") or "").lower()
-    label = str(getattr(support, "label", "") or "").lower()
-    category = str(getattr(support, "category", "") or "").lower()
-    role = str(getattr(support, "role", "") or "").lower()
-    support_description = str(getattr(support, "description", "") or "").lower()
-    constraint_text = " ".join(
+def _support_tokens(ir: GenerationIR, object_id: str) -> set[str]:
+    objects_by_id = {obj.id: obj for obj in ir.scene.objects}
+    support = objects_by_id.get(object_id)
+    text = " ".join(
         [
-            str(getattr(constraint, "id", "") or ""),
-            str(getattr(constraint, "description", "") or ""),
+            str(object_id),
+            str(getattr(support, "label", "") or ""),
+            str(getattr(support, "description", "") or ""),
         ]
     ).lower()
-
-    score = 0
-    if any(token in object_id for token in SUPPORT_TOKENS):
-        score += 100
-    if any(token in label for token in SUPPORT_TOKENS):
-        score += 80
-    if any(token in category for token in SUPPORT_TOKENS):
-        score += 60
-    if any(token in constraint_text for token in SUPPORT_TOKENS):
-        score += 50
-    if any(token in support_description for token in SUPPORT_TOKENS):
-        score += 15
-    if "support" in role:
-        score += 5
-
-    ground_like_text = " ".join([object_id, label, category])
-    if any(token in ground_like_text for token in ("ground", "floor", "terrain")):
-        score -= 80
-
-    event_start = int(getattr(event, "start_frame", 1))
-    event_end = int(getattr(event, "end_frame", event_start))
-    event_mid = int(round((event_start + event_end) * 0.5))
-    constraint_start = int(getattr(constraint, "start_frame", event_start))
-    constraint_end = int(getattr(constraint, "end_frame", event_end))
-    if constraint_start <= event_mid <= constraint_end:
-        score += 40
-    elif constraint_start <= event_end and constraint_end >= event_start:
-        score += 10
-    if constraint_start == constraint_end and constraint_start in {event_start, event_end}:
-        score -= 25
-
-    return score
+    return set(text.replace("_", " ").replace("-", " ").split())
 
 
 def _location(transform: TransformSpec | None) -> tuple[float, float, float] | None:
@@ -762,6 +776,89 @@ def _build_support_crossing_plan(
     )
 
 
+def _build_support_sequence_plan(
+    *,
+    event_id: str,
+    subject_id: str,
+    primary_support_id: str,
+    subject_bbox: BBox,
+    subject_root_to_bottom: float,
+    bboxes: dict[str, BBox],
+    constraints: list[Any],
+    start_frame: int,
+    end_frame: int,
+) -> RepairedEventPlan | None:
+    support_constraints = [
+        constraint
+        for constraint in constraints
+        if constraint.constraint_type == ContactConstraintType.SUPPORT and constraint.object_id in bboxes
+    ]
+    if len(support_constraints) < 2:
+        return None
+    support_constraints.sort(key=lambda constraint: (int(constraint.start_frame), int(constraint.end_frame)))
+    ordered = support_constraints
+    if len({constraint.object_id for constraint in ordered}) < 2:
+        return None
+    centers = [bboxes[constraint.object_id].center for constraint in ordered]
+    dx = abs(centers[-1][0] - centers[0][0])
+    dy = abs(centers[-1][1] - centers[0][1])
+    travel_axis = "x" if dx >= dy else "y"
+    lane_axis = "y" if travel_axis == "x" else "x"
+    t_index = AXIS_INDEX[travel_axis]
+    if abs(centers[-1][t_index] - centers[0][t_index]) <= 1e-6:
+        return None
+
+    phase_windows: list[tuple[Any, int, int]] = []
+    for index, constraint in enumerate(ordered):
+        phase_start = min(max(int(constraint.start_frame), start_frame), end_frame)
+        phase_end = min(max(int(constraint.end_frame), start_frame), end_frame)
+        if index + 1 < len(ordered):
+            next_start = min(max(int(ordered[index + 1].start_frame), start_frame), end_frame)
+            if phase_end >= next_start:
+                phase_end = max(phase_start, next_start - 1)
+        if index > 0 and phase_windows:
+            previous_end = phase_windows[-1][2]
+            phase_start = max(phase_start, min(end_frame, previous_end + 1))
+            phase_end = max(phase_start, phase_end)
+        constraint.start_frame = phase_start
+        constraint.end_frame = phase_end
+        phase_windows.append((constraint, phase_start, phase_end))
+
+    keyframes: list[RepairKeyframe] = []
+    for constraint, phase_start, phase_end in phase_windows:
+        bbox = bboxes[constraint.object_id]
+        location = list(bbox.center)
+        location[2] = bbox.max[2] + subject_root_to_bottom + 0.001
+        for frame in (phase_start, phase_end):
+            keyframes.append(RepairKeyframe(frame, _vec3(location), f"centered on support {constraint.object_id}"))
+    keyframes = sorted(keyframes, key=lambda item: item.frame)
+    unique_keyframes: list[RepairKeyframe] = []
+    for keyframe in keyframes:
+        if unique_keyframes and keyframe.frame == unique_keyframes[-1].frame:
+            unique_keyframes[-1] = keyframe
+            continue
+        if unique_keyframes and keyframe.frame < unique_keyframes[-1].frame:
+            continue
+        unique_keyframes.append(keyframe)
+    unique_keyframes[-1] = RepairKeyframe(end_frame, unique_keyframes[-1].location, unique_keyframes[-1].label)
+    primary_constraints = [constraint for constraint in ordered if constraint.object_id == primary_support_id]
+    support_start_frame = min(int(constraint.start_frame) for constraint in primary_constraints) if primary_constraints else unique_keyframes[0].frame
+    support_end_frame = max(int(constraint.end_frame) for constraint in primary_constraints) if primary_constraints else unique_keyframes[-1].frame
+    return RepairedEventPlan(
+        event_id=event_id,
+        subject_id=subject_id,
+        support_id=primary_support_id,
+        travel_axis=travel_axis,
+        lane_axis=lane_axis,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        support_start_frame=support_start_frame,
+        support_end_frame=support_end_frame,
+        keyframes=tuple(unique_keyframes),
+        notes=("deterministic support sequence repair from scene graph support centers",),
+    )
+
+
 def _phase_frames(start_frame: int, end_frame: int) -> tuple[int, int, int, int, int, int, int]:
     span = max(6, end_frame - start_frame)
     offsets = [0.0, 0.18, 0.30, 0.50, 0.70, 0.82, 1.0]
@@ -847,6 +944,7 @@ def _ensure_sampled_frames(ir: GenerationIR, plan: RepairedEventPlan) -> None:
     if not ir.animation:
         return
     frames = set(ir.animation.verifier.sampled_frames or [])
-    frames.update({plan.start_frame, plan.support_start_frame, plan.keyframes[3].frame, plan.support_end_frame, plan.end_frame})
+    middle_keyframe = plan.keyframes[len(plan.keyframes) // 2]
+    frames.update({plan.start_frame, plan.support_start_frame, middle_keyframe.frame, plan.support_end_frame, plan.end_frame})
     frames = {frame for frame in frames if 1 <= frame <= ir.animation.duration_frames}
     ir.animation.verifier.sampled_frames = sorted(frames)

@@ -571,9 +571,9 @@ def _relation_frame_overrides(ir: GenerationIR) -> dict[str, int]:
             if part
         ).lower()
         tokens = text.replace("_", " ").replace("-", " ").split()
-        if any(token in tokens for token in ("final", "end", "ending", "ended", "last", "stop", "stopped")):
+        if any(token in tokens for token in ("final", "end", "ending", "ended", "last", "stop", "stopped", "stops")):
             overrides[relation.id] = end_frame
-        elif any(token in tokens for token in ("initial", "start", "starting", "started", "first", "begin", "beginning")):
+        elif any(token in tokens for token in ("initial", "start", "starts", "starting", "started", "first", "begin", "begins", "beginning", "resting")):
             overrides[relation.id] = start_frame
     return overrides
 
@@ -729,6 +729,15 @@ def find_objects(ll3m_id):
 def world_bbox(obj):
     if not obj or not getattr(obj, "bound_box", None):
         return []
+    if obj.type == "MESH" and getattr(obj, "data", None) and len(obj.data.vertices) > 0:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(depsgraph)
+        mesh = eval_obj.to_mesh()
+        try:
+            if mesh and len(mesh.vertices) > 0:
+                return [eval_obj.matrix_world @ vertex.co for vertex in mesh.vertices]
+        finally:
+            eval_obj.to_mesh_clear()
     return [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
 
 def bbox_minmax(obj):
@@ -740,6 +749,13 @@ def bbox_minmax(obj):
         Vector((max(v.x for v in corners), max(v.y for v in corners), max(v.z for v in corners))),
     )
 
+def is_physical_bbox_object(obj):
+    text = f"{{obj.name}} {{obj.get('ll3m_part', '')}} {{obj.get('ll3m_role', '')}}".lower()
+    visual_tokens = ("grain", "detail", "decal", "label", "marking", "stripe", "line", "arrow", "text", "annotation")
+    if not obj.get("ll3m_id") and any(token in text for token in visual_tokens):
+        return False
+    return True
+
 def collect_mesh_hierarchy(objs):
     result = set()
     queue = list(objs)
@@ -750,7 +766,7 @@ def collect_mesh_hierarchy(objs):
         result.add(obj)
         for child in obj.children:
             queue.append(child)
-    return [o for o in result if o.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
+    return [o for o in result if o.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and is_physical_bbox_object(o)]
 
 def aggregate_minmax(objs):
     mesh_objs = collect_mesh_hierarchy(objs)
@@ -763,6 +779,45 @@ def aggregate_minmax(objs):
         Vector((min(v.x for v in corners), min(v.y for v in corners), min(v.z for v in corners))),
         Vector((max(v.x for v in corners), max(v.y for v in corners), max(v.z for v in corners))),
     )
+
+def bbox_overlaps(a, b):
+    return (
+        min(a[1].x, b[1].x) - max(a[0].x, b[0].x),
+        min(a[1].y, b[1].y) - max(a[0].y, b[0].y),
+        min(a[1].z, b[1].z) - max(a[0].z, b[0].z),
+    )
+
+def penetration_depth(a, b):
+    overlaps = bbox_overlaps(a, b)
+    if overlaps[0] <= 0 or overlaps[1] <= 0 or overlaps[2] <= 0:
+        return 0.0, overlaps, None
+    depths = [float(overlaps[0]), float(overlaps[1]), float(overlaps[2])]
+    axis_index = min(range(3), key=lambda index: depths[index])
+    return depths[axis_index], overlaps, ("x", "y", "z")[axis_index]
+
+def pairwise_mesh_penetration(subject_objs, object_objs):
+    subject_meshes = collect_mesh_hierarchy(subject_objs)
+    object_meshes = collect_mesh_hierarchy(object_objs)
+    if not subject_meshes or not object_meshes:
+        sb = aggregate_minmax(subject_objs)
+        ob = aggregate_minmax(object_objs)
+        if not sb or not ob:
+            return 0.0, (0.0, 0.0, 0.0), None, None
+        depth, overlaps, axis = penetration_depth(sb, ob)
+        return depth, overlaps, axis, None
+    worst = (0.0, (0.0, 0.0, 0.0), None, None)
+    for subject_mesh in subject_meshes:
+        sb = bbox_minmax(subject_mesh)
+        if not sb:
+            continue
+        for object_mesh in object_meshes:
+            ob = bbox_minmax(object_mesh)
+            if not ob:
+                continue
+            depth, overlaps, axis = penetration_depth(sb, ob)
+            if depth > worst[0]:
+                worst = (depth, overlaps, axis, [subject_mesh.name, object_mesh.name])
+    return worst
 
 def center(mm):
     return (mm[0] + mm[1]) * 0.5
@@ -925,9 +980,9 @@ for relation in IR["scene"].get("relations", []):
         if dist > max_dist:
             issue("RELATION_NEAR_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist, "frame": relation_frame}})
     elif rtype == "not_intersecting":
-        overlap = (min(sb[1].x, ob[1].x) - max(sb[0].x, ob[0].x), min(sb[1].y, ob[1].y) - max(sb[0].y, ob[0].y), min(sb[1].z, ob[1].z) - max(sb[0].z, ob[0].z))
-        if all(v > tol for v in overlap):
-            issue("RELATION_INTERSECTION_FAILED", f"'{{sid}}' appears to intersect '{{oid}}'.", "major", sid, relation["id"], {{"overlap": overlap, "frame": relation_frame}})
+        depth, overlap, axis, mesh_pair = pairwise_mesh_penetration(subj, obj)
+        if depth > tol:
+            issue("RELATION_INTERSECTION_FAILED", f"'{{sid}}' appears to intersect '{{oid}}'.", "major", sid, relation["id"], {{"overlap": overlap, "penetration_depth": depth, "axis": axis, "mesh_pair": mesh_pair, "frame": relation_frame}})
     if relation_frame is not None:
         bpy.context.scene.frame_set(original_frame)
 
@@ -1076,11 +1131,22 @@ def expected_path(action):
 def world_bbox(obj):
     if not obj or obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} or not getattr(obj, "bound_box", None):
         return []
+    if obj.type == "MESH" and getattr(obj, "data", None) and len(obj.data.vertices) > 0:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(depsgraph)
+        mesh = eval_obj.to_mesh()
+        try:
+            if mesh and len(mesh.vertices) > 0:
+                return [eval_obj.matrix_world @ vertex.co for vertex in mesh.vertices]
+        finally:
+            eval_obj.to_mesh_clear()
     return [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
 
 def aggregate_minmax(objs):
     points = []
     for obj in objs:
+        if not is_physical_bbox_object(obj):
+            continue
         points.extend(world_bbox(obj))
     if not points:
         return None
@@ -1142,6 +1208,27 @@ def build_deformation_statistics(samples_by_target):
         "review_required": False,
     }}
 
+def is_physical_bbox_object(obj):
+    text = f"{{obj.name}} {{obj.get('ll3m_part', '')}} {{obj.get('ll3m_role', '')}}".lower()
+    visual_tokens = ("grain", "detail", "decal", "label", "marking", "stripe", "line", "arrow", "text", "annotation")
+    if not obj.get("ll3m_id") and any(token in text for token in visual_tokens):
+        return False
+    return True
+
+def mesh_like_descendants(objs):
+    result = []
+    queue = list(objs)
+    seen = set()
+    while queue:
+        obj = queue.pop(0)
+        if obj in seen:
+            continue
+        seen.add(obj)
+        if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and is_physical_bbox_object(obj):
+            result.append(obj)
+        queue.extend(list(getattr(obj, "children", [])))
+    return result
+
 def bbox_gap(a, b):
     gaps = []
     for index in range(3):
@@ -1167,6 +1254,63 @@ def penetration_depth(a, b):
     depths = [float(overlaps[0]), float(overlaps[1]), float(overlaps[2])]
     axis_index = min(range(3), key=lambda index: depths[index])
     return depths[axis_index], overlaps, ("x", "y", "z")[axis_index]
+
+def pairwise_mesh_penetration(subject_objs, object_objs):
+    subject_meshes = mesh_like_descendants(subject_objs)
+    object_meshes = mesh_like_descendants(object_objs)
+    if not subject_meshes or not object_meshes:
+        sb = aggregate_minmax(subject_objs)
+        ob = aggregate_minmax(object_objs)
+        if not sb or not ob:
+            return 0.0, (0.0, 0.0, 0.0), None, None
+        depth, overlaps, axis = penetration_depth(sb, ob)
+        return depth, overlaps, axis, None
+    worst = (0.0, (0.0, 0.0, 0.0), None, None)
+    for subject_mesh in subject_meshes:
+        sb = aggregate_minmax([subject_mesh])
+        if not sb:
+            continue
+        for object_mesh in object_meshes:
+            ob = aggregate_minmax([object_mesh])
+            if not ob:
+                continue
+            depth, overlaps, axis = penetration_depth(sb, ob)
+            if depth > worst[0]:
+                worst = (depth, overlaps, axis, [subject_mesh.name, object_mesh.name])
+    return worst
+
+def bbox_center(box):
+    return (box[0] + box[1]) * 0.5
+
+def point_inside_bbox(point, box):
+    return (
+        box[0].x <= point.x <= box[1].x
+        and box[0].y <= point.y <= box[1].y
+        and box[0].z <= point.z <= box[1].z
+    )
+
+def pairwise_embedded_contact(subject_objs, object_objs):
+    subject_meshes = mesh_like_descendants(subject_objs) or subject_objs
+    object_meshes = mesh_like_descendants(object_objs) or object_objs
+    for subject_mesh in subject_meshes:
+        sb = aggregate_minmax([subject_mesh])
+        if not sb:
+            continue
+        for object_mesh in object_meshes:
+            ob = aggregate_minmax([object_mesh])
+            if not ob:
+                continue
+            overlaps = bbox_overlaps(sb, ob)
+            if overlaps[0] <= 0 or overlaps[1] <= 0 or overlaps[2] <= 0:
+                continue
+            subject_center_inside = point_inside_bbox(bbox_center(sb), ob)
+            object_center_inside = point_inside_bbox(bbox_center(ob), sb)
+            if subject_center_inside or object_center_inside:
+                return True, overlaps, [getattr(subject_mesh, "name", None), getattr(object_mesh, "name", None)], {{
+                    "subject_center_inside_object": subject_center_inside,
+                    "object_center_inside_subject": object_center_inside,
+                }}
+    return False, (0.0, 0.0, 0.0), None, {{}}
 
 def xy_overlap(a, b):
     return (
@@ -1203,11 +1347,27 @@ def motion_support_targets(event):
         str(event.get("expected_visual_result", "")),
         " ".join(event.get("constraints", []) or []),
     ]).lower()
+    if any(token in text for token in ("pick", "gripper", "grasp", "carry", "carried", "transfer")):
+        return []
     if not any(token in text for token in ("drive", "drives", "cross", "roll", "rolls", "slide", "slides", "move", "moves", "travel")):
         return []
     return [target for target in (event.get("target_ids", []) or []) if target and is_static_destination_target(target)]
 
 def frames_for_motion_support(event, target_id, frames):
+    constraint_windows = []
+    for constraint in [*(event.get("contact_constraints", []) or []), *(IR.get("animation", {{}}).get("contact_constraints", []) or [])]:
+        if constraint.get("constraint_type") != "support" or constraint.get("object_id") != target_id:
+            continue
+        constraint_windows.append((int(constraint.get("start_frame", 1)), int(constraint.get("end_frame", 1))))
+    if constraint_windows:
+        selected = [
+            frame
+            for frame in frames
+            if any(start <= int(frame) <= end for start, end in constraint_windows)
+        ]
+        if selected:
+            return selected
+        return [max(start for start, _end in constraint_windows)]
     haystack = target_haystack(target_id)
     end_frame = int(event.get("end_frame", frames[-1] if frames else 1))
     if any(token in haystack for token in ("marker", "landing", "output", "destination", "right platform")):
@@ -1275,23 +1435,36 @@ def collision_object_ids():
         ids.append(object_id)
     return ids
 
+def animated_collision_object_ids():
+    ids = set()
+    for event in events:
+        if event.get("action") in ("camera_move", "camera_orbit"):
+            continue
+        for subject_id in event.get("subject_ids", []) or []:
+            if collision_spec(subject_id) is not None:
+                ids.add(subject_id)
+    return ids
+
 def pair_key(a, b):
     return tuple(sorted((str(a), str(b))))
 
-def globally_allowed_overlap_pairs():
+def globally_allowed_overlap_pairs(frame):
     allowed = set()
     for relation in IR.get("scene", {{}}).get("relations", []):
         rtype = str(relation.get("relation_type", ""))
-        if rtype in ("attached_to", "touching", "inside", "contains"):
+        method = str(relation.get("verification_method", ""))
+        if rtype in ("attached_to", "touching", "inside", "contains") or method == "attachment":
             allowed.add(pair_key(relation.get("subject_id"), relation.get("object_id")))
     for constraint in anim.get("contact_constraints", []) or []:
-        ctype = str(constraint.get("constraint_type", ""))
-        if ctype in ("attachment", "touching", "carry_contact", "inside"):
+        start = int(constraint.get("start_frame", 1))
+        end = int(constraint.get("end_frame", start))
+        if start <= frame <= end:
             allowed.add(pair_key(constraint.get("subject_id"), constraint.get("object_id")))
     for event in events:
         for constraint in event.get("contact_constraints", []) or []:
-            ctype = str(constraint.get("constraint_type", ""))
-            if ctype in ("attachment", "touching", "carry_contact", "inside"):
+            start = int(constraint.get("start_frame", event.get("start_frame", 1)))
+            end = int(constraint.get("end_frame", event.get("end_frame", start)))
+            if start <= frame <= end:
                 allowed.add(pair_key(constraint.get("subject_id"), constraint.get("object_id")))
     return allowed
 
@@ -1299,6 +1472,11 @@ def contact_constraint_frames(constraint):
     start = int(constraint.get("start_frame", 1))
     end = int(constraint.get("end_frame", start))
     frames = {{start, end, int((start + end) / 2)}}
+    ctype = str(constraint.get("constraint_type", ""))
+    if ctype in ("touching", "attachment", "carry_contact", "nonpenetration"):
+        step = 1 if duration <= 180 else max(1, int(duration / 180))
+        frames.update(range(max(1, start), min(duration, end) + 1, step))
+        frames.add(min(duration, end))
     for frame in (anim.get("verifier", {{}}).get("sampled_frames", []) or []):
         frame = int(frame)
         if start <= frame <= end:
@@ -1319,6 +1497,7 @@ def check_contact_constraint(constraint):
     if max_gap is None:
         max_gap = 0.10 if ctype in ("touching", "attachment", "carry_contact") else 0.08
     max_gap = float(max_gap)
+    embedded_contact_reported = False
     for frame in contact_constraint_frames(constraint):
         bpy.context.scene.frame_set(frame)
         sb = aggregate_minmax(subject_objs)
@@ -1330,6 +1509,7 @@ def check_contact_constraint(constraint):
         overlap_x, overlap_y = xy_overlap(sb, ob)
         z_gap = sb[0].z - ob[1].z
         if ctype == "nonpenetration":
+            depth, overlaps, axis, mesh_pair = pairwise_mesh_penetration(subject_objs, object_objs)
             if depth > max_penetration:
                 issue(
                     "CONTACT_CONSTRAINT_PENETRATION",
@@ -1337,7 +1517,7 @@ def check_contact_constraint(constraint):
                     severity,
                     subject_id,
                     frame,
-                    {{"object_id": object_id, "penetration_depth": depth, "axis": axis, "overlaps": list(overlaps), "max_penetration": max_penetration}},
+                    {{"object_id": object_id, "penetration_depth": depth, "axis": axis, "overlaps": list(overlaps), "mesh_pair": mesh_pair, "max_penetration": max_penetration}},
                 )
         elif ctype == "support":
             if overlap_x <= 0 or overlap_y <= 0:
@@ -1377,6 +1557,7 @@ def check_contact_constraint(constraint):
                     frame,
                     {{"object_id": object_id, "gap": gap, "max_gap": max_gap}},
                 )
+            depth, overlaps, axis, mesh_pair = pairwise_mesh_penetration(subject_objs, object_objs)
             if depth > max_penetration:
                 issue(
                     "CONTACT_CONSTRAINT_CONTACT_PENETRATION",
@@ -1384,7 +1565,18 @@ def check_contact_constraint(constraint):
                     severity,
                     subject_id,
                     frame,
-                    {{"object_id": object_id, "penetration_depth": depth, "axis": axis, "overlaps": list(overlaps), "max_penetration": max_penetration}},
+                    {{"object_id": object_id, "penetration_depth": depth, "axis": axis, "overlaps": list(overlaps), "mesh_pair": mesh_pair, "max_penetration": max_penetration}},
+                )
+            embedded, embedded_overlaps, embedded_pair, embedded_flags = pairwise_embedded_contact(subject_objs, object_objs)
+            if embedded and not embedded_contact_reported:
+                embedded_contact_reported = True
+                issue(
+                    "CONTACT_CONSTRAINT_EMBEDDED_CONTACT",
+                    f"Contact constraint '{{constraint.get('id')}}' has '{{subject_id}}' embedded inside '{{object_id}}'.",
+                    severity,
+                    subject_id,
+                    frame,
+                    {{"object_id": object_id, "overlaps": list(embedded_overlaps), "mesh_pair": embedded_pair, **embedded_flags}},
                 )
         elif ctype == "inside":
             max_escape = float(constraint.get("max_gap", 0.02) or 0.02)
@@ -1421,30 +1613,32 @@ def animation_audit_frames():
 
 def audit_global_nonpenetration():
     object_ids = collision_object_ids()
-    allowed = globally_allowed_overlap_pairs()
-    if len(object_ids) < 2:
+    moving_ids = animated_collision_object_ids()
+    if len(object_ids) < 2 or not moving_ids:
         return
     violations = {{}}
     for frame in animation_audit_frames():
         bpy.context.scene.frame_set(frame)
-        bboxes = {{}}
+        allowed = globally_allowed_overlap_pairs(frame)
+        object_map = {{}}
         for object_id in object_ids:
             objs = find_objects(object_id)
-            bbox = aggregate_minmax(objs)
-            if bbox:
-                bboxes[object_id] = bbox
+            if objs:
+                object_map[object_id] = objs
         for index, subject_id in enumerate(object_ids):
             for object_id in object_ids[index + 1:]:
+                if subject_id not in moving_ids and object_id not in moving_ids:
+                    continue
                 if pair_key(subject_id, object_id) in allowed:
                     continue
-                if subject_id not in bboxes or object_id not in bboxes:
+                if subject_id not in object_map or object_id not in object_map:
                     continue
                 max_penetration = max(
                     float((collision_spec(subject_id) or {{}}).get("margin", 0.02)),
                     float((collision_spec(object_id) or {{}}).get("margin", 0.02)),
                     0.02,
                 )
-                depth, overlaps, axis = penetration_depth(bboxes[subject_id], bboxes[object_id])
+                depth, overlaps, axis, mesh_pair = pairwise_mesh_penetration(object_map[subject_id], object_map[object_id])
                 if depth > max_penetration:
                     key = pair_key(subject_id, object_id)
                     existing = violations.get(key)
@@ -1457,6 +1651,7 @@ def audit_global_nonpenetration():
                             "penetration_depth": depth,
                             "axis": axis,
                             "overlaps": list(overlaps),
+                            "mesh_pair": mesh_pair,
                             "max_penetration": max_penetration,
                         }}
                     existing = violations[key]
@@ -1466,6 +1661,7 @@ def audit_global_nonpenetration():
                         existing["penetration_depth"] = depth
                         existing["axis"] = axis
                         existing["overlaps"] = list(overlaps)
+                        existing["mesh_pair"] = mesh_pair
     for data in violations.values():
         frames = sorted(set(int(frame) for frame in data.pop("frames", [])))
         data["frames"] = frames[:24]
@@ -1530,7 +1726,14 @@ def interaction_targets(event):
         return []
     if not any(token in text for token in ("grasp", "gripper", "lift", "carry", "pick", "place", "transfer")):
         return []
-    targets = list(event.get("target_ids", []) or [])
+    targets = []
+    for constraint in event.get("contact_constraints", []) or []:
+        ctype = str(constraint.get("constraint_type", ""))
+        if ctype not in ("touching", "attachment", "carry_contact"):
+            continue
+        for target in (constraint.get("subject_id"), constraint.get("object_id")):
+            if target and target not in targets:
+                targets.append(target)
     if not targets and any(token in text for token in ("gripper", "lift", "carry", "pick", "place", "transfer")):
         for obj_spec in IR.get("scene", {{}}).get("objects", []):
             haystack = f"{{obj_spec.get('id', '')}} {{obj_spec.get('description', '')}} {{obj_spec.get('label', '')}}".lower()
@@ -1596,8 +1799,10 @@ for event in events:
             if not subj_objs:
                 continue
             for target_id in targets:
+                if target_id == sid:
+                    continue
                 target_objs = find_objects(target_id)
-                if "gripper" in str(event.get("description", "")).lower() or "gripper" in str(event.get("expected_visual_result", "")).lower():
+                if "gripper" in str(target_id).lower() and ("gripper" in str(event.get("description", "")).lower() or "gripper" in str(event.get("expected_visual_result", "")).lower()):
                     target_objs = gripper_subset(target_objs)
                 if not target_objs:
                     continue

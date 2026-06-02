@@ -29,6 +29,8 @@ class HarnessEvent:
 EventCallback = Callable[[HarnessEvent], None]
 _ANIMATION_REPAIR_MARKER = "# LL3M deterministic animation path repair"
 _STATIC_SUPPORT_REPAIR_MARKER = "# LL3M deterministic static support repair"
+_ANIMATION_CONTACT_REPAIR_MARKER = "# LL3M deterministic animation contact repair"
+_REPAIR_MARKERS = (_STATIC_SUPPORT_REPAIR_MARKER, _ANIMATION_REPAIR_MARKER, _ANIMATION_CONTACT_REPAIR_MARKER)
 
 
 def _agent_model_record(config: AgentModelConfig) -> dict[str, Any]:
@@ -44,6 +46,211 @@ def _agent_model_record(config: AgentModelConfig) -> dict[str, Any]:
         "stream": config.stream,
         "supports_images": config.supports_images,
     }
+
+
+def _strip_appended_repair_block(code: str, marker: str) -> str:
+    """Remove a previously appended deterministic repair block from generated code."""
+
+    start = code.find(marker)
+    if start < 0:
+        return code
+    line_start = code.rfind("\n", 0, start)
+    if line_start < 0:
+        line_start = 0
+    else:
+        line_start += 1
+    following_markers = [
+        index
+        for other_marker in _REPAIR_MARKERS
+        if other_marker != marker
+        for index in [code.find(other_marker, start + len(marker))]
+        if index >= 0
+    ]
+    if following_markers:
+        next_start = min(following_markers)
+        next_line_start = code.rfind("\n", 0, next_start)
+        end = next_line_start + 1 if next_line_start >= 0 else next_start
+        return code[:line_start].rstrip() + "\n\n" + code[end:].lstrip()
+    return code[:line_start].rstrip()
+
+
+def _animation_contact_repair_script(report: ValidationReport) -> str:
+    deltas: dict[str, list[float]] = {}
+    support_ids: dict[str, set[str]] = {}
+    for issue in report.issues:
+        if issue.code not in {
+            "ANIMATION_PENETRATES_SUPPORT",
+            "CONTACT_CONSTRAINT_FLOATING",
+            "CONTACT_CONSTRAINT_PENETRATION",
+            "CONTACT_CONSTRAINT_SUPPORT_PENETRATION",
+        }:
+            continue
+        target_id = issue.target_id
+        if not target_id:
+            continue
+        evidence = issue.evidence if isinstance(issue.evidence, dict) else {}
+        object_id = evidence.get("object_id") or evidence.get("target_id")
+        if object_id:
+            support_ids.setdefault(target_id, set()).add(str(object_id))
+        try:
+            z_gap = float(evidence.get("z_gap"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        delta = -z_gap
+        if abs(delta) > 0.2:
+            continue
+        deltas.setdefault(target_id, []).append(delta)
+    support_pairs = {
+        target_id: next(iter(ids))
+        for target_id, ids in support_ids.items()
+        if len(ids) == 1 and target_id != next(iter(ids))
+    }
+    repairs: dict[str, float] = {}
+    for target_id, values in deltas.items():
+        if target_id in support_pairs or len(support_ids.get(target_id, set())) > 1:
+            continue
+        if len(values) < 2:
+            continue
+        average = sum(values) / len(values)
+        if max(abs(value - average) for value in values) > 0.03:
+            continue
+        if abs(average) > 1e-5:
+            repairs[target_id] = average
+    if not repairs and not support_pairs:
+        return ""
+    payload = json.dumps(
+        {"constant_deltas": repairs, "support_pairs": support_pairs},
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+    return f"""
+{_ANIMATION_CONTACT_REPAIR_MARKER}
+import json as _ll3m_contact_repair_json
+import bpy as _ll3m_contact_repair_bpy
+from mathutils import Vector as _ll3m_contact_repair_Vector
+
+_LL3M_ANIMATION_CONTACT_REPAIRS = _ll3m_contact_repair_json.loads({payload!r})
+
+def _ll3m_contact_repair_find_root(ll3m_id):
+    marker = str(ll3m_id)
+    exact = _ll3m_contact_repair_bpy.data.objects.get(marker)
+    if exact is not None:
+        return exact
+    for obj in _ll3m_contact_repair_bpy.data.objects:
+        if str(obj.get("ll3m_id", "")) == marker:
+            return obj
+    for obj in _ll3m_contact_repair_bpy.data.objects:
+        if obj.name.startswith(marker):
+            return obj
+    return None
+
+def _ll3m_contact_repair_iter_fcurves(action):
+    if not action:
+        return
+    seen = set()
+    if hasattr(action, "fcurves"):
+        for fcurve in action.fcurves:
+            marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+            if marker not in seen:
+                seen.add(marker)
+                yield fcurve
+    for layer in getattr(action, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for bag in getattr(strip, "channelbags", []):
+                for fcurve in getattr(bag, "fcurves", []):
+                    marker = fcurve.as_pointer() if hasattr(fcurve, "as_pointer") else id(fcurve)
+                    if marker not in seen:
+                        seen.add(marker)
+                        yield fcurve
+
+def _ll3m_contact_repair_shift_z(obj, dz):
+    obj.location.z += float(dz)
+    action = obj.animation_data.action if obj.animation_data else None
+    for fcurve in _ll3m_contact_repair_iter_fcurves(action):
+        if fcurve.data_path != "location" or fcurve.array_index != 2:
+            continue
+        for point in fcurve.keyframe_points:
+            point.co.y += float(dz)
+            point.handle_left.y += float(dz)
+            point.handle_right.y += float(dz)
+        fcurve.update()
+
+def _ll3m_contact_repair_descendants(root):
+    yield root
+    for child in root.children:
+        yield from _ll3m_contact_repair_descendants(child)
+
+def _ll3m_contact_repair_bbox(root):
+    corners = []
+    for obj in _ll3m_contact_repair_descendants(root):
+        if not hasattr(obj, "bound_box") or not obj.bound_box:
+            continue
+        corners.extend(obj.matrix_world @ _ll3m_contact_repair_Vector(corner) for corner in obj.bound_box)
+    if not corners:
+        loc = root.matrix_world.translation
+        return (loc.x, loc.y, loc.z, loc.x, loc.y, loc.z)
+    return (
+        min(corner.x for corner in corners),
+        min(corner.y for corner in corners),
+        min(corner.z for corner in corners),
+        max(corner.x for corner in corners),
+        max(corner.y for corner in corners),
+        max(corner.z for corner in corners),
+    )
+
+def _ll3m_contact_repair_xy_overlap(a, b):
+    return min(a[3], b[3]) > max(a[0], b[0]) and min(a[4], b[4]) > max(a[1], b[1])
+
+def _ll3m_contact_repair_z_fcurves(obj):
+    action = obj.animation_data.action if obj.animation_data else None
+    for fcurve in _ll3m_contact_repair_iter_fcurves(action):
+        if fcurve.data_path == "location" and fcurve.array_index == 2:
+            yield fcurve
+
+def _ll3m_contact_repair_align_keyed_support(subject, support):
+    scene = _ll3m_contact_repair_bpy.context.scene
+    fcurves = list(_ll3m_contact_repair_z_fcurves(subject))
+    if not fcurves:
+        _ll3m_contact_repair_bpy.context.view_layer.update()
+        subject_box = _ll3m_contact_repair_bbox(subject)
+        support_box = _ll3m_contact_repair_bbox(support)
+        if _ll3m_contact_repair_xy_overlap(subject_box, support_box):
+            dz = support_box[5] - subject_box[2] + 0.001
+            if abs(dz) <= 0.25:
+                subject.location.z += dz
+        return
+    original_frame = scene.frame_current
+    for fcurve in fcurves:
+        for point in fcurve.keyframe_points:
+            frame = int(round(point.co.x))
+            scene.frame_set(frame)
+            _ll3m_contact_repair_bpy.context.view_layer.update()
+            subject_box = _ll3m_contact_repair_bbox(subject)
+            support_box = _ll3m_contact_repair_bbox(support)
+            if not _ll3m_contact_repair_xy_overlap(subject_box, support_box):
+                continue
+            dz = support_box[5] - subject_box[2] + 0.001
+            if abs(dz) > 0.25 or abs(dz) <= 1e-5:
+                continue
+            point.co.y += dz
+            point.handle_left.y += dz
+            point.handle_right.y += dz
+        fcurve.update()
+    scene.frame_set(original_frame)
+
+for _ll3m_contact_repair_id, _ll3m_contact_repair_support_id in _LL3M_ANIMATION_CONTACT_REPAIRS.get("support_pairs", {{}}).items():
+    _ll3m_contact_repair_obj = _ll3m_contact_repair_find_root(_ll3m_contact_repair_id)
+    _ll3m_contact_repair_support = _ll3m_contact_repair_find_root(_ll3m_contact_repair_support_id)
+    if _ll3m_contact_repair_obj is not None and _ll3m_contact_repair_support is not None:
+        _ll3m_contact_repair_align_keyed_support(_ll3m_contact_repair_obj, _ll3m_contact_repair_support)
+
+for _ll3m_contact_repair_id, _ll3m_contact_repair_dz in _LL3M_ANIMATION_CONTACT_REPAIRS.get("constant_deltas", {{}}).items():
+    _ll3m_contact_repair_obj = _ll3m_contact_repair_find_root(_ll3m_contact_repair_id)
+    if _ll3m_contact_repair_obj is not None:
+        _ll3m_contact_repair_shift_z(_ll3m_contact_repair_obj, _ll3m_contact_repair_dz)
+
+_ll3m_contact_repair_bpy.context.view_layer.update()
+""".strip()
 
 
 class InteractiveHarnessSession:
@@ -370,11 +577,12 @@ class InteractiveHarnessSession:
     def _append_static_support_repair(self, code: str) -> str:
         if not self._static_support_repair_plan or not self._static_support_repair_plan.applied:
             return code
-        if _STATIC_SUPPORT_REPAIR_MARKER in code:
-            return code
+        if self.ir and self.ir.animation and self._animation_repair_plan and self._animation_repair_plan.applied:
+            return _strip_appended_repair_block(code, _STATIC_SUPPORT_REPAIR_MARKER)
         repair_code = blender_static_support_repair_script(self._static_support_repair_plan)
         if not repair_code:
             return code
+        code = _strip_appended_repair_block(code, _STATIC_SUPPORT_REPAIR_MARKER)
         return code.rstrip() + "\n\n" + repair_code + "\n"
 
     def _try_static_support_repair(self, label: str, scene_report: ValidationReport) -> ValidationReport | None:
@@ -418,6 +626,27 @@ class InteractiveHarnessSession:
         self._emit("repair", f"Applied deterministic static support repair to {len(repair_plan.adjustments)} relation(s)")
         repaired_report = self.blender.validate_scene(self.ir)
         self.store.write_json(f"reports/{label}_scene_deterministic_after_support_repair.json", report_to_dict(repaired_report))
+        self._emit_report(repaired_report)
+        return repaired_report
+
+    def _try_animation_contact_repair(self, label: str, anim_report: ValidationReport) -> ValidationReport | None:
+        if anim_report.passed or self.code is None or not self.store or not self.ir:
+            return None
+        repair_code = _animation_contact_repair_script(anim_report)
+        if not repair_code:
+            return None
+        self.store.write_text(f"code/{label}_animation_contact_repair.py", repair_code)
+        execution = self.blender.execute_code(repair_code)
+        self.store.write_text(f"logs/{label}_animation_contact_repair_execution.txt", execution.diagnostic_text())
+        if not execution.ok:
+            return None
+        self.code = _strip_appended_repair_block(self.code, _ANIMATION_CONTACT_REPAIR_MARKER).rstrip() + "\n\n" + repair_code + "\n"
+        self._last_executed_code = self.code
+        self.store.write_text(f"code/{label}_scene_with_animation_contact_repair.py", self.code)
+        repaired_report, transform_trace = self.blender.validate_animation(self.ir)
+        self.store.write_json(f"reports/{label}_animation_deterministic_after_contact_repair.json", report_to_dict(repaired_report))
+        self.store.write_json(f"reports/{label}_animation_trace_after_contact_repair.json", transform_trace)
+        self._emit("repair", "Applied deterministic animation contact z repair")
         self._emit_report(repaired_report)
         return repaired_report
 
@@ -480,7 +709,7 @@ class InteractiveHarnessSession:
                 issues.append(
                     ValidationIssue(
                         code="CODE_MISSING_ANIMATION_KEYFRAMES",
-                        message="Animation script has too few actual keyframe_insert calls for the planned events.",
+                        message="Animation script has too few actual keyframe operations or ll3m animation primitive calls for the planned events.",
                         severity=Severity.CRITICAL,
                     )
                 )
@@ -569,6 +798,10 @@ class InteractiveHarnessSession:
             if deformation_statistics:
                 self.store.write_json(f"reports/{label}_deformation_statistics.json", deformation_statistics)
             self._emit_report(anim_report)
+            repaired_anim_report = self._try_animation_contact_repair(label, anim_report)
+            if repaired_anim_report is not None:
+                anim_report = repaired_anim_report
+                reports[-1] = anim_report
 
             if self.ir.animation.verifier.enabled:
                 self._emit("render", "Rendering animation sampled frames" + (", GIF, and MP4 preview" if not self.skip_video else ""))
@@ -718,6 +951,21 @@ def _undefined_module_references(tree: ast.AST) -> list[str]:
 
 
 def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
+    ll3m_animation_helpers = {
+        "insert_location_keyframe",
+        "insert_rotation_keyframe",
+        "insert_scale_keyframe",
+        "animate_translate",
+        "animate_follow_path",
+        "animate_support_slide",
+        "animate_support_sequence",
+        "animate_attached_carry",
+        "animate_pick_place",
+        "animate_push",
+        "animate_drop_to_support",
+        "animate_rotate_about_axis",
+        "animate_hinge",
+    }
     helper_names: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef):
@@ -737,6 +985,10 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
             calls.append(node)
         elif isinstance(node.func, ast.Name) and node.func.id in helper_names:
             calls.append(node)
+        elif isinstance(node.func, ast.Attribute) and node.func.attr in ll3m_animation_helpers:
+            calls.append(node)
+            if node.func.attr.startswith("animate_"):
+                calls.append(node)
     return calls
 
 
