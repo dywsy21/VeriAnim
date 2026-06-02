@@ -955,10 +955,25 @@ for relation in IR["scene"].get("relations", []):
             continue
         sc = center(sb)
         oc = center(ob)
+    if rtype == "not_intersecting":
+        depth, overlap, axis, mesh_pair = pairwise_mesh_penetration(subj, obj)
+        if depth > tol:
+            issue("RELATION_INTERSECTION_FAILED", f"'{{sid}}' appears to intersect '{{oid}}'.", "major", sid, relation["id"], {{"overlap": overlap, "penetration_depth": depth, "axis": axis, "mesh_pair": mesh_pair, "frame": relation_frame}})
+        min_dist = relation.get("min_distance")
+        if min_dist is not None:
+            dist = aabb_distance(sb, ob)
+            if dist < float(min_dist):
+                issue("RELATION_MIN_DISTANCE_FAILED", f"'{{sid}}' is too close to '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "min_distance": min_dist, "frame": relation_frame}})
+        if relation_frame is not None:
+            bpy.context.scene.frame_set(original_frame)
+        continue
     if method == "distance":
-        max_dist = relation.get("max_distance") or 2.0
         dist = (sc - oc).length
-        if dist > max_dist:
+        min_dist = relation.get("min_distance")
+        max_dist = relation.get("max_distance")
+        if min_dist is not None and dist < float(min_dist):
+            issue("RELATION_MIN_DISTANCE_FAILED", f"'{{sid}}' is too close to '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "min_distance": min_dist, "frame": relation_frame}})
+        if max_dist is not None and dist > float(max_dist):
             issue("RELATION_DISTANCE_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist, "frame": relation_frame}})
         if relation_frame is not None:
             bpy.context.scene.frame_set(original_frame)
@@ -1002,9 +1017,7 @@ for relation in IR["scene"].get("relations", []):
         if dist > max_dist:
             issue("RELATION_NEAR_FAILED", f"'{{sid}}' is too far from '{{oid}}'.", "major", sid, relation["id"], {{"distance": dist, "max_distance": max_dist, "frame": relation_frame}})
     elif rtype == "not_intersecting":
-        depth, overlap, axis, mesh_pair = pairwise_mesh_penetration(subj, obj)
-        if depth > tol:
-            issue("RELATION_INTERSECTION_FAILED", f"'{{sid}}' appears to intersect '{{oid}}'.", "major", sid, relation["id"], {{"overlap": overlap, "penetration_depth": depth, "axis": axis, "mesh_pair": mesh_pair, "frame": relation_frame}})
+        pass
     if relation_frame is not None:
         bpy.context.scene.frame_set(original_frame)
 

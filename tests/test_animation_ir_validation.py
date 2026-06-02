@@ -489,6 +489,19 @@ class AnimationIRValidationTest(unittest.TestCase):
             self.assertIn("to_mesh()", script)
             self.assertIn("is_physical_bbox_object", script)
 
+    def test_scene_validation_checks_not_intersecting_before_distance_method(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+        scene_script = _scene_validation_script(ir)
+
+        not_intersecting_index = scene_script.index('if rtype == "not_intersecting":')
+        distance_index = scene_script.index('if method == "distance":')
+
+        self.assertLess(not_intersecting_index, distance_index)
+        self.assertIn("RELATION_MIN_DISTANCE_FAILED", scene_script)
+        self.assertIn('max_dist = relation.get("max_distance")', scene_script)
+        method_distance_block = scene_script[distance_index : scene_script.index('if method == "attachment"', distance_index)]
+        self.assertNotIn('relation.get("max_distance") or 2.0', method_distance_block)
+
     def test_global_nonpenetration_exemptions_are_frame_aware(self) -> None:
         ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
         animation_script = _animation_validation_script(ir)
