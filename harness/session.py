@@ -964,6 +964,7 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
         "animate_push",
         "animate_drop_to_support",
         "animate_rotate_about_axis",
+        "animate_rotor",
         "animate_hinge",
     }
     helper_names: set[str] = set()

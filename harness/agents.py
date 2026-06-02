@@ -96,6 +96,8 @@ Rigid animation and support helpers:
 - `obj = ll3m.animate_drop_to_support(subject, support, start_location, start_frame, end_frame, end_xy=None)`
 - `obj = ll3m.animate_rotate_about_axis(obj, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
 - `obj = ll3m.animate_hinge(obj, hinge_origin, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
+- `rotor = ll3m.create_rotor_root("rotor", location=hub.location, children=None, collection=None, ll3m_id="rotor")`
+- `rotor = ll3m.animate_rotor(rotor, axis="X", turns=1.0, start_frame=1, end_frame=120)`
 
 Use these rigid animation helpers for common box-on-table, conveyor, slide,
 push, drop, pick-carry-place, door/lever, and support-to-support motions. They
@@ -107,6 +109,11 @@ For grippers with finger child meshes, call
 `space_gripper_fingers_around_subject` after parenting/creating the fingers and
 before `animate_pick_place`; this prevents thin fingers from being visibly
 embedded in the carried object.
+For windmills, fans, wheels, and propellers, animate a rotor root/empty at the
+hub or axle, not the blade mesh origin. Parent blade meshes to the rotor root,
+place their local mesh centers offset away from the nacelle/head so only a small
+hub/axle touches the support, then call `ll3m.animate_rotor` on the root. Keep
+the rotor root as the AnimationSpec subject id when possible.
 
 Cameras, lights, and rendering:
 - `camera = ll3m.add_camera(name="camera_main", location=(3,-4,2.5), look_at_target=(0,0,0), lens=35, collection=None, make_active=True)`
@@ -524,6 +531,7 @@ class CoderAgent:
             "Place bridge supports outside the drivable lane: if the car path is y=0, supports should be at side/corner y positions outside the car half-width plus margin, not directly on y=0. If supports are decorative or intentionally intersect the deck, set their ll3m_id/collision role so they are not collision-enabled active blockers for the car path. "
             "If an AnimationSpec location is fixed, make the generated mesh dimensions, local offsets, and support height compatible with that root location instead of moving the root away from the requested start/end/path transform. "
             "For slanted ramps, define a clear ramp coordinate system and keyframed path along the visible top surface. Place the sliding object's center on the surface plus the surface normal times its half extent, and keep sampled start/middle/end frames free of penetration. "
+            "For windmills, fans, wheels, and propellers, create a rotor root/empty at the visible hub or axle, parent the visible blade meshes to it with local offsets outside the nacelle/head/body, and prefer `ll3m.create_rotor_root` plus `ll3m.animate_rotor`; do not rotate a blade mesh whose bbox remains embedded in the support object. "
             "For final-state relations in animation, apply 'near', 'on', or 'inside' by setting the final keyframe/end_transform and corresponding sampled frame, not by moving the static initial pose unless the IR explicitly requires that relation at frame 1. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to leave default interpolation instead of editing fcurves. "
             "Keep the script concise. Do not write long reasoning comments, abandoned design notes, or step-by-step analysis inside the code. "
@@ -572,6 +580,7 @@ Script requirements:
 - When AnimationSpec start/end/path locations are explicit, preserve those root coordinates by choosing compatible mesh dimensions/local offsets/support heights; do not "fix" contact by moving the final root location away from the IR.
 - For ramp sliding, keep all sampled frame positions on the ramp top surface or just above it. Use the ramp's length direction for path points and avoid placing the cube center at an arbitrary world z midpoint.
 - For final animation placement such as "stops near a box", set the end keyframe near the target while preserving the start pose and intermediate contact path.
+- For windmills/fans/wheels/propellers, animate a rotor root/empty at the hub with `ll3m.animate_rotor`; parent blade meshes to the root and offset them locally so blade bboxes do not touch or penetrate the nacelle/body except through a small separate hub/axle connector.
 - Do not read action.fcurves directly. Blender 5 uses layered actions; if you need fcurves, traverse action.layers, strip.channelbags, and bag.fcurves. Prefer leaving default keyframe interpolation if direct fcurve access is not required.
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
 - Define a final variable named LL3M_METADATA with object ids and created object names.
@@ -630,6 +639,7 @@ class RefinerAgent:
             "For CODE_MISSING_ANIMATION_KEYFRAMES, unroll keyframe insertion or use listed ll3m animation primitives so the script contains multiple concrete animation operations. A single keyframe_insert inside one loop over a keyframe list is still treated as too few by the static completeness check. "
             "For Blender interpolation errors, replace IR aliases such as EASE_IN_OUT with valid Blender interpolation enum values like BEZIER or LINEAR, or remove custom interpolation edits entirely. "
             "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames, or parent/constraint the package to the gripper for that segment, so screenshots show continuous contact. "
+            "For rotor/propeller failures, preserve a separate hub or axle as the only attached connector. Move blade mesh children outward in local coordinates and animate the rotor root/empty instead of embedding the blade bbox in the nacelle/head/body. "
             "Keep the gripper attached to the robotic arm at every sampled frame; moving the gripper as a detached block is a failure. "
             "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "

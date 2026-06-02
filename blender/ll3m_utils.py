@@ -913,6 +913,54 @@ def animate_rotate_about_axis(
     return obj
 
 
+def create_rotor_root(
+    name: str,
+    *,
+    location: Sequence[float] = (0.0, 0.0, 0.0),
+    children: Sequence[Any] | None = None,
+    collection: Any | None = None,
+    ll3m_id: str | None = None,
+    ll3m_role: str | None = "kinematic",
+) -> Any:
+    """Create an empty pivot root for propellers, rotors, wheels, and fans."""
+
+    bpy = _bpy()
+    root = bpy.data.objects.new(name, None)
+    root.empty_display_type = "PLAIN_AXES"
+    root.empty_display_size = 0.25
+    root.location = _vector(location)
+    link_to_collection(root, collection)
+    set_ll3m_properties(root, ll3m_id=ll3m_id or name, ll3m_role=ll3m_role)
+    for child in children or []:
+        child.parent = root
+        if hasattr(child, "matrix_parent_inverse"):
+            child.matrix_parent_inverse.identity()
+    return root
+
+
+def animate_rotor(
+    rotor_root: Any,
+    *,
+    axis: str | Sequence[float] = "X",
+    turns: float = 1.0,
+    start_frame: int = 1,
+    end_frame: int = 120,
+    start_rotation: Sequence[float] | None = None,
+    interpolation: str = "LINEAR",
+) -> Any:
+    """Animate a rotor pivot root by ``turns`` full rotations around ``axis``."""
+
+    return animate_rotate_about_axis(
+        rotor_root,
+        axis,
+        float(turns) * math.tau,
+        start_frame,
+        end_frame,
+        start_rotation=start_rotation,
+        interpolation=interpolation,
+    )
+
+
 def animate_hinge(
     obj: Any,
     hinge_origin: Sequence[float],
@@ -1117,6 +1165,7 @@ __all__ = [
     "create_light",
     "create_material",
     "create_mesh_object",
+    "create_rotor_root",
     "ensure_collection",
     "find_node_by_type",
     "get_or_create_collection",
@@ -1130,4 +1179,5 @@ __all__ = [
     "normalize_engine_name",
     "set_ll3m_properties",
     "set_render_engine",
+    "animate_rotor",
 ]
