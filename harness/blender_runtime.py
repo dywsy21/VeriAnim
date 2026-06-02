@@ -1768,11 +1768,14 @@ for event in events:
             bpy.context.scene.frame_set(frame)
             trace[sid].append({{"frame": frame, "location": list(obj.matrix_world.translation), "rotation": list(obj.rotation_euler), "scale": list(obj.scale)}})
         if path and len(trace[sid]) >= 2:
-            start_sample = trace[sid][0]
-            end_sample = trace[sid][-1]
             key = "rotation" if path == "rotation_euler" else path
-            if distance(start_sample[key], end_sample[key]) < 0.01:
-                issue("ANIMATION_NO_VISIBLE_CHANGE", f"Event '{{event.get('id')}}' does not visibly change '{{sid}}' {{path}} between sampled frames.", "major", sid, int(event.get("end_frame", 1)), {{"start": start_sample[key], "end": end_sample[key], "path": path}})
+            samples = [item[key] for item in trace[sid]]
+            max_delta = 0.0
+            for left_index, left in enumerate(samples):
+                for right in samples[left_index + 1:]:
+                    max_delta = max(max_delta, distance(left, right))
+            if max_delta < 0.01:
+                issue("ANIMATION_NO_VISIBLE_CHANGE", f"Event '{{event.get('id')}}' does not visibly change '{{sid}}' {{path}} between sampled frames.", "major", sid, int(event.get("end_frame", 1)), {{"samples": samples, "path": path}})
 
         end_transform = event.get("end_transform") or {{}}
         if path == "location" and end_transform.get("location") and trace[sid]:
