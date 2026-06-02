@@ -552,6 +552,30 @@ class ExtractJsonObjectTest(unittest.TestCase):
         self.assertFalse(report.passed)
         self.assertEqual(report.issues[0].code, "MODEL_VERIFIER_INVALID_RESPONSE")
 
+    def test_animation_sanitizer_expands_instant_appear_event(self) -> None:
+        payload = {
+            "animation": {
+                "events": [
+                    {
+                        "id": "light_appear",
+                        "action": "appear",
+                        "subject_ids": ["light"],
+                        "start_frame": 60,
+                        "end_frame": 60,
+                        "path": {"keyframes": []},
+                    }
+                ]
+            }
+        }
+
+        from harness.agents import _sanitize_animation_data
+
+        _sanitize_animation_data(payload)
+        event = payload["animation"]["events"][0]
+        self.assertEqual(event["start_frame"], 60)
+        self.assertEqual(event["end_frame"], 61)
+        self.assertEqual([item["frame"] for item in event["path"]["keyframes"]], [60, 61])
+
     def test_detects_text_only_multimodal_backend_error(self) -> None:
         exc = RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")
 

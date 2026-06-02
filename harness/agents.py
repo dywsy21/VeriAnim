@@ -2079,6 +2079,10 @@ def _ensure_visibility_keyframes(event: dict[str, Any], action: str) -> None:
     except (TypeError, ValueError):
         start = 1
         end = start
+    if end <= start:
+        end = start + 1
+        event["start_frame"] = start
+        event["end_frame"] = end
     before_visible = action != "appear"
     after_visible = action == "appear"
     path = event.setdefault("path", {})
