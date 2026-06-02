@@ -436,12 +436,18 @@ def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
     support_top = _ll3m_repair_support_top(plan.get("support_id"))
     root_to_bottom = _ll3m_repair_root_to_bottom(root, objects)
     support_z = support_top + root_to_bottom + 0.001 if support_top is not None else None
+    terminal_z = None
+    for terminal_id in ("ground", "floor", "terrain"):
+        terminal_top = _ll3m_repair_support_top(terminal_id)
+        if terminal_top is not None:
+            terminal_z = terminal_top + root_to_bottom + 0.001
+            break
     support_start = int(plan.get("support_start_frame", 0))
     support_end = int(plan.get("support_end_frame", 0))
     for keyframe in keyframes:
         frame = int(keyframe.get("frame", 0))
         location = list(keyframe.get("location", [0.0, 0.0, 0.0]))
-        label = str(keyframe.get("label", ""))
+        label = str(keyframe.get("label", "")).lower()
         label_prefix = "centered on support "
         if label.startswith(label_prefix):
             label_support_top = _ll3m_repair_support_top(label[len(label_prefix):].strip())
@@ -449,7 +455,14 @@ def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
                 location[2] = label_support_top + root_to_bottom + 0.001
                 keyframe["location"] = location
                 continue
-        if support_z is not None and support_start <= frame <= support_end:
+        if label == "ground outside support footprint" and terminal_z is not None:
+            location[2] = terminal_z
+            keyframe["location"] = location
+        elif support_z is not None and (
+            support_start <= frame <= support_end
+            or "lift outside support footprint" in label
+            or "support height" in label
+        ):
             location[2] = support_z
             keyframe["location"] = location
     return keyframes
@@ -922,6 +935,8 @@ def _normalize_terminal_support_windows(constraints: list[Any], plan: RepairedEv
             continue
         if constraint.object_id == plan.support_id:
             continue
+        if not _is_terminal_support_id(str(constraint.object_id)):
+            continue
         start_frame = int(constraint.start_frame)
         end_frame = int(constraint.end_frame)
         if start_frame <= plan.start_frame <= end_frame and end_frame < plan.support_start_frame:
@@ -938,6 +953,11 @@ def _normalize_terminal_support_windows(constraints: list[Any], plan: RepairedEv
                 constraint.description,
                 "Deterministically narrowed to the repaired ground end frame.",
             )
+
+
+def _is_terminal_support_id(object_id: str) -> bool:
+    tokens = set(object_id.lower().replace("_", " ").replace("-", " ").split())
+    return bool(tokens & {"ground", "floor", "terrain"})
 
 
 def _ensure_sampled_frames(ir: GenerationIR, plan: RepairedEventPlan) -> None:

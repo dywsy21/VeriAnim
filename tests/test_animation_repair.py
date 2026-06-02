@@ -153,6 +153,57 @@ def scene_graph_with_ground() -> dict:
     return graph
 
 
+def bridge_ir_with_ground_description_mentioning_bridge() -> GenerationIR:
+    ir = bridge_ir()
+    ir.scene.objects[1].id = "bridge"
+    ir.scene.objects[1].label = "Bridge"
+    ir.scene.objects[1].description = "a low bridge with a flat deck"
+    for constraint in ir.animation.events[0].contact_constraints:
+        constraint.object_id = "bridge"
+    ir.scene.objects.append(
+        ObjectSpec(
+            id="ground",
+            label="Ground",
+            description="flat ground under the bridge",
+            collision=CollisionProxySpec(proxy_type=CollisionProxyType.BBOX),
+        )
+    )
+    ir.animation.contact_constraints.append(
+        ContactConstraintSpec(
+            id="final_car_ground_support",
+            constraint_type=ContactConstraintType.SUPPORT,
+            subject_id="car",
+            object_id="ground",
+            start_frame=120,
+            end_frame=120,
+            description="car ends resting on the ground",
+        )
+    )
+    return ir
+
+
+def scene_graph_with_bridge_and_ground() -> dict:
+    return {
+        "objects": [
+            {
+                "name": "car",
+                "ll3m_id": "car",
+                "bbox": {"min": [-2.6, -0.3, 0.0], "max": [-1.4, 0.3, 0.4]},
+            },
+            {
+                "name": "bridge",
+                "ll3m_id": "bridge",
+                "bbox": {"min": [-1.0, -0.75, 0.0], "max": [1.0, 0.75, 0.5]},
+            },
+            {
+                "name": "ground",
+                "ll3m_id": "ground",
+                "bbox": {"min": [-5.0, -5.0, 0.0], "max": [5.0, 5.0, 0.0]},
+            },
+        ]
+    }
+
+
 def table_slide_ir() -> GenerationIR:
     ir = bridge_ir()
     ir.prompt = SourcePrompt(text="a crate slides across a wide table while staying on top the entire time")
