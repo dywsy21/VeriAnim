@@ -148,7 +148,7 @@ from blender import ll3m_utils as ll3m
 ll3m.animate_pick_place(gripper, cube, table, tray)
 """
         )
-        self.assertGreaterEqual(len(_count_effective_keyframe_calls(tree)), 2)
+        self.assertGreaterEqual(len(_count_effective_keyframe_calls(tree)), 4)
 
     def test_render_spec_defaults_to_workbench(self) -> None:
         self.assertEqual(RenderSpec().engine, RenderEngine.WORKBENCH)

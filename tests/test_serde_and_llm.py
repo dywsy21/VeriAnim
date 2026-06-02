@@ -7,7 +7,13 @@ import tempfile
 import unittest
 from unittest import mock
 
-from harness.agents import MaterialAgent, _is_multimodal_input_unsupported, _sanitize_generated_blender_code, _sanitize_planner_data
+from harness.agents import (
+    MaterialAgent,
+    _is_multimodal_input_unsupported,
+    _report_from_model,
+    _sanitize_generated_blender_code,
+    _sanitize_planner_data,
+)
 from harness.config import AgentModelConfig, HarnessConfig
 from harness.ir import (
     CameraSpec,
@@ -539,6 +545,12 @@ class ExtractJsonObjectTest(unittest.TestCase):
     def test_raises_when_no_json_object_exists(self) -> None:
         with self.assertRaises(LLMError):
             extract_json_object("no structured object here")
+
+    def test_report_from_model_handles_non_object_json(self) -> None:
+        report = _report_from_model(1, VerificationMode.VIDEO)  # type: ignore[arg-type]
+
+        self.assertFalse(report.passed)
+        self.assertEqual(report.issues[0].code, "MODEL_VERIFIER_INVALID_RESPONSE")
 
     def test_detects_text_only_multimodal_backend_error(self) -> None:
         exc = RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")

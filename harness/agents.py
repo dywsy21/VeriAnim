@@ -151,6 +151,8 @@ class PlannerAgent:
             "Animation events must be structurally verifiable: use translate, rotate, scale, follow_path, appear, disappear, camera_move, or camera_orbit; include start_transform, at least one intermediate path.keyframe or path point, end_transform, sampled frames covering start/middle/end, temporal questions, and pass criteria. "
             "For every required animation event, include visibility_requirements that say which subjects, contact points, and final placements must remain visible in the GIF and sampled frames. "
             "For moving objects that push, carry, rest on, slide on, land in, pass near, or must not penetrate another object, add contact_constraints with frame windows: nonpenetration for forbidden intersections, support for resting on surfaces, touching/attachment for connectors, and carry_contact for carried objects. "
+            "For pick-carry-place scenes, plan the gripper/end-effector as the active animated root and the package as the carried object. Finger or wrist meshes should be object parts or passive children of the gripper, not independent AnimationSpec subjects unless they truly open/close. Never plan the carried object as the parent/root of the gripper. "
+            "Do not represent a finger close-then-open cycle as one translate event whose start_transform and end_transform are identical; deterministic validation treats that as no visible change. Either keep finger motion implicit in the gripper event, or split it into separate close and open events with different start/end transforms. "
             "For bridge, deck, platform, floor, shelf, table, and ramp crossings, make transforms physically solvable: specify object/support dimensions when possible, set root-location z values as support top plus the moving subject half height, and keep support contact windows aligned with the frames where x/y footprints actually overlap. "
             "For bridge/platform crossings, split the motion into approach-on-ground, transition/up-ramp, on-support, transition/down-ramp, and exit-on-ground phases when needed. A low bridge with vertical sides is not physically solvable as one straight line from ground to deck through the deck volume; add ramps/approach slabs or put the first support-contact keyframe fully on top of the deck. "
             "For bridge crossings, start and end positions should be fully outside the bridge/deck footprint unless the object is intentionally on the bridge at those frames: place the moving root at least subject_half_width plus a small margin beyond the deck min/max x (or y) bound, not exactly on the deck edge. Otherwise the nonpenetration audit will correctly report an overlap. "
@@ -510,6 +512,7 @@ class CoderAgent:
             "If setting Blender keyframe interpolation, use valid Blender interpolation enum strings such as LINEAR, BEZIER, SINE, QUAD, CUBIC, QUART, QUINT, EXPO, CIRC, BACK, BOUNCE, ELASTIC, or CONSTANT. If setting keyframe easing, use Blender easing enum strings such as AUTO, EASE_IN, EASE_OUT, or EASE_IN_OUT; never assign SINE to easing. "
             "Write at least two concrete animation operations for each animated subject, such as explicit keyframe_insert calls, ll3m.insert_*_keyframe calls, or ll3m.animate_* primitive calls. Do not hide all keyframes behind an unlisted custom helper, because the harness static completeness check must see concrete animation operations before Blender execution. "
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. "
+            "For pick-carry-place animations, create the gripper/wrist as the active root, parent finger meshes to that root, call `ll3m.space_gripper_fingers_around_subject(gripper, carried, ...)` after parenting, and prefer `ll3m.animate_pick_place(gripper, carried, source_support, dest_support, ...)`. Do not parent the gripper, wrist, or fingers to the carried object. "
             "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
             "For a subject sliding, riding, or moving across one horizontal support for the whole event, prefer `ll3m.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame)` instead of `ll3m.animate_translate`; this derives z from actual world bboxes and prevents floating table/conveyor motions. "
             "For support-to-support paths, prefer `ll3m.animate_support_sequence` with one keyframe per support-contact phase instead of hand-written z keyframes. "
@@ -747,6 +750,7 @@ Requirements:
 - If you set interpolation, use Blender enum values such as `LINEAR` or `BEZIER`; never use `EASE_IN_OUT`.
 - For appear/disappear events, keyframe actual visibility or near-zero scale, not emission only.
 - For contact/carry events, keep the interacting objects visibly connected at sampled frames.
+- For pick-carry-place events, keep the gripper as the active root and fingers/wrist as gripper children. Do not parent gripper parts to the carried object. Prefer `ll3m.space_gripper_fingers_around_subject` followed by `ll3m.animate_pick_place`.
 - For a subject sliding/riding across one horizontal support, use `ll3m.animate_support_slide` rather than `ll3m.animate_translate`; for multiple support phases, use `ll3m.animate_support_sequence`. These helpers are preferred because they compute contact z from the current Blender scene graph.
 - For support/nonpenetration windows on bridges, decks, platforms, floors, tables, or ramps, compute actual world bbox top/bottom after loading the static scene and set keyframes so the moving subject's aggregate bottom rests on the active support top without penetration or floating.
 - Keep the moving subject fully outside bridge/deck x/y footprint at frames where it is supposed to be on the ground rather than on the bridge/deck; use subject half extent plus a small margin beyond the deck bound, not an edge-touching center coordinate.
@@ -3148,6 +3152,18 @@ def _overlaps_any(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
 
 
 def _report_from_model(data: dict[str, Any], mode: VerificationMode) -> ValidationReport:
+    if not isinstance(data, dict):
+        return ValidationReport.failed(
+            mode,
+            [
+                ValidationIssue(
+                    code="MODEL_VERIFIER_INVALID_RESPONSE",
+                    message=f"Verifier returned a non-object JSON response: {data!r}",
+                    severity=Severity.MAJOR,
+                )
+            ],
+            "Verifier response was not a JSON object.",
+        )
     issues = []
     for item in data.get("issues", []) or []:
         if isinstance(item, str):

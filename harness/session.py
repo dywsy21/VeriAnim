@@ -987,6 +987,8 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
             calls.append(node)
         elif isinstance(node.func, ast.Attribute) and node.func.attr in ll3m_animation_helpers:
             calls.append(node)
+            if node.func.attr == "animate_pick_place":
+                calls.extend([node, node, node])
             if node.func.attr.startswith("animate_"):
                 calls.append(node)
     return calls
