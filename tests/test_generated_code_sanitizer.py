@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import unittest
 
 from harness.agents import _sanitize_generated_blender_code
@@ -116,42 +115,59 @@ class HistoricalGeneratedCodeSanitizerSmokeTest(unittest.TestCase):
     def test_historical_failure_scripts_no_longer_contain_known_fragments(self) -> None:
         cases = [
             (
-                "runs/run_20260528_223119/code/generated_scene_stage.py",
+                "make_material spec_dict keyword",
+                "mat = ll3m.make_material(spec_dict={'id': 'mat', 'base_color': [1, 0, 0, 1]})\n",
                 ["spec_dict="],
                 ["ll3m.make_material({"],
             ),
             (
-                "runs/run_20260528_223419/code/generated_scene_stage.py",
+                "helper scale keywords",
+                """
+from blender import ll3m_utils as ll3m
+ground = ll3m.add_plane("ground", size=4, scale=(1, 1, 1), rotation=(0, 0, 0))
+deck = ll3m.add_cube("deck", size=1, scale=(2, 1, 0.2))
+""",
                 ["ll3m.add_plane(", "ll3m.add_cube("],
                 ["ll3m_safe_add_plane(", "ll3m_safe_add_cube("],
             ),
             (
-                "runs/run_20260528_233126/code/generated_scene_stage.py",
+                "wave modifier falloff and helper scale",
+                """
+from blender import ll3m_utils as ll3m
+ground = ll3m.add_plane("ground", size=4, scale=(1, 1, 1))
+wave = cloth.modifiers["Wave"]
+wave.falloff = "NONE"
+""",
                 ["wave.falloff"],
                 ["removed unsupported WaveModifier falloff assignment", "ll3m_safe_add_plane("],
             ),
             (
-                "runs/run_20260528_233648/code/generated_scene.py",
+                "legacy llm_utils import alias",
+                "from blender import llm_utils as llm\nscene = llm.clear_scene()\n",
                 ["from blender import llm_utils as llm"],
                 ["from blender import ll3m_utils as llm"],
             ),
             (
-                "runs/run_20260528_235130/code/animation_stage_round_0_refined.py",
+                "direct action fcurve loop",
+                """
+action = obj.animation_data.action
+for fcurve in action.fcurves:
+    fcurve.update()
+""",
                 [],
                 ["for fcurve in ll3m_iter_action_fcurves(action):"],
             ),
             (
-                "runs/run_20260529_210956/code/generated_animation_stage.py",
+                "look_at object target",
+                "ll3m.look_at(bpy.data.objects['ground'], leg)\n",
                 ["ll3m.look_at(bpy.data.objects['ground'], leg)"],
                 ["ll3m_safe_look_at(bpy.data.objects['ground'], leg)"],
             ),
         ]
 
-        for rel_path, removed_fragments, expected_fragments in cases:
-            with self.subTest(path=rel_path):
-                path = Path(rel_path)
-                self.assertTrue(path.exists(), rel_path)
-                sanitized = _sanitize_generated_blender_code(path.read_text(encoding="utf-8"))
+        for name, code, removed_fragments, expected_fragments in cases:
+            with self.subTest(name=name):
+                sanitized = _sanitize_generated_blender_code(code)
                 for fragment in removed_fragments:
                     self.assertNotIn(fragment, sanitized)
                 for fragment in expected_fragments:
