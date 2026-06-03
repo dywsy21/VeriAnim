@@ -193,6 +193,17 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         self.assertEqual(ir.scene.objects[0].collision.dimensions.size, (0.5, 0.5, 1.5))
         self.assertEqual(ir.scene.objects[0].parts[0].dimension.size, (0.4, 0.4, 0.4))
 
+    def test_planner_sanitizer_compacts_structured_environment_text(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["environment"]["floor"] = {"type": "factory floor", "color": "matte gray"}
+        payload["scene"]["environment"]["walls"] = ["plain backdrop", {"color": "light gray"}]
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertEqual(ir.scene.environment.floor, "type: factory floor; color: matte gray")
+        self.assertEqual(ir.scene.environment.walls, "plain backdrop; color: light gray")
+
     def test_planner_sanitizer_normalizes_stage_visual_mode_alias(self) -> None:
         payload = copy.deepcopy(self.data)
         payload["stages"] = [

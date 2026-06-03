@@ -1540,6 +1540,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
     data["version"] = "0.2"
     _sanitize_stage_data(data)
     _promote_animation_end_effectors(data)
+    _sanitize_environment_data(scene)
     valid_categories = {
         "generic",
         "furniture",
@@ -1681,6 +1682,30 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
                 material["texture_query"] = " ".join(str(item) for item in hints[:4])
             else:
                 material["texture_query"] = str(material.get("description") or material.get("id") or "material texture")
+
+
+def _sanitize_environment_data(scene: dict[str, Any]) -> None:
+    environment = scene.get("environment")
+    if not isinstance(environment, dict):
+        return
+    for key in ("description", "floor", "walls", "sky", "world_background", "notes"):
+        if key in environment and environment[key] is not None and not isinstance(environment[key], str):
+            environment[key] = _compact_text_value(environment[key])
+
+
+def _compact_text_value(value: Any) -> str:
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, item in value.items():
+            if item is None:
+                continue
+            text = _compact_text_value(item) if isinstance(item, (dict, list, tuple)) else str(item)
+            if text:
+                parts.append(f"{key}: {text}")
+        return "; ".join(parts)
+    if isinstance(value, (list, tuple)):
+        return "; ".join(_compact_text_value(item) if isinstance(item, (dict, list, tuple)) else str(item) for item in value if item is not None)
+    return str(value)
 
 
 def _sanitize_object_dimensions(obj: dict[str, Any]) -> None:
