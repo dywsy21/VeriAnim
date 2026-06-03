@@ -523,6 +523,8 @@ class AnimationIRValidationTest(unittest.TestCase):
         self.assertIn('if any(token in text for token in ("pick", "gripper", "grasp", "carry", "carried", "transfer")):', animation_script)
         self.assertIn('for constraint in event.get("contact_constraints", []) or []:', animation_script)
         self.assertIn('if target_id == sid:', animation_script)
+        self.assertNotIn('if any(token in text for token in ("carry", "carried", "grasp", "grasped", "transfer", "lift")):', animation_script)
+        self.assertNotIn('targets.append(obj_spec.get("id"))', animation_script)
         self.assertNotIn('targets = list(event.get("target_ids", []) or [])', animation_script)
 
     def test_contact_constraints_are_checked_across_window_frames(self) -> None:

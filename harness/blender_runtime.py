@@ -1735,8 +1735,6 @@ def frames_for_interaction_target(event, target_id, frames):
         ]).lower()
         if any(token in text for token in ("approach", "descend", "move down", "moves down", "contact the top", "pick")):
             return [int(event.get("end_frame", frames[-1] if frames else 1))]
-        if any(token in text for token in ("carry", "carried", "grasp", "grasped", "transfer", "lift")):
-            return frames
         return []
     text = " ".join([
         str(event.get("id", "")),
@@ -1769,11 +1767,6 @@ def interaction_targets(event):
         for target in (constraint.get("subject_id"), constraint.get("object_id")):
             if target and target not in targets:
                 targets.append(target)
-    if not targets and any(token in text for token in ("gripper", "lift", "carry", "pick", "place", "transfer")):
-        for obj_spec in IR.get("scene", {{}}).get("objects", []):
-            haystack = f"{{obj_spec.get('id', '')}} {{obj_spec.get('description', '')}} {{obj_spec.get('label', '')}}".lower()
-            if any(token in haystack for token in ("gripper", "robotic_arm", "robotic arm", "end effector", "end-effector")):
-                targets.append(obj_spec.get("id"))
     return [target for target in targets if target]
 
 anim = IR.get("animation") or {{}}
