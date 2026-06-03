@@ -428,10 +428,50 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         self.assertFalse(report.passed)
         self.assertIn("UNKNOWN_RELATION_OBJECT", codes)
 
+    def test_planner_sanitizer_resolves_placeholder_object_alias(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["objects"].append(
+            {
+                "id": "door",
+                "description": "warehouse doorway",
+                "category": "architecture",
+                "role": "secondary",
+            }
+        )
+        payload["scene"]["relations"] = [
+            {
+                "id": "cart_near_door_visual",
+                "relation_type": "near",
+                "subject_id": "box",
+                "object_id": "door_placeholder",
+            }
+        ]
+        payload["scene"]["cameras"] = [{"id": "camera_main", "target_object_ids": ["door_placeholder"]}]
+        payload["scene"]["verifier"] = {
+            "deterministic_checks": [{"id": "door_check", "target_ids": ["door_placeholder"]}],
+            "screenshot_plan": {
+                "views": [
+                    {
+                        "id": "door_view",
+                        "view_type": "front",
+                        "target_object_ids": ["door_placeholder"],
+                    }
+                ]
+            },
+        }
+
+        _sanitize_planner_data(payload)
+        report = from_dict(GenerationIR, payload).validate()
+
+        self.assertEqual(payload["scene"]["relations"][0]["object_id"], "door")
+        self.assertEqual(payload["scene"]["cameras"][0]["target_object_ids"], ["door"])
+        self.assertEqual(payload["scene"]["verifier"]["deterministic_checks"][0]["target_ids"], ["door"])
+        self.assertTrue(report.passed, [issue.code for issue in report.issues])
+
     def test_planner_sanitizer_prunes_invalid_verifier_references(self) -> None:
         payload = copy.deepcopy(self.data)
         payload["scene"]["cameras"] = [
-            {"id": "camera_main", "target_object_ids": ["ball", "missing_camera_target"]}
+            {"id": "camera_main", "target_object_ids": ["ball", "missing_camera_target"]} 
         ]
         payload["scene"]["verifier"] = {
             "screenshot_plan": {
@@ -681,6 +721,57 @@ class ExtractJsonObjectTest(unittest.TestCase):
         self.assertEqual(event["target_ids"], [])
         self.assertEqual(len(event["contact_constraints"]), 1)
         self.assertEqual(event["contact_constraints"][0]["object_id"], "gripper")
+
+    def test_animation_sanitizer_infers_translate_transforms_from_keyframes(self) -> None:
+        payload = {
+            "animation": {
+                "events": [
+                    {
+                        "id": "move_box",
+                        "action": "translate",
+                        "subject_ids": ["box"],
+                        "start_frame": 10,
+                        "end_frame": 20,
+                        "path": {
+                            "keyframes": [
+                                {"frame": 10, "transform": {"location": [0, 0, 0]}},
+                                {"frame": 20, "transform": {"location": [1, 2, 3]}},
+                            ]
+                        },
+                    }
+                ]
+            }
+        }
+
+        from harness.agents import _sanitize_animation_data
+
+        _sanitize_animation_data(payload)
+        event = payload["animation"]["events"][0]
+        self.assertEqual(event["start_transform"]["location"], [0.0, 0.0, 0.0])
+        self.assertEqual(event["end_transform"]["location"], [1.0, 2.0, 3.0])
+
+    def test_animation_sanitizer_infers_follow_path_transforms_from_points(self) -> None:
+        payload = {
+            "animation": {
+                "events": [
+                    {
+                        "id": "cart_path",
+                        "action": "follow_path",
+                        "subject_ids": ["cart"],
+                        "start_frame": 1,
+                        "end_frame": 30,
+                        "path": {"points": [[0, 0, 0], [0.5, 0, 0], [1, 0, 0]]},
+                    }
+                ]
+            }
+        }
+
+        from harness.agents import _sanitize_animation_data
+
+        _sanitize_animation_data(payload)
+        event = payload["animation"]["events"][0]
+        self.assertEqual(event["start_transform"]["location"], [0.0, 0.0, 0.0])
+        self.assertEqual(event["end_transform"]["location"], [1.0, 0.0, 0.0])
 
     def test_detects_text_only_multimodal_backend_error(self) -> None:
         exc = RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")

@@ -116,6 +116,10 @@ For ordinary two-finger robotic pick-and-place scenes, use
 This creates a visible palm/stem/finger assembly, keeps the gripper rooted as one
 animated object, spaces the fingers around the carried object, and animates the
 close/hold/release cycle without requiring hand-written finger offsets.
+For rigid carried packages, use explicit object keyframes or the pick-place
+primitives; do not use Blender CHILD_OF constraints to fake package carry,
+because inverse mistakes leave the package behind while deterministic contact
+checks still sample the full carry window.
 `animate_pick_place` automatically keeps the destination placement away from the
 source support footprint when the source and destination supports are adjacent.
 For windmills, fans, wheels, and propellers, animate a rotor root/empty at the
@@ -528,7 +532,7 @@ class CoderAgent:
             "If setting Blender keyframe interpolation, use valid Blender interpolation enum strings such as LINEAR, BEZIER, SINE, QUAD, CUBIC, QUART, QUINT, EXPO, CIRC, BACK, BOUNCE, ELASTIC, or CONSTANT. If setting keyframe easing, use Blender easing enum strings such as AUTO, EASE_IN, EASE_OUT, or EASE_IN_OUT; never assign SINE to easing. "
             "Write at least two concrete animation operations for each animated subject, such as explicit keyframe_insert calls, ll3m.insert_*_keyframe calls, or ll3m.animate_* primitive calls. Do not hide all keyframes behind an unlisted custom helper, because the harness static completeness check must see concrete animation operations before Blender execution. "
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. Use the gripper/end-effector root, not the whole arm link/root, as the moving contact object for package carry constraints. "
-            "For ordinary two-finger pick-carry-place animations, use `parts = ll3m.create_parallel_gripper(..., carried=carried, ll3m_id=gripper_id)` and then `ll3m.animate_parallel_gripper_pick_place(parts['root'], carried, source_support, dest_support, fingers=parts['fingers'], ...)`. Do not hand-build the palm/body/finger cubes for this common case, because small offset mistakes create false grippers and penetration. If the IR explicitly asks for a custom end-effector, create the gripper/wrist as the active root, parent finger meshes to that root, call `ll3m.space_gripper_fingers_around_subject(gripper, carried, ...)` after parenting, and prefer `ll3m.animate_pick_place(gripper, carried, source_support, dest_support, ...)`. Do not parent the gripper, wrist, or fingers to the carried object. "
+            "For ordinary two-finger pick-carry-place animations, use `parts = ll3m.create_parallel_gripper(..., carried=carried, ll3m_id=gripper_id)` and then `ll3m.animate_parallel_gripper_pick_place(parts['root'], carried, source_support, dest_support, fingers=parts['fingers'], ...)`. Do not hand-build the palm/body/finger cubes for this common case, because small offset mistakes create false grippers and penetration. If the IR explicitly asks for a custom end-effector, create the gripper/wrist as the active root, parent finger meshes to that root, call `ll3m.space_gripper_fingers_around_subject(gripper, carried, ...)` after parenting, and prefer `ll3m.animate_pick_place(gripper, carried, source_support, dest_support, ...)`. Do not parent the gripper, wrist, or fingers to the carried object. Do not use Blender CHILD_OF constraints to implement rigid package carry; use explicit keyframes or the listed pick-place primitives so the package has verifiable world-space motion throughout the carry window. "
             "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
             "For a subject sliding, riding, or moving across one horizontal support for the whole event, prefer `ll3m.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame)` instead of `ll3m.animate_translate`; this derives z from actual world bboxes and prevents floating table/conveyor motions. "
             "For support-to-support paths, prefer `ll3m.animate_support_sequence` with one keyframe per support-contact phase instead of hand-written z keyframes. "
@@ -582,6 +586,7 @@ Script requirements:
 - For robotic pick-and-place, keep a continuous articulated chain from arm base to gripper. Do not detach the gripper from the arm just to make it follow the package.
 - For robotic pick-and-place, animate and constrain a compact gripper/end-effector root for package contact. Do not use the large robot arm body/link/root as the contact object for the box; only the end-effector should touch or nearly touch the package.
 - For ordinary two-finger pick-and-place, use `ll3m.create_parallel_gripper(..., carried=carried, ll3m_id=<gripper object id>)` and `ll3m.animate_parallel_gripper_pick_place(...)` unless the IR explicitly asks for a different end-effector. Do not manually build a generic two-finger gripper from raw cubes in this case.
+- Do not use Blender `CHILD_OF` constraints to make rigid packages follow grippers/carts. Insert explicit package keyframes or use the listed pick-place/support primitives so deterministic checks see package motion at every sampled frame.
 - For appear/disappear events, keyframe hide_viewport/hide_render and/or near-zero scale before activation; material emission alone is not enough if the verifier can still see the light.
 - For horizontal support/contact, create and scale the support and subject first, then align bbox top/bottom: subject bottom equals support top with positive x/y footprint overlap and no penetration.
 - For bridge/deck/platform crossing animations, add a small local bbox helper if needed. Use actual world bboxes after object creation to set start/middle/end keyframe z values; the moving subject's aggregate bbox bottom must sit on the active support top, and start/end frames must not horizontally overlap the bridge deck unless they are intentionally on it.
@@ -649,7 +654,7 @@ class RefinerAgent:
             "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
             "For CODE_MISSING_ANIMATION_KEYFRAMES, unroll keyframe insertion or use listed ll3m animation primitives so the script contains multiple concrete animation operations. A single keyframe_insert inside one loop over a keyframe list is still treated as too few by the static completeness check. "
             "For Blender interpolation errors, replace IR aliases such as EASE_IN_OUT with valid Blender interpolation enum values like BEZIER or LINEAR, or remove custom interpolation edits entirely. "
-            "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames, or parent/constraint the package to the gripper for that segment, so screenshots show continuous contact. "
+            "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames with explicit keyframes or listed ll3m pick-place primitives so screenshots show continuous contact. Do not use Blender CHILD_OF constraints for rigid package carry; inverse mistakes commonly leave the package behind and fail deterministic contact checks. "
             "For rotor/propeller failures, preserve a separate hub or axle as the only attached connector. Move blade mesh children outward in local coordinates and animate the rotor root/empty instead of embedding the blade bbox in the nacelle/head/body. "
             "Keep the gripper attached to the robotic arm at every sampled frame; moving the gripper as a detached block is a failure. "
             "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
@@ -1595,6 +1600,7 @@ def _sanitize_planner_data(data: dict[str, Any]) -> None:
         role = str(obj.get("role", "secondary")).lower()
         obj["role"] = role if role in valid_roles else "secondary"
     _ensure_common_support_objects(scene, data.get("animation"))
+    _resolve_planner_object_aliases(scene, data.get("animation"))
     relation_aliases = {
         "above": "on_top_of",
         "atop": "on_top_of",
@@ -1886,6 +1892,62 @@ def _collect_common_supports_from_animation(animation: dict[str, Any], collect: 
             if isinstance(constraint, dict):
                 collect(constraint.get("subject_id"))
                 collect(constraint.get("object_id"))
+
+
+def _resolve_planner_object_aliases(scene: dict[str, Any], animation: Any = None) -> None:
+    object_ids = _raw_object_and_part_ids(scene)
+    if not object_ids:
+        return
+
+    def resolve(value: Any) -> Any:
+        if not isinstance(value, str) or value in object_ids:
+            return value
+        candidate = _strip_planner_object_suffix(value)
+        return candidate if candidate in object_ids else value
+
+    for relation in scene.get("relations", []) or []:
+        if isinstance(relation, dict):
+            relation["subject_id"] = resolve(relation.get("subject_id"))
+            relation["object_id"] = resolve(relation.get("object_id"))
+    for camera in scene.get("cameras", []) or []:
+        if isinstance(camera, dict) and isinstance(camera.get("target_object_ids"), list):
+            camera["target_object_ids"] = [resolve(item) for item in camera["target_object_ids"]]
+
+    verifier = scene.get("verifier")
+    if isinstance(verifier, dict):
+        for check in verifier.get("deterministic_checks") or []:
+            if isinstance(check, dict) and isinstance(check.get("target_ids"), list):
+                check["target_ids"] = [resolve(item) for item in check["target_ids"]]
+        screenshot_plan = verifier.get("screenshot_plan")
+        if isinstance(screenshot_plan, dict):
+            for view in screenshot_plan.get("views") or []:
+                if isinstance(view, dict) and isinstance(view.get("target_object_ids"), list):
+                    view["target_object_ids"] = [resolve(item) for item in view["target_object_ids"]]
+
+    if isinstance(animation, dict):
+        for constraint in animation.get("contact_constraints") or []:
+            if isinstance(constraint, dict):
+                constraint["subject_id"] = resolve(constraint.get("subject_id"))
+                constraint["object_id"] = resolve(constraint.get("object_id"))
+        for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
+            if not isinstance(event, dict):
+                continue
+            if isinstance(event.get("subject_ids"), list):
+                event["subject_ids"] = [resolve(item) for item in event["subject_ids"]]
+            if isinstance(event.get("target_ids"), list):
+                event["target_ids"] = [resolve(item) for item in event["target_ids"]]
+            for constraint in event.get("contact_constraints") or []:
+                if isinstance(constraint, dict):
+                    constraint["subject_id"] = resolve(constraint.get("subject_id"))
+                    constraint["object_id"] = resolve(constraint.get("object_id"))
+
+
+def _strip_planner_object_suffix(value: str) -> str:
+    candidate = value.strip()
+    for suffix in ("_placeholder", "_visual", "_proxy", "_target", "_object"):
+        if candidate.endswith(suffix):
+            return candidate[: -len(suffix)]
+    return candidate
 
 
 def _common_support_label(support_id: str) -> str:
@@ -2199,6 +2261,7 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
                     transform = keyframe.get("transform")
                     if isinstance(transform, dict) and "location" in transform:
                         transform["location"] = _normalize_vec3(transform["location"])
+        _infer_missing_event_transforms(event)
         _expand_event_range_to_keyframes(event)
         for key in ("start_transform", "end_transform"):
             transform = event.get(key)
@@ -2431,6 +2494,70 @@ def _expand_event_range_to_keyframes(event: dict[str, Any]) -> None:
         return
     event["start_frame"] = min(start, min(frames))
     event["end_frame"] = max(end, max(frames))
+
+
+def _infer_missing_event_transforms(event: dict[str, Any]) -> None:
+    action = str(event.get("action", "")).strip().lower()
+    field_by_action = {
+        "translate": "location",
+        "follow_path": "location",
+        "camera_move": "location",
+        "rotate": "rotation_euler",
+        "camera_orbit": "rotation_euler",
+        "scale": "scale",
+    }
+    field_name = field_by_action.get(action)
+    if not field_name:
+        return
+    states = _path_states_for_transform_field(event.get("path"), field_name)
+    if len(states) < 2:
+        return
+    start_state = states[0][1]
+    end_state = states[-1][1]
+    start_transform = event.setdefault("start_transform", {})
+    end_transform = event.setdefault("end_transform", {})
+    if isinstance(start_transform, dict) and field_name not in start_transform:
+        start_transform[field_name] = start_state
+    if isinstance(end_transform, dict) and field_name not in end_transform:
+        end_transform[field_name] = end_state
+
+
+def _path_states_for_transform_field(path: Any, field_name: str) -> list[tuple[int, list[float]]]:
+    if not isinstance(path, dict):
+        return []
+    states: list[tuple[int, list[float]]] = []
+    for index, keyframe in enumerate(path.get("keyframes") or []):
+        if not isinstance(keyframe, dict):
+            continue
+        try:
+            frame = int(keyframe.get("frame", index))
+        except (TypeError, ValueError):
+            frame = index
+        value = _keyframe_transform_value(keyframe, field_name)
+        if value is not None:
+            states.append((frame, value))
+    if states:
+        return sorted(states, key=lambda item: item[0])
+    if field_name != "location":
+        return []
+    points = path.get("points")
+    if not isinstance(points, list) or len(points) < 2:
+        return []
+    for index, point in enumerate(points):
+        states.append((index, _normalize_path_point(point)))
+    return states
+
+
+def _keyframe_transform_value(keyframe: dict[str, Any], field_name: str) -> list[float] | None:
+    transform = keyframe.get("transform")
+    if isinstance(transform, dict) and field_name in transform:
+        return _normalize_vec3(transform[field_name])
+    value = keyframe.get("value")
+    if isinstance(value, dict) and field_name in value:
+        return _normalize_vec3(value[field_name])
+    if field_name in keyframe:
+        return _normalize_vec3(keyframe[field_name])
+    return None
 
 
 def _normalize_interpolation(value: Any) -> str:

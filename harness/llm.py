@@ -7,6 +7,7 @@ import json
 import mimetypes
 from pathlib import Path
 import re
+import time
 from typing import Any
 
 from .config import AgentModelConfig
@@ -163,23 +164,23 @@ class LLMClient:
         if response_format == "json_object":
             if not self.config.stream:
                 try:
-                    return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
+                    return _content_from_response(_completion_with_retries(completion, kwargs), self.config.name)
                 except Exception as first_exc:
                     if "response_format" in kwargs and _mentions_unsupported_parameter(first_exc, "response_format"):
                         retry_kwargs = dict(kwargs)
                         retry_kwargs.pop("response_format", None)
                         try:
-                            return _content_from_response(_completion_with_parameter_fallback(completion, retry_kwargs), self.config.name)
+                            return _content_from_response(_completion_with_retries(completion, retry_kwargs), self.config.name)
                         except Exception as retry_exc:
                             raise LLMError(f"{self.config.name} LLM JSON call failed: {retry_exc}") from first_exc
                     raise LLMError(f"{self.config.name} LLM JSON call failed: {first_exc}") from first_exc
             stream_kwargs = {**kwargs, "stream": True}
             try:
-                return _content_from_stream(_completion_with_parameter_fallback(completion, stream_kwargs), self.config.name)
+                return _content_from_stream(_completion_with_retries(completion, stream_kwargs), self.config.name)
             except Exception as first_exc:
                 if _mentions_unsupported_parameter(first_exc, "stream"):
                     try:
-                        return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
+                        return _content_from_response(_completion_with_retries(completion, kwargs), self.config.name)
                     except Exception as retry_exc:
                         raise LLMError(f"{self.config.name} LLM JSON call failed: {retry_exc}") from first_exc
                 if "response_format" in kwargs and _mentions_unsupported_parameter(first_exc, "response_format"):
@@ -187,27 +188,43 @@ class LLMClient:
                     retry_kwargs.pop("response_format", None)
                     retry_kwargs["stream"] = True
                     try:
-                        return _content_from_stream(_completion_with_parameter_fallback(completion, retry_kwargs), self.config.name)
+                        return _content_from_stream(_completion_with_retries(completion, retry_kwargs), self.config.name)
                     except Exception as retry_exc:
                         raise LLMError(f"{self.config.name} LLM JSON call failed: {retry_exc}") from first_exc
                 raise LLMError(f"{self.config.name} LLM JSON call failed: {first_exc}") from first_exc
 
         if not self.config.stream:
             try:
-                return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
+                return _content_from_response(_completion_with_retries(completion, kwargs), self.config.name)
             except Exception as exc:
                 raise LLMError(f"{self.config.name} LLM call failed: {exc}") from exc
 
         stream_kwargs = {**kwargs, "stream": True}
         try:
-            return _content_from_stream(_completion_with_parameter_fallback(completion, stream_kwargs), self.config.name)
+            return _content_from_stream(_completion_with_retries(completion, stream_kwargs), self.config.name)
         except Exception as stream_exc:
             if _mentions_unsupported_parameter(stream_exc, "stream"):
                 try:
-                    return _content_from_response(_completion_with_parameter_fallback(completion, kwargs), self.config.name)
+                    return _content_from_response(_completion_with_retries(completion, kwargs), self.config.name)
                 except Exception as retry_exc:
                     raise LLMError(f"{self.config.name} LLM call failed: {retry_exc}") from stream_exc
             raise LLMError(f"{self.config.name} LLM streaming call failed: {stream_exc}") from stream_exc
+
+
+def _completion_with_retries(completion: Any, kwargs: dict[str, Any]) -> Any:
+    delays = [0.0, 5.0, 15.0, 45.0]
+    last_exc: Exception | None = None
+    for delay in delays:
+        if delay:
+            time.sleep(delay)
+        try:
+            return _completion_with_parameter_fallback(completion, kwargs)
+        except Exception as exc:
+            last_exc = exc
+            if not _is_transient_api_error(exc):
+                raise
+    assert last_exc is not None
+    raise last_exc
 
 
 def _completion_with_parameter_fallback(completion: Any, kwargs: dict[str, Any]) -> Any:
@@ -219,6 +236,32 @@ def _completion_with_parameter_fallback(completion: Any, kwargs: dict[str, Any])
             retry_kwargs.pop("temperature", None)
             return completion(**retry_kwargs)
         raise
+
+
+def _is_transient_api_error(exc: Exception) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(
+        token in text
+        for token in (
+            "connection error",
+            "connection refused",
+            "actively refused",
+            "connection reset",
+            "remote protocol error",
+            "server disconnected",
+            "timeout",
+            "timed out",
+            "temporarily unavailable",
+            "service unavailable",
+            "internalservererror",
+            "internal server error",
+            "bad gateway",
+            "gateway timeout",
+            "502",
+            "503",
+            "504",
+        )
+    )
 
 
 def _mentions_unsupported_parameter(exc: Exception, parameter: str) -> bool:

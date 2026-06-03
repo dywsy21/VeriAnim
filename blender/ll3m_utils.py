@@ -644,9 +644,12 @@ def space_gripper_fingers_around_subject(
         finger_size = bbox_size(finger, include_children=False)[axis_index]
         finger.location[axis_index] = sign * (subject_size / 2.0 + finger_size / 2.0 + float(gap))
         if align_z == "center":
-            subject_center_z = bbox_center(subject)[2]
-            finger_center_z = bbox_center(finger, include_children=False)[2]
-            finger.location.z += subject_center_z - finger_center_z
+            if getattr(finger, "parent", None) is gripper:
+                finger.location.z = 0.0
+            else:
+                subject_center_z = bbox_center(subject)[2]
+                finger_center_z = bbox_center(finger, include_children=False)[2]
+                finger.location.z += subject_center_z - finger_center_z
         elif align_z == "top":
             finger.location.z += bbox_top(subject) - bbox_top(finger, include_children=False)
     return selected
@@ -699,16 +702,17 @@ def create_parallel_gripper(
     palm = add_cube(f"{name}_palm", size=1.0, collection=collection, material=material, ll3m_part="palm")
     palm.scale = _vector(palm_size)
     palm.parent = root
-    palm.location = (0.0, 0.0, 0.0)
+    palm_z = vertical_size / 2.0 + thickness / 2.0 + 0.02
+    palm.location = (0.0, 0.0, palm_z)
 
     stem = add_cube(f"{name}_stem", size=1.0, collection=collection, material=material, ll3m_part="stem")
     stem.scale = (thickness, thickness, float(stem_height))
     stem.parent = root
-    stem.location = (0.0, 0.0, float(stem_height) / 2.0 + float(palm_size[2]) / 2.0)
+    stem.location = (0.0, 0.0, palm_z + float(stem_height) / 2.0 + float(palm_size[2]) / 2.0)
 
     finger_scale = [thickness, thickness, length]
     finger_offset = grip_span / 2.0 + thickness / 2.0 + float(open_gap)
-    finger_z = -(float(palm_size[2]) / 2.0 + length / 2.0)
+    finger_z = 0.0
     left = add_cube(f"{name}_left_finger", size=1.0, collection=collection, material=material, ll3m_part="finger")
     right = add_cube(f"{name}_right_finger", size=1.0, collection=collection, material=material, ll3m_part="finger")
     for sign, finger in ((-1.0, left), (1.0, right)):
@@ -1008,6 +1012,8 @@ def animate_parallel_gripper_pick_place(
     selected = list(fingers)[:2]
     if len(selected) >= 2:
         space_gripper_fingers_around_subject(gripper, carried, axis=axis, fingers=selected, gap=open_gap, align_z="center")
+    if gripper_offset is None:
+        gripper_offset = (0.0, 0.0, 0.0)
     animate_pick_place(
         gripper,
         carried,
