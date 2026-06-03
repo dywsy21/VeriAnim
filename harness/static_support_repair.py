@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
-from .animation_repair import BBox, _scene_bboxes
+from .animation_repair import BBox, MESH_BBOX_TYPES, _bbox_from_payload, _candidate_object_ids, _scene_bboxes
 from .ir import GenerationIR, RelationType, ValidationReport
 
 
@@ -85,7 +85,7 @@ def repair_static_support(
             skipped.append(f"{relation.id}: relation is {relation.relation_type.value}, not on_top_of.")
             continue
         subject_bbox = bboxes.get(relation.subject_id)
-        support_bbox = bboxes.get(relation.object_id)
+        support_bbox = _support_bbox_for_repair(scene_graph, relation.object_id, object_ids, subject_bbox) if subject_bbox else None
         if subject_bbox is None or support_bbox is None:
             skipped.append(f"{relation.id}: missing bbox for {relation.subject_id} or {relation.object_id}.")
             continue
@@ -251,7 +251,7 @@ def _ll3m_static_repair_current_delta(subject_id, fallback_delta, support_id):
     if not support_id:
         return vector
     subject_bbox = _ll3m_static_repair_world_bbox(_ll3m_static_repair_find_objects(subject_id))
-    support_bbox = _ll3m_static_repair_world_bbox(_ll3m_static_repair_find_objects(support_id))
+    support_bbox = _ll3m_static_repair_select_support_bbox(subject_bbox, _ll3m_static_repair_find_objects(support_id))
     if not subject_bbox or not support_bbox:
         return vector
     subject_min, subject_max = subject_bbox
@@ -261,6 +261,37 @@ def _ll3m_static_repair_current_delta(subject_id, fallback_delta, support_id):
         _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, 1),
         float(support_max.z - subject_min.z),
     ))
+
+def _ll3m_static_repair_select_support_bbox(subject_bbox, support_objects):
+    if not subject_bbox:
+        return _ll3m_static_repair_world_bbox(support_objects)
+    candidates = []
+    for obj in support_objects:
+        bbox = _ll3m_static_repair_world_bbox([obj])
+        if not bbox:
+            continue
+        bmin, bmax = bbox
+        size = bmax - bmin
+        if max(abs(float(size.x)), abs(float(size.y)), abs(float(size.z))) <= 1e-6:
+            continue
+        candidates.append(bbox)
+    if not candidates:
+        return _ll3m_static_repair_world_bbox(support_objects)
+    subject_min, subject_max = subject_bbox
+    def axis_gap(bmin, bmax, axis):
+        if subject_max[axis] < bmin[axis]:
+            return bmin[axis] - subject_max[axis]
+        if bmax[axis] < subject_min[axis]:
+            return subject_min[axis] - bmax[axis]
+        return 0.0
+    def score(bbox):
+        bmin, bmax = bbox
+        size = bmax - bmin
+        xy_gap = axis_gap(bmin, bmax, 0) + axis_gap(bmin, bmax, 1)
+        z_gap = abs(float(subject_min.z - bmax.z))
+        top_above_penalty = max(0.0, float(bmax.z - subject_min.z))
+        return (z_gap + top_above_penalty * 2.0, xy_gap, abs(float(size.z)))
+    return min(candidates, key=score)
 
 def _ll3m_static_repair_shift_location_keyframes(obj, vector, frame=None):
     action = obj.animation_data.action if obj.animation_data else None
@@ -320,6 +351,52 @@ def _axis_delta_for_overlap(subject_bbox: BBox, support_bbox: BBox, *, axis: int
     else:
         target_center = support_bbox.center[axis]
     return target_center - subject_bbox.center[axis]
+
+
+def _support_bbox_for_repair(
+    scene_graph: dict[str, Any],
+    support_id: str,
+    object_ids: set[str],
+    subject_bbox: BBox,
+) -> BBox | None:
+    """Choose the most plausible support surface for a subject.
+
+    Compound supports such as multi-level shelves have an aggregate bbox whose
+    top is often not the intended contact surface. Prefer the child/part bbox
+    whose top is closest to the subject bottom, with x/y proximity as a
+    secondary signal.
+    """
+
+    candidates: list[BBox] = []
+    for obj in scene_graph.get("objects", []) if isinstance(scene_graph, dict) else []:
+        if not isinstance(obj, dict):
+            continue
+        obj_type = obj.get("type")
+        if isinstance(obj_type, str) and obj_type not in MESH_BBOX_TYPES:
+            continue
+        if support_id not in _candidate_object_ids(obj, object_ids):
+            continue
+        bbox = _bbox_from_payload(obj.get("bbox"))
+        if bbox is not None and max(bbox.size) > 1e-6:
+            candidates.append(bbox)
+    if not candidates:
+        return _scene_bboxes(scene_graph, {support_id}).get(support_id)
+    return min(candidates, key=lambda bbox: _support_surface_score(subject_bbox, bbox))
+
+
+def _support_surface_score(subject_bbox: BBox, support_bbox: BBox) -> tuple[float, float, float]:
+    xy_gap = _axis_gap(subject_bbox, support_bbox, 0) + _axis_gap(subject_bbox, support_bbox, 1)
+    z_gap = abs(subject_bbox.min[2] - support_bbox.max[2])
+    top_above_penalty = max(0.0, support_bbox.max[2] - subject_bbox.min[2])
+    return (z_gap + top_above_penalty * 2.0, xy_gap, support_bbox.size[2])
+
+
+def _axis_gap(subject_bbox: BBox, support_bbox: BBox, axis: int) -> float:
+    if subject_bbox.max[axis] < support_bbox.min[axis]:
+        return support_bbox.min[axis] - subject_bbox.max[axis]
+    if support_bbox.max[axis] < subject_bbox.min[axis]:
+        return subject_bbox.min[axis] - support_bbox.max[axis]
+    return 0.0
 
 
 def _translate_bbox(bbox: BBox, delta: tuple[float, float, float]) -> BBox:

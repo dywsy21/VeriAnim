@@ -36,6 +36,26 @@ def support_ir() -> GenerationIR:
     )
 
 
+def shelf_ir() -> GenerationIR:
+    return GenerationIR(
+        prompt=SourcePrompt(text="shelf support repair"),
+        scene=SceneSpec(
+            objects=[
+                ObjectSpec(id="yellow_box", description="box"),
+                ObjectSpec(id="shelf", description="multi-level shelf"),
+            ],
+            relations=[
+                SpatialRelationSpec(
+                    id="box_on_shelf",
+                    relation_type=RelationType.ON_TOP_OF,
+                    subject_id="yellow_box",
+                    object_id="shelf",
+                )
+            ],
+        ),
+    )
+
+
 def failed_report(*, overlap_x: float = 0.4, overlap_y: float = 0.4, support_z: float = 0.5) -> ValidationReport:
     return ValidationReport.failed(
         VerificationMode.DETERMINISTIC,
@@ -56,6 +76,71 @@ def graph_with_mug(*, mug_min=(0.0, 0.0, 1.0), mug_max=(0.2, 0.2, 1.4), table_mi
         "objects": [
             {"name": "mug", "ll3m_id": "mug", "type": "MESH", "bbox": {"min": list(mug_min), "max": list(mug_max)}},
             {"name": "table", "ll3m_id": "table", "type": "MESH", "bbox": {"min": list(table_min), "max": list(table_max)}},
+        ]
+    }
+
+
+def failed_shelf_report() -> ValidationReport:
+    return ValidationReport.failed(
+        VerificationMode.DETERMINISTIC,
+        [
+            ValidationIssue(
+                code="RELATION_ON_TOP_OF_FAILED",
+                message="box is not on shelf",
+                relation_id="box_on_shelf",
+                target_id="yellow_box",
+                evidence={"overlap_x": -1.9, "overlap_y": 0.4, "support_z": 2.0},
+            )
+        ],
+    )
+
+
+def graph_with_multilevel_shelf() -> dict:
+    return {
+        "objects": [
+            {
+                "name": "yellow_box",
+                "ll3m_id": "yellow_box",
+                "type": "MESH",
+                "bbox": {"min": [-0.2, -0.2, 1.026], "max": [0.2, 0.2, 1.426]},
+            },
+            {
+                "name": "shelf",
+                "ll3m_id": "shelf",
+                "type": "EMPTY",
+                "bbox": {"min": [-3.0, 0.0, 0.0], "max": [-3.0, 0.0, 0.0]},
+                "children": ["shelf_board_bottom", "shelf_board_middle", "shelf_board_top", "shelf_leg_left", "shelf_leg_right"],
+            },
+            {
+                "name": "shelf_board_bottom",
+                "parent": "shelf",
+                "type": "MESH",
+                "bbox": {"min": [-3.8, -0.3, 0.175], "max": [-2.2, 0.3, 0.225]},
+            },
+            {
+                "name": "shelf_board_middle",
+                "parent": "shelf",
+                "type": "MESH",
+                "bbox": {"min": [-3.8, -0.3, 0.975], "max": [-2.2, 0.3, 1.025]},
+            },
+            {
+                "name": "shelf_board_top",
+                "parent": "shelf",
+                "type": "MESH",
+                "bbox": {"min": [-3.8, -0.3, 1.775], "max": [-2.2, 0.3, 1.825]},
+            },
+            {
+                "name": "shelf_leg_left",
+                "parent": "shelf",
+                "type": "MESH",
+                "bbox": {"min": [-3.825, -0.3, 0.0], "max": [-3.775, 0.3, 2.0]},
+            },
+            {
+                "name": "shelf_leg_right",
+                "parent": "shelf",
+                "type": "MESH",
+                "bbox": {"min": [-2.225, -0.3, 0.0], "max": [-2.175, 0.3, 2.0]},
+            },
         ]
     }
 
@@ -106,6 +191,16 @@ class StaticSupportRepairTest(unittest.TestCase):
         self.assertGreater(adjustment.overlap_after[0], 0.0)
         self.assertGreater(adjustment.overlap_after[1], 0.0)
         self.assertAlmostEqual(adjustment.subject_bottom_after, 0.5)
+
+    def test_compound_support_uses_nearest_surface_not_aggregate_top(self) -> None:
+        plan = repair_static_support(shelf_ir(), graph_with_multilevel_shelf(), failed_shelf_report())
+
+        self.assertTrue(plan.applied, plan.to_dict())
+        adjustment = plan.adjustments[0]
+        self.assertAlmostEqual(adjustment.support_top, 1.025)
+        self.assertAlmostEqual(adjustment.subject_bottom_after, 1.025)
+        self.assertNotAlmostEqual(adjustment.subject_bottom_after, 2.0)
+        self.assertLess(adjustment.delta[0], 0.0)
 
     def test_already_valid_failure_report_is_noop(self) -> None:
         graph = graph_with_mug(mug_min=(0.0, 0.0, 0.5), mug_max=(0.2, 0.2, 0.9))
