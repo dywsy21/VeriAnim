@@ -91,7 +91,9 @@ Rigid animation and support helpers:
 - `obj = ll3m.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame, margin=0.001)`
 - `obj = ll3m.animate_support_sequence(subject, [{"support": support, "frame": frame, "xy": (x,y)}, ...], margin=0.001)`
 - `(driver, carried) = ll3m.animate_attached_carry(driver, carried, [(frame, driver_location), ...], offset=(0,0,-0.5))`
-- `(gripper, carried) = ll3m.animate_pick_place(gripper, carried, source_support, dest_support, source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, clearance=0.05, gripper_offset=None)`
+- `parts = ll3m.create_parallel_gripper("gripper", carried=box, location=(x,y,z), collection=None, material=None, ll3m_id="gripper", axis="Y")`; animate `parts["root"]`, pass `parts["fingers"]` for finger motion.
+- `(gripper, carried) = ll3m.animate_pick_place(gripper, carried, source_support, dest_support, source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, clearance=0.05, gripper_offset=None, avoid_dest_supports=None)`
+- `(gripper, carried) = ll3m.animate_parallel_gripper_pick_place(gripper, carried, source_support, dest_support, fingers=None, axis="Y", source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, avoid_dest_supports=None)`
 - `(pusher, pushed) = ll3m.animate_push(pusher, pushed, support, start_xy, end_xy, start_frame, end_frame, pusher_offset=(-0.8,0,0))`
 - `obj = ll3m.animate_drop_to_support(subject, support, start_location, start_frame, end_frame, end_xy=None)`
 - `obj = ll3m.animate_rotate_about_axis(obj, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
@@ -109,6 +111,13 @@ For grippers with finger child meshes, call
 `space_gripper_fingers_around_subject` after parenting/creating the fingers and
 before `animate_pick_place`; this prevents thin fingers from being visibly
 embedded in the carried object.
+For ordinary two-finger robotic pick-and-place scenes, use
+`create_parallel_gripper` followed by `animate_parallel_gripper_pick_place`.
+This creates a visible palm/stem/finger assembly, keeps the gripper rooted as one
+animated object, spaces the fingers around the carried object, and animates the
+close/hold/release cycle without requiring hand-written finger offsets.
+`animate_pick_place` automatically keeps the destination placement away from the
+source support footprint when the source and destination supports are adjacent.
 For windmills, fans, wheels, and propellers, animate a rotor root/empty at the
 hub or axle, not the blade mesh origin. Parent blade meshes to the rotor root,
 place their local mesh centers offset away from the nacelle/head so only a small
@@ -519,7 +528,7 @@ class CoderAgent:
             "If setting Blender keyframe interpolation, use valid Blender interpolation enum strings such as LINEAR, BEZIER, SINE, QUAD, CUBIC, QUART, QUINT, EXPO, CIRC, BACK, BOUNCE, ELASTIC, or CONSTANT. If setting keyframe easing, use Blender easing enum strings such as AUTO, EASE_IN, EASE_OUT, or EASE_IN_OUT; never assign SINE to easing. "
             "Write at least two concrete animation operations for each animated subject, such as explicit keyframe_insert calls, ll3m.insert_*_keyframe calls, or ll3m.animate_* primitive calls. Do not hide all keyframes behind an unlisted custom helper, because the harness static completeness check must see concrete animation operations before Blender execution. "
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. "
-            "For pick-carry-place animations, create the gripper/wrist as the active root, parent finger meshes to that root, call `ll3m.space_gripper_fingers_around_subject(gripper, carried, ...)` after parenting, and prefer `ll3m.animate_pick_place(gripper, carried, source_support, dest_support, ...)`. Do not parent the gripper, wrist, or fingers to the carried object. "
+            "For ordinary two-finger pick-carry-place animations, use `parts = ll3m.create_parallel_gripper(..., carried=carried, ll3m_id=gripper_id)` and then `ll3m.animate_parallel_gripper_pick_place(parts['root'], carried, source_support, dest_support, fingers=parts['fingers'], ...)`. Do not hand-build the palm/body/finger cubes for this common case, because small offset mistakes create false grippers and penetration. If the IR explicitly asks for a custom end-effector, create the gripper/wrist as the active root, parent finger meshes to that root, call `ll3m.space_gripper_fingers_around_subject(gripper, carried, ...)` after parenting, and prefer `ll3m.animate_pick_place(gripper, carried, source_support, dest_support, ...)`. Do not parent the gripper, wrist, or fingers to the carried object. "
             "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
             "For a subject sliding, riding, or moving across one horizontal support for the whole event, prefer `ll3m.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame)` instead of `ll3m.animate_translate`; this derives z from actual world bboxes and prevents floating table/conveyor motions. "
             "For support-to-support paths, prefer `ll3m.animate_support_sequence` with one keyframe per support-contact phase instead of hand-written z keyframes. "
@@ -571,6 +580,7 @@ Script requirements:
 - If editing interpolation values, use Blender enum values such as `LINEAR` or `BEZIER`; do not use `EASE_IN_OUT`.
 - Use explicit keyframe statements or listed `ll3m.animate_*` primitives for at least the start and end pose of every animated subject. Do not rely on one loop containing a single `keyframe_insert` call for all keyframes; unroll the main start/middle/end insertions or call listed helpers separately for each required keyframe.
 - For robotic pick-and-place, keep a continuous articulated chain from arm base to gripper. Do not detach the gripper from the arm just to make it follow the package.
+- For ordinary two-finger pick-and-place, use `ll3m.create_parallel_gripper(..., carried=carried, ll3m_id=<gripper object id>)` and `ll3m.animate_parallel_gripper_pick_place(...)` unless the IR explicitly asks for a different end-effector. Do not manually build a generic two-finger gripper from raw cubes in this case.
 - For appear/disappear events, keyframe hide_viewport/hide_render and/or near-zero scale before activation; material emission alone is not enough if the verifier can still see the light.
 - For horizontal support/contact, create and scale the support and subject first, then align bbox top/bottom: subject bottom equals support top with positive x/y footprint overlap and no penetration.
 - For bridge/deck/platform crossing animations, add a small local bbox helper if needed. Use actual world bboxes after object creation to set start/middle/end keyframe z values; the moving subject's aggregate bbox bottom must sit on the active support top, and start/end frames must not horizontally overlap the bridge deck unless they are intentionally on it.

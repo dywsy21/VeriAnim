@@ -961,6 +961,7 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
         "animate_support_sequence",
         "animate_attached_carry",
         "animate_pick_place",
+        "animate_parallel_gripper_pick_place",
         "animate_push",
         "animate_drop_to_support",
         "animate_rotate_about_axis",

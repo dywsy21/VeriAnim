@@ -652,6 +652,78 @@ def space_gripper_fingers_around_subject(
     return selected
 
 
+def create_parallel_gripper(
+    name: str,
+    *,
+    carried: Any | None = None,
+    location: Sequence[float] = (0.0, 0.0, 1.0),
+    collection: Any = None,
+    material: Any = None,
+    ll3m_id: str | None = None,
+    axis: str = "Y",
+    finger_length: float | None = None,
+    finger_thickness: float = 0.06,
+    palm_size: Sequence[float] | None = None,
+    stem_height: float = 0.35,
+    open_gap: float = 0.06,
+) -> dict[str, Any]:
+    """Create a visible two-finger gripper rooted at a palm object.
+
+    The returned ``root`` owns ``ll3m_id`` and is the object to animate. The
+    palm, stem, and fingers are children, so a single root path keeps the whole
+    gripper coherent.
+    """
+
+    axis_index = {"X": 0, "Y": 1, "Z": 2}[str(axis).upper()]
+    if axis_index == 2:
+        raise ValueError("create_parallel_gripper finger axis must be X or Y")
+    bpy = _bpy()
+    root = bpy.data.objects.new(str(name), None)
+    root.empty_display_type = "CUBE"
+    root.empty_display_size = 0.15
+    root.location = _vector(location)
+    link_object(root, collection)
+    set_ll3m_properties(root, ll3m_id=ll3m_id or name, ll3m_role="active")
+
+    carried_size = bbox_size(carried) if carried is not None else (0.35, 0.35, 0.25)
+    grip_span = carried_size[axis_index] if carried is not None else 0.35
+    vertical_size = carried_size[2] if carried is not None else 0.25
+    length = float(finger_length if finger_length is not None else max(0.22, vertical_size * 1.15))
+    thickness = float(finger_thickness)
+    if palm_size is None:
+        palm_size = (
+            max(0.24, carried_size[0] + 2.0 * thickness),
+            max(0.24, carried_size[1] + 2.0 * thickness),
+            thickness,
+        )
+    palm = add_cube(f"{name}_palm", size=1.0, collection=collection, material=material, ll3m_part="palm")
+    palm.scale = _vector(palm_size)
+    palm.parent = root
+    palm.location = (0.0, 0.0, 0.0)
+
+    stem = add_cube(f"{name}_stem", size=1.0, collection=collection, material=material, ll3m_part="stem")
+    stem.scale = (thickness, thickness, float(stem_height))
+    stem.parent = root
+    stem.location = (0.0, 0.0, float(stem_height) / 2.0 + float(palm_size[2]) / 2.0)
+
+    finger_scale = [thickness, thickness, length]
+    finger_offset = grip_span / 2.0 + thickness / 2.0 + float(open_gap)
+    finger_z = -(float(palm_size[2]) / 2.0 + length / 2.0)
+    left = add_cube(f"{name}_left_finger", size=1.0, collection=collection, material=material, ll3m_part="finger")
+    right = add_cube(f"{name}_right_finger", size=1.0, collection=collection, material=material, ll3m_part="finger")
+    for sign, finger in ((-1.0, left), (1.0, right)):
+        finger.scale = tuple(finger_scale)
+        finger.parent = root
+        loc = [0.0, 0.0, finger_z]
+        loc[axis_index] = sign * finger_offset
+        finger.location = tuple(loc)
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
+    return {"root": root, "palm": palm, "stem": stem, "left_finger": left, "right_finger": right, "fingers": [left, right]}
+
+
 def _iter_action_fcurves(action: Any) -> Iterable[Any]:
     for fcurve in getattr(action, "fcurves", []) or []:
         yield fcurve
@@ -733,6 +805,62 @@ def _location_on_support(subject: Any, support: Any, xy: Sequence[float], *, mar
     return (x, y, z)
 
 
+def _safe_xy_on_support(
+    subject: Any,
+    support: Any,
+    desired_xy: Sequence[float],
+    *,
+    avoid_supports: Sequence[Any] = (),
+    margin: float = 0.02,
+) -> tuple[float, float]:
+    sx, sy = _vector(desired_xy, length=2)
+    subject_size = bbox_size(subject)
+    half = (subject_size[0] / 2.0 + float(margin), subject_size[1] / 2.0 + float(margin))
+    support_box = world_bbox(support)
+    min_xy = (support_box["min"][0] + half[0], support_box["min"][1] + half[1])
+    max_xy = (support_box["max"][0] - half[0], support_box["max"][1] - half[1])
+    if min_xy[0] <= max_xy[0]:
+        sx = min(max(sx, min_xy[0]), max_xy[0])
+    if min_xy[1] <= max_xy[1]:
+        sy = min(max(sy, min_xy[1]), max_xy[1])
+
+    def footprint_overlaps(x: float, y: float, avoid_box: Mapping[str, Any]) -> bool:
+        return (
+            x - half[0] < avoid_box["max"][0]
+            and x + half[0] > avoid_box["min"][0]
+            and y - half[1] < avoid_box["max"][1]
+            and y + half[1] > avoid_box["min"][1]
+        )
+
+    for avoid in avoid_supports:
+        if avoid is None or avoid is support:
+            continue
+        avoid_box = world_bbox(avoid)
+        if not footprint_overlaps(sx, sy, avoid_box):
+            continue
+        candidates: list[tuple[float, float, float]] = []
+        for axis_index in (0, 1):
+            current = sx if axis_index == 0 else sy
+            low = min_xy[axis_index]
+            high = max_xy[axis_index]
+            if low > high:
+                continue
+            avoid_center = (avoid_box["min"][axis_index] + avoid_box["max"][axis_index]) / 2.0
+            support_center = (support_box["min"][axis_index] + support_box["max"][axis_index]) / 2.0
+            if support_center >= avoid_center:
+                target = avoid_box["max"][axis_index] + half[axis_index]
+                clamped = min(max(target, low), high)
+            else:
+                target = avoid_box["min"][axis_index] - half[axis_index]
+                clamped = min(max(target, low), high)
+            test_x, test_y = (clamped, sy) if axis_index == 0 else (sx, clamped)
+            if not footprint_overlaps(test_x, test_y, avoid_box):
+                candidates.append((abs(clamped - current), test_x, test_y))
+        if candidates:
+            _, sx, sy = min(candidates, key=lambda item: item[0])
+    return (sx, sy)
+
+
 def animate_support_slide(
     subject: Any,
     support: Any,
@@ -811,6 +939,7 @@ def animate_pick_place(
     carry_height: float = 1.0,
     clearance: float = 0.05,
     gripper_offset: Sequence[float] | None = None,
+    avoid_dest_supports: Sequence[Any] | None = None,
     margin: float = 0.001,
     interpolation: str = "LINEAR",
 ) -> tuple[Any, Any]:
@@ -822,6 +951,9 @@ def animate_pick_place(
     dest_center = bbox_center(dest_support)
     sx, sy = _vector(source_xy or source_center[:2], length=2)
     dx, dy = _vector(dest_xy or dest_center[:2], length=2)
+    avoid_supports = tuple(avoid_dest_supports) if avoid_dest_supports is not None else ((source_support,) if source_support is not dest_support else ())
+    if avoid_supports:
+        dx, dy = _safe_xy_on_support(carried, dest_support, (dx, dy), avoid_supports=avoid_supports, margin=max(float(clearance), 0.02))
     carried_height = bbox_size(carried)[2]
     source_z = bbox_top(source_support) + carried_height / 2.0 + float(margin)
     dest_z = bbox_top(dest_support) + carried_height / 2.0 + float(margin)
@@ -840,6 +972,85 @@ def animate_pick_place(
     gripper_keys = [(frame, (loc[0] + gx, loc[1] + gy, loc[2] + gz)) for frame, loc in carried_keys]
     animate_translate(carried, carried_keys, interpolation)
     animate_translate(gripper, gripper_keys, interpolation)
+    return gripper, carried
+
+
+def animate_parallel_gripper_pick_place(
+    gripper: Any,
+    carried: Any,
+    source_support: Any,
+    dest_support: Any,
+    *,
+    fingers: Sequence[Any] | None = None,
+    axis: str = "Y",
+    source_xy: Sequence[float] | None = None,
+    dest_xy: Sequence[float] | None = None,
+    frames: Sequence[int] = (1, 25, 45, 80, 100, 120),
+    carry_height: float = 1.0,
+    clearance: float = 0.04,
+    open_gap: float = 0.08,
+    closed_gap: float = 0.005,
+    gripper_offset: Sequence[float] | None = None,
+    avoid_dest_supports: Sequence[Any] | None = None,
+    margin: float = 0.001,
+    interpolation: str = "LINEAR",
+) -> tuple[Any, Any]:
+    """Pick-place with visible finger close/hold/open keyframes."""
+
+    if len(frames) != 6:
+        raise ValueError("animate_parallel_gripper_pick_place frames must contain six frames")
+    if fingers is None:
+        fingers = [
+            child
+            for child in getattr(gripper, "children", []) or []
+            if "finger" in str(getattr(child, "name", "")).lower() or str(child.get("ll3m_part", "")).lower() == "finger"
+        ]
+    selected = list(fingers)[:2]
+    if len(selected) >= 2:
+        space_gripper_fingers_around_subject(gripper, carried, axis=axis, fingers=selected, gap=open_gap, align_z="center")
+    animate_pick_place(
+        gripper,
+        carried,
+        source_support,
+        dest_support,
+        source_xy=source_xy,
+        dest_xy=dest_xy,
+        frames=frames,
+        carry_height=carry_height,
+        clearance=clearance,
+        gripper_offset=gripper_offset,
+        avoid_dest_supports=avoid_dest_supports,
+        margin=margin,
+        interpolation=interpolation,
+    )
+    if len(selected) >= 2:
+        axis_index = {"X": 0, "Y": 1, "Z": 2}[str(axis).upper()]
+        subject_size = bbox_size(carried)[axis_index]
+        open_positions = []
+        closed_positions = []
+        for finger in selected:
+            loc = list(_vector(finger.location))
+            sign = -1.0 if loc[axis_index] < 0 else 1.0
+            finger_size = bbox_size(finger, include_children=False)[axis_index]
+            open_loc = list(loc)
+            closed_loc = list(loc)
+            open_loc[axis_index] = sign * (subject_size / 2.0 + finger_size / 2.0 + float(open_gap))
+            closed_loc[axis_index] = sign * (subject_size / 2.0 + finger_size / 2.0 + float(closed_gap))
+            open_positions.append(tuple(open_loc))
+            closed_positions.append(tuple(closed_loc))
+        for finger, open_loc, closed_loc in zip(selected, open_positions, closed_positions):
+            animate_translate(
+                finger,
+                [
+                    (frames[0], open_loc),
+                    (frames[1], closed_loc),
+                    (frames[2], closed_loc),
+                    (frames[3], closed_loc),
+                    (frames[4], closed_loc),
+                    (frames[5], open_loc),
+                ],
+                interpolation,
+            )
     return gripper, carried
 
 
