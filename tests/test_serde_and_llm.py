@@ -204,6 +204,15 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         self.assertEqual(ir.scene.environment.floor, "type: factory floor; color: matte gray")
         self.assertEqual(ir.scene.environment.walls, "plain backdrop; color: light gray")
 
+    def test_planner_sanitizer_normalizes_environment_type_alias(self) -> None:
+        payload = copy.deepcopy(self.data)
+        payload["scene"]["environment"]["environment_type"] = "indoor_warehouse"
+
+        _sanitize_planner_data(payload)
+        ir = from_dict(GenerationIR, payload)
+
+        self.assertEqual(ir.scene.environment.environment_type.value, "custom")
+
     def test_planner_sanitizer_normalizes_stage_visual_mode_alias(self) -> None:
         payload = copy.deepcopy(self.data)
         payload["stages"] = [

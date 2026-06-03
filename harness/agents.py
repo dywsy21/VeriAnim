@@ -1699,6 +1699,21 @@ def _sanitize_environment_data(scene: dict[str, Any]) -> None:
     environment = scene.get("environment")
     if not isinstance(environment, dict):
         return
+    raw_type = str(environment.get("environment_type", "studio")).strip().lower().replace("-", "_").replace(" ", "_")
+    type_aliases = {
+        "indoor": "room",
+        "interior": "room",
+        "inside": "room",
+        "warehouse": "custom",
+        "indoor_warehouse": "custom",
+        "factory": "custom",
+        "industrial": "custom",
+        "workshop": "custom",
+        "lab": "custom",
+        "laboratory": "custom",
+    }
+    valid_types = {"empty", "studio", "room", "outdoor", "skybox", "abstract", "custom"}
+    environment["environment_type"] = type_aliases.get(raw_type, raw_type if raw_type in valid_types else "custom")
     for key in ("description", "floor", "walls", "sky", "world_background", "notes"):
         if key in environment and environment[key] is not None and not isinstance(environment[key], str):
             environment[key] = _compact_text_value(environment[key])
