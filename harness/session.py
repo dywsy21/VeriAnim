@@ -713,6 +713,18 @@ class InteractiveHarnessSession:
                         severity=Severity.CRITICAL,
                     )
                 )
+            if _ir_needs_pick_place_primitive(self.ir) and not _uses_pick_place_primitive(tree):
+                issues.append(
+                    ValidationIssue(
+                        code="CODE_MISSING_PICK_PLACE_PRIMITIVE",
+                        message=(
+                            "Pick-carry-place animation with a gripper and carried object must use "
+                            "ll3m.animate_parallel_gripper_pick_place or ll3m.animate_pick_place; "
+                            "manual gripper/package keyframes repeatedly cause contact penetration."
+                        ),
+                        severity=Severity.CRITICAL,
+                    )
+                )
         elif keyframe_calls:
             issues.append(
                 ValidationIssue(
@@ -994,6 +1006,50 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
             if node.func.attr.startswith("animate_"):
                 calls.append(node)
     return calls
+
+
+def _uses_pick_place_primitive(tree: ast.AST) -> bool:
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"animate_parallel_gripper_pick_place", "animate_pick_place"}
+        for node in ast.walk(tree)
+    )
+
+
+def _ir_needs_pick_place_primitive(ir: GenerationIR) -> bool:
+    if not ir.animation:
+        return False
+    object_text = {
+        obj.id: " ".join(str(part) for part in (obj.id, obj.label, obj.description, obj.category.value) if part).lower()
+        for obj in ir.scene.objects
+    }
+    end_effectors = {
+        object_id
+        for object_id, text in object_text.items()
+        if any(token in text for token in ("gripper", "end effector", "end-effector", "endeffector", "夹爪"))
+    }
+    if not end_effectors:
+        return False
+    payload_like_ids = {
+        object_id
+        for object_id, text in object_text.items()
+        if any(token in text for token in ("box", "package", "parcel", "crate", "carton", "箱"))
+    }
+    for event in ir.animation.events:
+        event_text = " ".join(
+            str(part or "")
+            for part in (event.id, event.description, event.expected_visual_result, " ".join(event.subject_ids))
+        ).lower()
+        if any(token in event_text for token in ("pick", "grasp", "grab", "carry", "place", "transfer", "夹", "抓", "搬", "放")):
+            if end_effectors.intersection(event.subject_ids + event.target_ids):
+                return True
+        for constraint in event.contact_constraints:
+            ctype = getattr(constraint.constraint_type, "value", str(constraint.constraint_type)).lower()
+            ids = {constraint.subject_id, constraint.object_id}
+            if ctype in {"carry_contact", "touching", "attachment"} and ids & end_effectors and ids & payload_like_ids:
+                return True
+    return False
 
 
 def _scene_preservation_report(

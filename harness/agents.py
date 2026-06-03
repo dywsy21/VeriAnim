@@ -2375,9 +2375,15 @@ def _is_pick_place_event(event: dict[str, Any]) -> bool:
             str(event.get("description", "")),
             str(event.get("expected_visual_result", "")),
             " ".join(str(item) for item in event.get("constraints", []) or []),
+            " ".join(str(item) for item in event.get("subject_ids", []) or []),
+            " ".join(str(item) for item in event.get("target_ids", []) or []),
         ]
     ).lower()
-    return any(token in text for token in ("pick", "grasp", "grab", "carry", "lift", "place", "transfer", "夹", "抓", "搬", "提", "放"))
+    if any(token in text for token in ("pick", "grasp", "grab", "carry", "lift", "place", "transfer", "夹", "抓", "搬", "提", "放")):
+        return True
+    return any(token in text for token in ("gripper", "end effector", "end-effector", "夹爪")) and any(
+        token in text for token in ("box", "package", "parcel", "crate", "object", "箱")
+    )
 
 
 def _event_end_effector_ids(

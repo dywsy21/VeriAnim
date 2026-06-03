@@ -405,6 +405,47 @@ def appear_relation_ir() -> GenerationIR:
     )
 
 
+def pick_place_ir() -> GenerationIR:
+    return GenerationIR(
+        prompt=SourcePrompt(text="robot gripper picks a yellow box"),
+        scene=SceneSpec(
+            objects=[
+                ObjectSpec(id="gripper", description="two finger gripper end-effector"),
+                ObjectSpec(id="yellow_box", description="yellow box package"),
+                ObjectSpec(id="shelf", description="shelf support"),
+                ObjectSpec(id="trolley", description="red trolley platform"),
+            ],
+            cameras=[CameraSpec(id="camera_main", target_object_ids=["gripper", "yellow_box"])],
+        ),
+        animation=AnimationSpec(
+            duration_frames=80,
+            events=[
+                AnimationEventSpec(
+                    id="carry_box",
+                    action=AnimationAction.TRANSLATE,
+                    subject_ids=["gripper", "yellow_box"],
+                    target_ids=["trolley"],
+                    start_frame=1,
+                    end_frame=80,
+                    description="gripper carries the yellow box to the trolley",
+                    start_transform=TransformSpec(location=(0.0, 0.0, 1.0)),
+                    end_transform=TransformSpec(location=(1.0, 0.0, 1.0)),
+                    contact_constraints=[
+                        ContactConstraintSpec(
+                            id="carry_contact",
+                            constraint_type=ContactConstraintType.CARRY_CONTACT,
+                            subject_id="gripper",
+                            object_id="yellow_box",
+                            start_frame=1,
+                            end_frame=80,
+                        )
+                    ],
+                )
+            ],
+        ),
+    )
+
+
 def bridge_animation_ir() -> GenerationIR:
     return GenerationIR(
         prompt=SourcePrompt(text="a toy car drives over a low bridge without clipping through the bridge deck"),
@@ -515,6 +556,43 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
 
         self.assertFalse(report.passed)
         self.assertIn("CODE_UNDEFINED_MODULE", {issue.code for issue in report.issues})
+
+    def test_static_code_report_requires_pick_place_primitive_for_gripper_carry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = pick_place_ir()
+            session.code = "\n".join(
+                [
+                    "from blender import ll3m_utils as ll3m",
+                    "ll3m.insert_location_keyframe(gripper, 1, (0, 0, 1))",
+                    "ll3m.insert_location_keyframe(gripper, 80, (1, 0, 1))",
+                    "ll3m.insert_location_keyframe(yellow_box, 1, (0, 0, 1))",
+                    "ll3m.insert_location_keyframe(yellow_box, 80, (1, 0, 1))",
+                    "LL3M_METADATA = {}",
+                ]
+            )
+
+            report = session._static_code_report()
+
+        self.assertFalse(report.passed)
+        self.assertIn("CODE_MISSING_PICK_PLACE_PRIMITIVE", {issue.code for issue in report.issues})
+
+    def test_static_code_report_accepts_pick_place_primitive_for_gripper_carry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = pick_place_ir()
+            session.code = "\n".join(
+                [
+                    "from blender import ll3m_utils as ll3m",
+                    "parts = ll3m.create_parallel_gripper('gripper', carried=yellow_box, ll3m_id='gripper')",
+                    "ll3m.animate_parallel_gripper_pick_place(parts['root'], yellow_box, shelf, trolley, fingers=parts['fingers'])",
+                    "LL3M_METADATA = {}",
+                ]
+            )
+
+            report = session._static_code_report()
+
+        self.assertTrue(report.passed, [issue.code for issue in report.issues])
 
     def test_execution_failure_writes_traceback_log_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
