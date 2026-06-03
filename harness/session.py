@@ -725,6 +725,18 @@ class InteractiveHarnessSession:
                         severity=Severity.CRITICAL,
                     )
                 )
+            if _has_overlapping_post_place_carry(tree):
+                issues.append(
+                    ValidationIssue(
+                        code="CODE_OVERLAPPING_CARRY_PRIMITIVES",
+                        message=(
+                            "Post-placement animate_attached_carry starts before the pick-place primitive releases the object. "
+                            "Start cart/vehicle ride keyframes after the pick-place release frame so the carried object's "
+                            "motion is not overwritten during the gripper carry window."
+                        ),
+                        severity=Severity.CRITICAL,
+                    )
+                )
         elif keyframe_calls:
             issues.append(
                 ValidationIssue(
@@ -1050,6 +1062,76 @@ def _ir_needs_pick_place_primitive(ir: GenerationIR) -> bool:
             if ctype in {"carry_contact", "touching", "attachment"} and ids & end_effectors and ids & payload_like_ids:
                 return True
     return False
+
+
+def _has_overlapping_post_place_carry(tree: ast.AST) -> bool:
+    pick_release_frames: list[int] = []
+    attached_start_frames: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr in {"animate_parallel_gripper_pick_place", "animate_pick_place"}:
+            frames = _literal_frames_argument(node, keyword="frames", positional_index=5)
+            if len(frames) >= 2:
+                pick_release_frames.append(max(frames))
+        elif node.func.attr == "animate_attached_carry":
+            frames = _literal_frame_sequence_from_call(node, positional_index=2)
+            if frames:
+                attached_start_frames.append(min(frames))
+    if not pick_release_frames or not attached_start_frames:
+        return False
+    release_frame = max(pick_release_frames)
+    return any(start_frame <= release_frame for start_frame in attached_start_frames)
+
+
+def _literal_frames_argument(node: ast.Call, *, keyword: str, positional_index: int) -> list[int]:
+    for item in node.keywords:
+        if item.arg == keyword:
+            return _literal_int_sequence(item.value)
+    if len(node.args) > positional_index:
+        return _literal_int_sequence(node.args[positional_index])
+    return []
+
+
+def _literal_frame_sequence_from_call(node: ast.Call, *, positional_index: int) -> list[int]:
+    if len(node.args) <= positional_index:
+        return []
+    value = node.args[positional_index]
+    if not isinstance(value, (ast.List, ast.Tuple)):
+        return []
+    frames: list[int] = []
+    for item in value.elts:
+        if isinstance(item, (ast.List, ast.Tuple)) and item.elts:
+            frame = _literal_int(item.elts[0])
+            if frame is not None:
+                frames.append(frame)
+        elif isinstance(item, ast.Dict):
+            for key, dict_value in zip(item.keys, item.values):
+                if isinstance(key, ast.Constant) and key.value == "frame":
+                    frame = _literal_int(dict_value)
+                    if frame is not None:
+                        frames.append(frame)
+    return frames
+
+
+def _literal_int_sequence(value: ast.AST) -> list[int]:
+    if not isinstance(value, (ast.List, ast.Tuple)):
+        return []
+    frames: list[int] = []
+    for item in value.elts:
+        frame = _literal_int(item)
+        if frame is not None:
+            frames.append(frame)
+    return frames
+
+
+def _literal_int(value: ast.AST) -> int | None:
+    if isinstance(value, ast.Constant) and isinstance(value.value, int):
+        return int(value.value)
+    if isinstance(value, ast.UnaryOp) and isinstance(value.op, ast.USub):
+        inner = _literal_int(value.operand)
+        return -inner if inner is not None else None
+    return None
 
 
 def _scene_preservation_report(

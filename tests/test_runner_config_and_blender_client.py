@@ -594,6 +594,41 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
 
         self.assertTrue(report.passed, [issue.code for issue in report.issues])
 
+    def test_static_code_report_rejects_overlapping_post_place_attached_carry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = pick_place_ir()
+            session.code = "\n".join(
+                [
+                    "from blender import ll3m_utils as ll3m",
+                    "ll3m.animate_parallel_gripper_pick_place(gripper, yellow_box, shelf, trolley, frames=(1, 30, 45, 60, 75, 90))",
+                    "ll3m.animate_attached_carry(trolley, yellow_box, [(75, (3, 0, 0)), (120, (5, 0, 0))])",
+                    "LL3M_METADATA = {}",
+                ]
+            )
+
+            report = session._static_code_report()
+
+        self.assertFalse(report.passed)
+        self.assertIn("CODE_OVERLAPPING_CARRY_PRIMITIVES", {issue.code for issue in report.issues})
+
+    def test_static_code_report_allows_post_release_attached_carry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
+            session.ir = pick_place_ir()
+            session.code = "\n".join(
+                [
+                    "from blender import ll3m_utils as ll3m",
+                    "ll3m.animate_parallel_gripper_pick_place(gripper, yellow_box, shelf, trolley, frames=(1, 30, 45, 60, 75, 90))",
+                    "ll3m.animate_attached_carry(trolley, yellow_box, [(91, (3, 0, 0)), (120, (5, 0, 0))])",
+                    "LL3M_METADATA = {}",
+                ]
+            )
+
+            report = session._static_code_report()
+
+        self.assertTrue(report.passed, [issue.code for issue in report.issues])
+
     def test_execution_failure_writes_traceback_log_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
