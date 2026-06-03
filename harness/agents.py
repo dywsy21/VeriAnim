@@ -2137,6 +2137,22 @@ def _is_end_effector_text(text: str) -> bool:
     return any(token in lowered for token in ("gripper", "end effector", "end-effector", "endeffector"))
 
 
+def _is_whole_arm_text(text: str) -> bool:
+    lowered = text.lower().replace("-", "_").replace(" ", "_")
+    return any(
+        token in lowered
+        for token in (
+            "robot_arm",
+            "arm_arm",
+            "arm_link",
+            "armature",
+            "crane_boom",
+            "support_frame",
+            "whole_arm",
+        )
+    )
+
+
 def _mentions_signal_or_light(text: str) -> bool:
     return bool(re.search(r"\b(light|status|signal)\b", text.lower()))
 
@@ -2155,6 +2171,7 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
     animation = data.get("animation") if isinstance(data, dict) else None
     if not isinstance(animation, dict):
         return
+    _sanitize_pick_place_event_participants(data)
     if not isinstance(animation.get("render"), dict):
         animation.pop("render", None)
     if not isinstance(animation.get("verifier"), dict):
@@ -2194,6 +2211,134 @@ def _sanitize_animation_data(data: dict[str, Any]) -> None:
                 "Animated subjects must be visible at the event start, at an intermediate sampled frame, and at the event end.",
                 "Required contact, attachment, or final placement must be visible enough for video verification.",
             ]
+
+
+def _sanitize_pick_place_event_participants(data: dict[str, Any]) -> None:
+    animation = data.get("animation") if isinstance(data, dict) else None
+    scene = data.get("scene") if isinstance(data, dict) else None
+    if not isinstance(animation, dict) or not isinstance(scene, dict):
+        return
+    objects = scene.get("objects")
+    if not isinstance(objects, list):
+        return
+
+    object_text_by_id: dict[str, str] = {}
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        object_id = str(obj.get("id") or "")
+        if not object_id:
+            continue
+        object_text_by_id[object_id] = " ".join(
+            str(part)
+            for part in (
+                obj.get("id", ""),
+                obj.get("label", ""),
+                obj.get("description", ""),
+                obj.get("category", ""),
+            )
+            if part
+        )
+
+    end_effector_ids = {object_id for object_id, text in object_text_by_id.items() if _is_end_effector_text(text)}
+    whole_arm_ids = {object_id for object_id, text in object_text_by_id.items() if _is_whole_arm_text(text)}
+    if not end_effector_ids or not whole_arm_ids:
+        return
+
+    for event in [*(animation.get("events") or []), *(animation.get("camera_events") or [])]:
+        if not isinstance(event, dict) or not _is_pick_place_event(event):
+            continue
+
+        subject_ids = _string_list(event.get("subject_ids"))
+        target_ids = _string_list(event.get("target_ids"))
+        contact_constraints = event.get("contact_constraints")
+        event_effector_ids = _event_end_effector_ids(subject_ids, target_ids, contact_constraints, end_effector_ids)
+        if not event_effector_ids:
+            continue
+        preferred_effector_id = sorted(event_effector_ids)[0]
+
+        carried_ids = [
+            object_id
+            for object_id in [*subject_ids, *target_ids]
+            if object_id in object_text_by_id and object_id not in whole_arm_ids and object_id not in end_effector_ids
+        ]
+
+        if any(object_id in whole_arm_ids for object_id in subject_ids):
+            event["subject_ids"] = [object_id for object_id in subject_ids if object_id not in whole_arm_ids]
+        if any(object_id in whole_arm_ids for object_id in target_ids):
+            event["target_ids"] = [object_id for object_id in target_ids if object_id not in whole_arm_ids]
+
+        if isinstance(contact_constraints, list):
+            normalized_constraints: list[Any] = []
+            seen_contact_keys: set[tuple[str, str, str, int, int]] = set()
+            for constraint in contact_constraints:
+                if not isinstance(constraint, dict):
+                    normalized_constraints.append(constraint)
+                    continue
+                ctype = str(constraint.get("constraint_type") or "").strip().lower()
+                subject_id = str(constraint.get("subject_id") or "")
+                object_id = str(constraint.get("object_id") or "")
+                is_contact = ctype in {"touching", "attachment", "carry_contact"}
+                whole_touches_payload = (
+                    is_contact
+                    and ((subject_id in whole_arm_ids and object_id in carried_ids) or (object_id in whole_arm_ids and subject_id in carried_ids))
+                )
+                if whole_touches_payload:
+                    if subject_id in whole_arm_ids:
+                        constraint["subject_id"] = preferred_effector_id
+                        subject_id = preferred_effector_id
+                    if object_id in whole_arm_ids:
+                        constraint["object_id"] = preferred_effector_id
+                        object_id = preferred_effector_id
+                key = (
+                    ctype,
+                    subject_id,
+                    object_id,
+                    int(constraint.get("start_frame") or 0),
+                    int(constraint.get("end_frame") or 0),
+                )
+                if key in seen_contact_keys:
+                    continue
+                seen_contact_keys.add(key)
+                normalized_constraints.append(constraint)
+            event["contact_constraints"] = normalized_constraints
+
+
+def _is_pick_place_event(event: dict[str, Any]) -> bool:
+    text = " ".join(
+        [
+            str(event.get("id", "")),
+            str(event.get("action", "")),
+            str(event.get("description", "")),
+            str(event.get("expected_visual_result", "")),
+            " ".join(str(item) for item in event.get("constraints", []) or []),
+        ]
+    ).lower()
+    return any(token in text for token in ("pick", "grasp", "grab", "carry", "lift", "place", "transfer", "夹", "抓", "搬", "提", "放"))
+
+
+def _event_end_effector_ids(
+    subject_ids: list[str],
+    target_ids: list[str],
+    contact_constraints: Any,
+    end_effector_ids: set[str],
+) -> set[str]:
+    ids = {object_id for object_id in [*subject_ids, *target_ids] if object_id in end_effector_ids}
+    if isinstance(contact_constraints, list):
+        for constraint in contact_constraints:
+            if not isinstance(constraint, dict):
+                continue
+            for key in ("subject_id", "object_id"):
+                object_id = str(constraint.get(key) or "")
+                if object_id in end_effector_ids:
+                    ids.add(object_id)
+    return ids
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item]
 
 
 def _ensure_visibility_keyframes(event: dict[str, Any], action: str) -> None:

@@ -633,6 +633,55 @@ class ExtractJsonObjectTest(unittest.TestCase):
         visible_frames = sorted(item["frame"] for item in keyframes if "visible" in item.get("value", {}))
         self.assertEqual(visible_frames, [59, 60])
 
+    def test_animation_sanitizer_removes_whole_arm_from_pick_place_subjects(self) -> None:
+        payload = {
+            "scene": {
+                "objects": [
+                    {"id": "robot_arm", "description": "large gray robot arm"},
+                    {"id": "gripper", "description": "two finger gripper end-effector"},
+                    {"id": "yellow_box", "description": "yellow box"},
+                ]
+            },
+            "animation": {
+                "events": [
+                    {
+                        "id": "carry_to_cart",
+                        "action": "translate",
+                        "subject_ids": ["gripper", "robot_arm", "yellow_box"],
+                        "target_ids": ["robot_arm"],
+                        "description": "gripper carries the box to the cart",
+                        "contact_constraints": [
+                            {
+                                "id": "bad_arm_contact",
+                                "constraint_type": "carry_contact",
+                                "subject_id": "yellow_box",
+                                "object_id": "robot_arm",
+                                "start_frame": 20,
+                                "end_frame": 60,
+                            },
+                            {
+                                "id": "good_gripper_contact",
+                                "constraint_type": "carry_contact",
+                                "subject_id": "yellow_box",
+                                "object_id": "gripper",
+                                "start_frame": 20,
+                                "end_frame": 60,
+                            },
+                        ],
+                    }
+                ]
+            },
+        }
+
+        from harness.agents import _sanitize_animation_data
+
+        _sanitize_animation_data(payload)
+        event = payload["animation"]["events"][0]
+        self.assertEqual(event["subject_ids"], ["gripper", "yellow_box"])
+        self.assertEqual(event["target_ids"], [])
+        self.assertEqual(len(event["contact_constraints"]), 1)
+        self.assertEqual(event["contact_constraints"][0]["object_id"], "gripper")
+
     def test_detects_text_only_multimodal_backend_error(self) -> None:
         exc = RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")
 
