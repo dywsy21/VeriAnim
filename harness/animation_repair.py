@@ -119,6 +119,9 @@ def repair_animation_ir(
         if event.action not in {AnimationAction.TRANSLATE, AnimationAction.FOLLOW_PATH}:
             skipped.append(f"{event.id}: unsupported action {event.action.value}.")
             continue
+        if _is_manipulation_event(event):
+            skipped.append(f"{event.id}: manipulation event should not receive support crossing repair.")
+            continue
         if not event.subject_ids:
             skipped.append(f"{event.id}: no animated subject.")
             continue
@@ -225,6 +228,33 @@ def repair_animation_ir(
         plans.append(plan)
 
     return repaired, AnimationRepairPlan(applied=bool(plans), plans=tuple(plans), skipped=tuple(skipped))
+
+
+def _is_manipulation_event(event: Any) -> bool:
+    text = " ".join(
+        str(part)
+        for part in (
+            getattr(event, "id", ""),
+            getattr(event, "description", ""),
+            getattr(event, "expected_visual_result", ""),
+            " ".join(getattr(event, "constraints", []) or []),
+        )
+    ).lower()
+    tokens = (
+        "pick",
+        "pickup",
+        "pick up",
+        "grasp",
+        "gripper",
+        "finger",
+        "lift",
+        "carry",
+        "carried",
+        "place",
+        "placed",
+        "transfer",
+    )
+    return any(token in text for token in tokens)
 
 
 def blender_repair_script(plan: AnimationRepairPlan) -> str:

@@ -403,6 +403,53 @@ class AnimationRepairTest(unittest.TestCase):
         self.assertFalse(plan.applied, plan.to_dict())
         self.assertIn("single support ride on conveyor_belt", plan.skipped[0])
 
+    def test_pick_carry_place_event_does_not_get_support_crossing_repair(self) -> None:
+        ir = GenerationIR(
+            prompt=SourcePrompt(text="a gripper picks a box from a conveyor and places it on a tray"),
+            scene=SceneSpec(
+                objects=[
+                    ObjectSpec(id="box", description="orange box"),
+                    ObjectSpec(id="belt", description="gray conveyor belt"),
+                    ObjectSpec(id="tray", description="blue tray"),
+                ]
+            ),
+            animation=AnimationSpec(
+                duration_frames=120,
+                events=[
+                    AnimationEventSpec(
+                        id="box_travel",
+                        action=AnimationAction.TRANSLATE,
+                        subject_ids=["box"],
+                        start_frame=1,
+                        end_frame=120,
+                        description="box rides on belt, lifts, carries to tray, and is placed down",
+                        start_transform=TransformSpec(location=(-1.4, 0.0, 0.2)),
+                        end_transform=TransformSpec(location=(1.5, 0.0, 0.15)),
+                        path=MotionPathSpec(),
+                        contact_constraints=[
+                            ContactConstraintSpec("belt_support", ContactConstraintType.SUPPORT, "box", "belt", 1, 60),
+                            ContactConstraintSpec("tray_support", ContactConstraintType.SUPPORT, "box", "tray", 90, 120),
+                        ],
+                    )
+                ],
+            ),
+        )
+        graph = {
+            "objects": [
+                {"name": "box", "ll3m_id": "box", "bbox": {"min": [-1.5, -0.1, 0.1], "max": [-1.3, 0.1, 0.3]}},
+                {"name": "belt", "ll3m_id": "belt", "bbox": {"min": [-1.5, -0.3, 0.0], "max": [1.5, 0.3, 0.1]}},
+                {"name": "tray", "ll3m_id": "tray", "bbox": {"min": [1.25, -0.25, 0.0], "max": [1.75, 0.25, 0.05]}},
+            ]
+        }
+
+        repaired, plan = repair_animation_ir(ir, graph)
+
+        self.assertFalse(plan.applied, plan.to_dict())
+        self.assertIn("manipulation event", plan.skipped[0])
+        event = repaired.animation.events[0]
+        self.assertEqual(event.start_transform.location, (-1.4, 0.0, 0.2))
+        self.assertEqual(event.end_transform.location, (1.5, 0.0, 0.15))
+
     def test_support_sequence_repair_uses_scene_graph_centers_when_crossing_plan_fails(self) -> None:
         ir = bridge_ir()
         ir.scene.objects = [
