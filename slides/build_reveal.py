@@ -396,7 +396,8 @@ CUSTOM_CSS = r"""
 .column > .callout,
 .column > .warning,
 .column > .metric,
-.column > .media-placeholder {
+.column > .media-placeholder,
+.column > .showcase-card {
   box-sizing: border-box;
   height: 100%;
 }
@@ -405,7 +406,8 @@ CUSTOM_CSS = r"""
 .callout,
 .warning,
 .metric,
-.media-placeholder {
+.media-placeholder,
+.showcase-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0.68em;
@@ -413,6 +415,12 @@ CUSTOM_CSS = r"""
 
 .card {
   background: var(--panel);
+}
+
+.showcase-card {
+  background: #ffffff;
+  box-sizing: border-box;
+  height: 100%;
 }
 
 .callout {
@@ -434,7 +442,8 @@ CUSTOM_CSS = r"""
 .callout strong,
 .warning strong,
 .metric strong,
-.media-placeholder strong {
+.media-placeholder strong,
+.showcase-card strong {
   display: block;
   font-size: 0.95em;
   font-weight: 820;
@@ -461,8 +470,31 @@ CUSTOM_CSS = r"""
 .warning ul,
 .warning ol,
 .metric ul,
-.metric ol {
+.metric ol,
+.showcase-card ul,
+.showcase-card ol {
   list-style-position: inside;
+}
+
+.showcase-card img.showcase-gif {
+  background: #f2f4f8;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: block;
+  height: 205px;
+  margin: 0 0 0.55em;
+  object-fit: contain;
+  width: 100%;
+}
+
+.showcase-card p,
+.showcase-card li {
+  font-size: 0.53em;
+  line-height: 1.26;
+}
+
+.showcase-card code {
+  font-size: 0.9em;
 }
 
 .media-placeholder {

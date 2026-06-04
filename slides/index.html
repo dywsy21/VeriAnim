@@ -120,7 +120,8 @@
 .column > .callout,
 .column > .warning,
 .column > .metric,
-.column > .media-placeholder {
+.column > .media-placeholder,
+.column > .showcase-card {
   box-sizing: border-box;
   height: 100%;
 }
@@ -129,7 +130,8 @@
 .callout,
 .warning,
 .metric,
-.media-placeholder {
+.media-placeholder,
+.showcase-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0.68em;
@@ -137,6 +139,12 @@
 
 .card {
   background: var(--panel);
+}
+
+.showcase-card {
+  background: #ffffff;
+  box-sizing: border-box;
+  height: 100%;
 }
 
 .callout {
@@ -158,7 +166,8 @@
 .callout strong,
 .warning strong,
 .metric strong,
-.media-placeholder strong {
+.media-placeholder strong,
+.showcase-card strong {
   display: block;
   font-size: 0.95em;
   font-weight: 820;
@@ -185,8 +194,31 @@
 .warning ul,
 .warning ol,
 .metric ul,
-.metric ol {
+.metric ol,
+.showcase-card ul,
+.showcase-card ol {
   list-style-position: inside;
+}
+
+.showcase-card img.showcase-gif {
+  background: #f2f4f8;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: block;
+  height: 205px;
+  margin: 0 0 0.55em;
+  object-fit: contain;
+  width: 100%;
+}
+
+.showcase-card p,
+.showcase-card li {
+  font-size: 0.53em;
+  line-height: 1.26;
+}
+
+.showcase-card code {
+  font-size: 0.9em;
 }
 
 .media-placeholder {
@@ -501,17 +533,33 @@
 </div>
 </section>
 <section>
-<h1>Showcase 占位</h1>
+<h1>Showcase：可验证动画样例</h1>
 <div class="columns">
 <div class="column">
-<div class="media-placeholder"><strong>GIF 1</strong><p>Prompt: TBD</p></div>
+<div class="showcase-card">
+<img src="../showcase/collision_two_cubes/animation.gif" alt="Collision two cubes" class="showcase-gif">
+<p><strong>collision_two_cubes</strong></p>
+<ul>
+<li>Prompt: <code>A physical experiment: a moving square hits a stationary square. The same mass, no energy loss, no friction.</code></li>
+<li>Result: blue cube stops at contact; red cube departs rightward.</li>
+<li>Evidence: deterministic + scene vision + animation video all passed.</li>
+</ul>
+</div>
 </div>
 <div class="column">
-<div class="media-placeholder"><strong>GIF 2</strong><p>Prompt: TBD</p></div>
+<div class="showcase-card">
+<img src="../showcase/marble_run_into_cup/animation.gif" alt="Marble run into cup" class="showcase-gif">
+<p><strong>marble_run_into_cup</strong></p>
+<ul>
+<li>Prompt: <code>marble rolls down a supported ramp and stops inside a blue catch cup.</code></li>
+<li>Result: ramp/support/cup stay fixed; marble motion and final containment are visible.</li>
+<li>Evidence: scene preservation + deterministic + animation video all passed.</li>
+</ul>
+</div>
 </div>
 </div>
 <div class="muted">
-<p>之后这里会放若干成功/失败 showcase：GIF + 对应 prompt + verifier 或 repair 简短结果。</p>
+<p>两个例子都保留了生成源码、<code>.blend</code>、GIF、prompt、模型 manifest 和 verifier 摘要，便于现场打开追溯。</p>
 </div>
 </section>
 <section>

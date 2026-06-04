@@ -257,19 +257,33 @@ prompt -> SceneSpec IR + animation extension
 
 ---
 
-# Showcase 占位
+# Showcase：可验证动画样例
 
 [columns]
 [column]
-[[placeholder: GIF 1 | prompt=Prompt: TBD]]
+:::{showcase-card}
+![Collision two cubes](../showcase/collision_two_cubes/animation.gif){.showcase-gif}
+**collision_two_cubes**
+
+- Prompt: `A physical experiment: a moving square hits a stationary square. The same mass, no energy loss, no friction.`
+- Result: blue cube stops at contact; red cube departs rightward.
+- Evidence: deterministic + scene vision + animation video all passed.
+:::
 [/column]
 [column]
-[[placeholder: GIF 2 | prompt=Prompt: TBD]]
+:::{showcase-card}
+![Marble run into cup](../showcase/marble_run_into_cup/animation.gif){.showcase-gif}
+**marble_run_into_cup**
+
+- Prompt: `marble rolls down a supported ramp and stops inside a blue catch cup.`
+- Result: ramp/support/cup stay fixed; marble motion and final containment are visible.
+- Evidence: scene preservation + deterministic + animation video all passed.
+:::
 [/column]
 [/columns]
 
 :::{muted}
-之后这里会放若干成功/失败 showcase：GIF + 对应 prompt + verifier 或 repair 简短结果。
+两个例子都保留了生成源码、`.blend`、GIF、prompt、模型 manifest 和 verifier 摘要，便于现场打开追溯。
 :::
 
 ---
