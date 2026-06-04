@@ -120,7 +120,7 @@ def scene_graph() -> dict:
         "objects": [
             {
                 "name": "car",
-                "ll3m_id": "car",
+                "verianim_id": "car",
                 "bbox": {
                     "min": [-3.0, -0.2, 0.0],
                     "max": [-2.0, 0.2, 0.4],
@@ -128,7 +128,7 @@ def scene_graph() -> dict:
             },
             {
                 "name": "bridge_deck",
-                "ll3m_id": "bridge_deck",
+                "verianim_id": "bridge_deck",
                 "bbox": {
                     "min": [-1.0, -0.8, 0.5],
                     "max": [1.0, 0.8, 0.7],
@@ -143,7 +143,7 @@ def scene_graph_with_ground() -> dict:
     graph["objects"].append(
         {
             "name": "ground",
-            "ll3m_id": "ground",
+            "verianim_id": "ground",
             "bbox": {
                 "min": [-10.0, -10.0, 0.0],
                 "max": [10.0, 10.0, 0.0],
@@ -187,17 +187,17 @@ def scene_graph_with_bridge_and_ground() -> dict:
         "objects": [
             {
                 "name": "car",
-                "ll3m_id": "car",
+                "verianim_id": "car",
                 "bbox": {"min": [-2.6, -0.3, 0.0], "max": [-1.4, 0.3, 0.4]},
             },
             {
                 "name": "bridge",
-                "ll3m_id": "bridge",
+                "verianim_id": "bridge",
                 "bbox": {"min": [-1.0, -0.75, 0.0], "max": [1.0, 0.75, 0.5]},
             },
             {
                 "name": "ground",
-                "ll3m_id": "ground",
+                "verianim_id": "ground",
                 "bbox": {"min": [-5.0, -5.0, 0.0], "max": [5.0, 5.0, 0.0]},
             },
         ]
@@ -227,8 +227,8 @@ def table_slide_ir() -> GenerationIR:
 def table_slide_graph() -> dict:
     return {
         "objects": [
-            {"name": "crate", "ll3m_id": "crate", "bbox": {"min": [-1.2, -0.2, 1.0], "max": [-0.8, 0.2, 1.4]}},
-            {"name": "table", "ll3m_id": "table", "bbox": {"min": [-1.4, -0.8, 0.8], "max": [1.4, 0.8, 1.0]}},
+            {"name": "crate", "verianim_id": "crate", "bbox": {"min": [-1.2, -0.2, 1.0], "max": [-0.8, 0.2, 1.4]}},
+            {"name": "table", "verianim_id": "table", "bbox": {"min": [-1.4, -0.8, 0.8], "max": [1.4, 0.8, 1.0]}},
         ]
     }
 
@@ -249,7 +249,7 @@ def conveyor_platform_ride_ir() -> GenerationIR:
 def conveyor_platform_ride_graph() -> dict:
     graph = table_slide_graph()
     graph["objects"][1]["name"] = "conveyor_belt"
-    graph["objects"][1]["ll3m_id"] = "conveyor_belt"
+    graph["objects"][1]["verianim_id"] = "conveyor_belt"
     return graph
 
 
@@ -288,36 +288,36 @@ class AnimationRepairTest(unittest.TestCase):
 
         script = blender_repair_script(plan)
 
-        self.assertIn("_LL3M_ANIMATION_REPAIR_PLAN", script)
+        self.assertIn("_VERIANIM_ANIMATION_REPAIR_PLAN", script)
         self.assertIn("keyframe_insert", script)
         self.assertIn("LINEAR", script)
-        self.assertIn("_ll3m_repair_descendants", script)
-        self.assertIn("_ll3m_repair_normalize_child_offsets", script)
-        self.assertIn("_ll3m_repair_add_parent_roots", script)
-        self.assertIn("_ll3m_repair_select_anchor", script)
-        self.assertIn('_ll3m_repair_obj["ll3m_id"]', script)
-        self.assertIn("_ll3m_repair_apply_flat_group_keyframes", script)
+        self.assertIn("_verianim_repair_descendants", script)
+        self.assertIn("_verianim_repair_normalize_child_offsets", script)
+        self.assertIn("_verianim_repair_add_parent_roots", script)
+        self.assertIn("_verianim_repair_select_anchor", script)
+        self.assertIn('_verianim_repair_obj["verianim_id"]', script)
+        self.assertIn("_verianim_repair_apply_flat_group_keyframes", script)
 
     def test_repair_uses_aggregate_child_bbox_for_subject_root(self) -> None:
         graph = {
             "objects": [
                 {
                     "name": "car_body",
-                    "ll3m_id": "car_body",
+                    "verianim_id": "car_body",
                     "parent": "car",
                     "type": "MESH",
                     "bbox": {"min": [-3.0, -0.2, 0.0], "max": [-2.0, 0.2, 0.4]},
                 },
                 {
                     "name": "car_wheel",
-                    "ll3m_id": "car_wheel",
+                    "verianim_id": "car_wheel",
                     "parent": "car",
                     "type": "MESH",
                     "bbox": {"min": [-2.9, -0.25, -0.1], "max": [-2.1, 0.25, 0.1]},
                 },
                 {
                     "name": "bridge_deck_mesh",
-                    "ll3m_id": "bridge_deck_mesh",
+                    "verianim_id": "bridge_deck_mesh",
                     "parent": "bridge_deck",
                     "type": "MESH",
                     "bbox": {"min": [-1.0, -0.8, 0.5], "max": [1.0, 0.8, 0.7]},
@@ -336,18 +336,18 @@ class AnimationRepairTest(unittest.TestCase):
 
         script = blender_repair_script(plan)
 
-        self.assertIn("_ll3m_repair_descendants", script)
-        self.assertIn("_ll3m_repair_normalize_child_offsets", script)
-        self.assertIn("_ll3m_repair_add_parent_roots", script)
-        self.assertIn("_ll3m_repair_select_anchor", script)
-        self.assertIn("_ll3m_repair_uses_flat_group", script)
-        self.assertIn("_ll3m_repair_apply_flat_group_keyframes", script)
-        self.assertIn("_ll3m_repair_support_top", script)
-        self.assertIn("_ll3m_repair_recalibrate_keyframes", script)
+        self.assertIn("_verianim_repair_descendants", script)
+        self.assertIn("_verianim_repair_normalize_child_offsets", script)
+        self.assertIn("_verianim_repair_add_parent_roots", script)
+        self.assertIn("_verianim_repair_select_anchor", script)
+        self.assertIn("_verianim_repair_uses_flat_group", script)
+        self.assertIn("_verianim_repair_apply_flat_group_keyframes", script)
+        self.assertIn("_verianim_repair_support_top", script)
+        self.assertIn("_verianim_repair_recalibrate_keyframes", script)
         self.assertIn('for terminal_id in ("ground", "floor", "terrain")', script)
         self.assertIn('or "lift outside support footprint" in label', script)
         self.assertIn('or "support height" in label', script)
-        self.assertIn("_ll3m_repair_bpy.context.view_layer.update()", script)
+        self.assertIn("_verianim_repair_bpy.context.view_layer.update()", script)
         self.assertIn("centered on support", script)
         self.assertIn("max(root_extent * 2.0, 10.0)", script)
 
@@ -378,8 +378,8 @@ class AnimationRepairTest(unittest.TestCase):
         ir.animation.events[0].contact_constraints[1].object_id = "conveyor_belt"
         graph = {
             "objects": [
-                {"name": "car", "ll3m_id": "car", "bbox": {"min": [-2.5, -0.2, 0.5], "max": [-1.5, 0.2, 0.9]}},
-                {"name": "conveyor_belt", "ll3m_id": "conveyor_belt", "bbox": {"min": [-2.5, -0.8, 0.0], "max": [2.5, 0.8, 0.5]}},
+                {"name": "car", "verianim_id": "car", "bbox": {"min": [-2.5, -0.2, 0.5], "max": [-1.5, 0.2, 0.9]}},
+                {"name": "conveyor_belt", "verianim_id": "conveyor_belt", "bbox": {"min": [-2.5, -0.8, 0.0], "max": [2.5, 0.8, 0.5]}},
             ]
         }
 
@@ -436,9 +436,9 @@ class AnimationRepairTest(unittest.TestCase):
         )
         graph = {
             "objects": [
-                {"name": "box", "ll3m_id": "box", "bbox": {"min": [-1.5, -0.1, 0.1], "max": [-1.3, 0.1, 0.3]}},
-                {"name": "belt", "ll3m_id": "belt", "bbox": {"min": [-1.5, -0.3, 0.0], "max": [1.5, 0.3, 0.1]}},
-                {"name": "tray", "ll3m_id": "tray", "bbox": {"min": [1.25, -0.25, 0.0], "max": [1.75, 0.25, 0.05]}},
+                {"name": "box", "verianim_id": "box", "bbox": {"min": [-1.5, -0.1, 0.1], "max": [-1.3, 0.1, 0.3]}},
+                {"name": "belt", "verianim_id": "belt", "bbox": {"min": [-1.5, -0.3, 0.0], "max": [1.5, 0.3, 0.1]}},
+                {"name": "tray", "verianim_id": "tray", "bbox": {"min": [1.25, -0.25, 0.0], "max": [1.75, 0.25, 0.05]}},
             ]
         }
 
@@ -468,10 +468,10 @@ class AnimationRepairTest(unittest.TestCase):
         ]
         graph = {
             "objects": [
-                {"name": "car", "ll3m_id": "car", "bbox": {"min": [-1.0, -0.2, 0.4], "max": [-0.5, 0.2, 0.8]}},
-                {"name": "road", "ll3m_id": "road", "bbox": {"min": [-1.0, -0.7, 0.0], "max": [1.0, 0.7, 0.1]}},
-                {"name": "ramp", "ll3m_id": "ramp", "bbox": {"min": [2.5, -0.7, 0.3], "max": [3.5, 0.7, 0.9]}},
-                {"name": "platform", "ll3m_id": "platform", "bbox": {"min": [5.0, -0.7, 0.3], "max": [7.0, 0.7, 0.9]}},
+                {"name": "car", "verianim_id": "car", "bbox": {"min": [-1.0, -0.2, 0.4], "max": [-0.5, 0.2, 0.8]}},
+                {"name": "road", "verianim_id": "road", "bbox": {"min": [-1.0, -0.7, 0.0], "max": [1.0, 0.7, 0.1]}},
+                {"name": "ramp", "verianim_id": "ramp", "bbox": {"min": [2.5, -0.7, 0.3], "max": [3.5, 0.7, 0.9]}},
+                {"name": "platform", "verianim_id": "platform", "bbox": {"min": [5.0, -0.7, 0.3], "max": [7.0, 0.7, 0.9]}},
             ]
         }
 
@@ -502,8 +502,8 @@ class AnimationRepairTest(unittest.TestCase):
         graph = scene_graph()
         graph["objects"].extend(
             [
-                {"name": "road", "ll3m_id": "road", "bbox": {"min": [-4.0, -0.8, 0.0], "max": [-2.0, 0.8, 0.2]}},
-                {"name": "platform", "ll3m_id": "platform", "bbox": {"min": [2.0, -0.8, 0.5], "max": [4.0, 0.8, 0.7]}},
+                {"name": "road", "verianim_id": "road", "bbox": {"min": [-4.0, -0.8, 0.0], "max": [-2.0, 0.8, 0.2]}},
+                {"name": "platform", "verianim_id": "platform", "bbox": {"min": [2.0, -0.8, 0.5], "max": [4.0, 0.8, 0.7]}},
             ]
         )
 
@@ -529,10 +529,10 @@ class AnimationRepairTest(unittest.TestCase):
         ]
         graph = {
             "objects": [
-                {"name": "car", "ll3m_id": "car", "bbox": {"min": [-2.2, -0.2, 0.0], "max": [-1.8, 0.2, 0.15]}},
-                {"name": "road", "ll3m_id": "road", "bbox": {"min": [-4.0, -1.0, 0.0], "max": [0.0, 1.0, 0.0]}},
-                {"name": "ramp", "ll3m_id": "ramp", "bbox": {"min": [0.0, -1.0, 0.0], "max": [3.0, 1.0, 1.0]}},
-                {"name": "platform", "ll3m_id": "platform", "bbox": {"min": [3.0, -1.0, 0.0], "max": [6.0, 1.0, 1.0]}},
+                {"name": "car", "verianim_id": "car", "bbox": {"min": [-2.2, -0.2, 0.0], "max": [-1.8, 0.2, 0.15]}},
+                {"name": "road", "verianim_id": "road", "bbox": {"min": [-4.0, -1.0, 0.0], "max": [0.0, 1.0, 0.0]}},
+                {"name": "ramp", "verianim_id": "ramp", "bbox": {"min": [0.0, -1.0, 0.0], "max": [3.0, 1.0, 1.0]}},
+                {"name": "platform", "verianim_id": "platform", "bbox": {"min": [3.0, -1.0, 0.0], "max": [6.0, 1.0, 1.0]}},
             ]
         }
 

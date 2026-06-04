@@ -68,7 +68,7 @@ def _check_rag_docs(paths: tuple[Path, ...]) -> list[PreflightIssue]:
                 PreflightIssue(
                     "error",
                     f"RAG path does not exist: {path}",
-                    "Set LL3M_RAG_DOCS to existing files/directories or restore the docs/rag directory.",
+                    "Set VERIANIM_RAG_DOCS to existing files/directories or restore the docs/rag directory.",
                 )
             )
     return issues
@@ -85,7 +85,7 @@ def _check_runs_dir(path: Path) -> list[PreflightIssue]:
             PreflightIssue(
                 "error",
                 f"Runs directory is not writable: {path} ({exc})",
-                "Set LL3M_RUNS_DIR to a writable directory.",
+                "Set VERIANIM_RUNS_DIR to a writable directory.",
             )
         ]
     return []
@@ -100,7 +100,7 @@ def _check_blender(config: HarnessConfig) -> list[PreflightIssue]:
         PreflightIssue(
             "error",
             f"Could not reach Blender addon server at {config.blender_host}:{config.blender_port}. {message or ''}".strip(),
-            "Start Blender 4.5.4, enable blender/addon.py, and click Start LL3M Server, or use --skip-preflight.",
+            "Start Blender 4.5.4, enable blender/addon.py, and click Start VeriAnim Server, or use --skip-preflight.",
         )
     ]
 
@@ -142,7 +142,7 @@ def _check_agent_credentials(agents: Iterable[AgentModelConfig]) -> list[Preflig
             PreflightIssue(
                 "error",
                 f"No API key found for {agent.name} model '{agent.model}'.",
-                f"Set LL3M_{agent.name.upper()}_API_KEY, LITELLM_API_KEY, or one of: {env_list}.",
+                f"Set VERIANIM_{agent.name.upper()}_API_KEY, LITELLM_API_KEY, or one of: {env_list}.",
             )
         )
     return issues

@@ -1,4 +1,4 @@
-# LL3M Scene and Animation IR
+# VeriAnim Scene and Animation IR
 
 This document defines the first implementation version of the intermediate
 representation used by the local harness. The source of truth is
@@ -668,7 +668,7 @@ explainable:
 - It samples every event boundary, event midpoint, requested verifier sample,
   and every frame for animations up to 180 frames. Longer animations are
   subsampled to roughly 180 audit frames.
-- It aggregates all mesh-like descendants for each `ll3m_id` into a world-space
+- It aggregates all mesh-like descendants for each `verianim_id` into a world-space
   bbox.
 - It checks explicit `ContactConstraintSpec` windows for penetration, floating,
   missing support footprint overlap, detached contact, and failed containment.

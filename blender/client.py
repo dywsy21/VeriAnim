@@ -8,7 +8,7 @@ HOST = 'localhost'
 PORT = 8888
 
 """
-BlenderClient: Minimal client for communicating with the Blender LL3M server.
+BlenderClient: Minimal client for communicating with the Blender VeriAnim server.
 
 Available functions:
 - BlenderClient.get_scene_info(host=..., port=...):
@@ -23,7 +23,7 @@ All functions handle connection and closure internally, and return a dictionary 
 
 class BlenderClient:
     """
-    Minimal client for communicating with the Blender LL3M server.
+    Minimal client for communicating with the Blender VeriAnim server.
     Provides static methods for common commands, each handling connection and closure internally.
     """
     def __init__(self, host=HOST, port=PORT):

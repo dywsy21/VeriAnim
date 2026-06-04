@@ -1,1 +1,1 @@
-"""Legacy LL3M client configuration helpers."""
+"""Legacy VeriAnim client configuration helpers."""

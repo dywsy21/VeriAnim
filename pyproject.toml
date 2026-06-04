@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ll3m-animation-harness"
+name = "verianim-animation-harness"
 version = "0.1.0"
-description = "Local Blender scene and animation generation harness for LL3M experiments"
+description = "Local Blender scene and animation generation harness for VeriAnim experiments"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
@@ -24,8 +24,8 @@ dev = [
 ]
 
 [project.scripts]
-ll3m-harness = "harness.runner:main"
-ll3m-tui = "harness.tui:main"
+verianim-harness = "harness.runner:main"
+verianim-tui = "harness.tui:main"
 
 [tool.setuptools]
 packages = ["blender", "config", "harness"]
@@ -41,7 +41,7 @@ extend-exclude = [
     "downloads",
     "remoteassets",
     "results",
-    "ll3m",
+    "verianim",
     "blender4.4_pdfs",
 ]
 

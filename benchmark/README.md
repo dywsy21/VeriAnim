@@ -1,6 +1,6 @@
-# LL3M-AnimBench
+# VeriAnim-AnimBench
 
-LL3M-AnimBench contains 300 natural-language Blender animation prompts.
+VeriAnim-AnimBench contains 300 natural-language Blender animation prompts.
 The benchmark has 100 easy, 100 medium, and 100 hard prompts.
 
 - Easy prompts isolate one object and one dominant motion.

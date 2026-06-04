@@ -74,8 +74,8 @@ def failed_report(*, overlap_x: float = 0.4, overlap_y: float = 0.4, support_z: 
 def graph_with_mug(*, mug_min=(0.0, 0.0, 1.0), mug_max=(0.2, 0.2, 1.4), table_min=(-1.0, -1.0, 0.0), table_max=(1.0, 1.0, 0.5)) -> dict:
     return {
         "objects": [
-            {"name": "mug", "ll3m_id": "mug", "type": "MESH", "bbox": {"min": list(mug_min), "max": list(mug_max)}},
-            {"name": "table", "ll3m_id": "table", "type": "MESH", "bbox": {"min": list(table_min), "max": list(table_max)}},
+            {"name": "mug", "verianim_id": "mug", "type": "MESH", "bbox": {"min": list(mug_min), "max": list(mug_max)}},
+            {"name": "table", "verianim_id": "table", "type": "MESH", "bbox": {"min": list(table_min), "max": list(table_max)}},
         ]
     }
 
@@ -100,13 +100,13 @@ def graph_with_multilevel_shelf() -> dict:
         "objects": [
             {
                 "name": "yellow_box",
-                "ll3m_id": "yellow_box",
+                "verianim_id": "yellow_box",
                 "type": "MESH",
                 "bbox": {"min": [-0.2, -0.2, 1.026], "max": [0.2, 0.2, 1.426]},
             },
             {
                 "name": "shelf",
-                "ll3m_id": "shelf",
+                "verianim_id": "shelf",
                 "type": "EMPTY",
                 "bbox": {"min": [-3.0, 0.0, 0.0], "max": [-3.0, 0.0, 0.0]},
                 "children": ["shelf_board_bottom", "shelf_board_middle", "shelf_board_top", "shelf_leg_left", "shelf_leg_right"],
@@ -215,19 +215,19 @@ class StaticSupportRepairTest(unittest.TestCase):
 
         script = blender_static_support_repair_script(plan)
 
-        self.assertIn("LL3M deterministic static support repair", script)
-        self.assertIn("_LL3M_STATIC_SUPPORT_REPAIR_PLAN", script)
-        self.assertIn("_ll3m_static_repair_apply_delta", script)
+        self.assertIn("VeriAnim deterministic static support repair", script)
+        self.assertIn("_VERIANIM_STATIC_SUPPORT_REPAIR_PLAN", script)
+        self.assertIn("_verianim_static_repair_apply_delta", script)
         self.assertIn("add_with_descendants", script)
-        self.assertIn("_ll3m_static_repair_current_delta", script)
-        self.assertIn("_ll3m_static_repair_normalize_child_offsets", script)
+        self.assertIn("_verianim_static_repair_current_delta", script)
+        self.assertIn("_verianim_static_repair_normalize_child_offsets", script)
 
     def test_blender_repair_script_shifts_location_keyframes(self) -> None:
         plan = repair_static_support(support_ir(), graph_with_mug(), failed_report())
 
         script = blender_static_support_repair_script(plan)
 
-        self.assertIn("_ll3m_static_repair_shift_location_keyframes", script)
+        self.assertIn("_verianim_static_repair_shift_location_keyframes", script)
         self.assertIn('fcurve.data_path != "location"', script)
         self.assertIn("seen_fcurves = set()", script)
         self.assertIn("as_pointer", script)

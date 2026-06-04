@@ -1,6 +1,6 @@
 # Local Harness Implementation
 
-The local harness is separate from the original LL3M cloud-client flow.
+The local harness is separate from the original cloud-client flow.
 Use it with:
 
 ```bash
@@ -60,26 +60,26 @@ pip install -r requirements.txt
 Copy `.env.example` to `.env` and fill the API keys for the providers you use.
 Different agents can use different models:
 
-- `LL3M_PLANNER_MODEL`
-- `LL3M_CODER_MODEL`
-- `LL3M_REFINER_MODEL`
-- `LL3M_VISION_MODEL`
-- `LL3M_VIDEO_MODEL`
+- `VERIANIM_PLANNER_MODEL`
+- `VERIANIM_CODER_MODEL`
+- `VERIANIM_REFINER_MODEL`
+- `VERIANIM_VISION_MODEL`
+- `VERIANIM_VIDEO_MODEL`
 
 Each agent can also use its own endpoint and key:
 
-- `LL3M_PLANNER_API_BASE`, `LL3M_PLANNER_API_KEY`, `LL3M_PLANNER_API_VERSION`, `LL3M_PLANNER_PROVIDER`
-- `LL3M_CODER_API_BASE`, `LL3M_CODER_API_KEY`, `LL3M_CODER_API_VERSION`, `LL3M_CODER_PROVIDER`
-- `LL3M_REFINER_API_BASE`, `LL3M_REFINER_API_KEY`, `LL3M_REFINER_API_VERSION`, `LL3M_REFINER_PROVIDER`
-- `LL3M_VISION_API_BASE`, `LL3M_VISION_API_KEY`, `LL3M_VISION_API_VERSION`, `LL3M_VISION_PROVIDER`
-- `LL3M_VIDEO_API_BASE`, `LL3M_VIDEO_API_KEY`, `LL3M_VIDEO_API_VERSION`, `LL3M_VIDEO_PROVIDER`
+- `VERIANIM_PLANNER_API_BASE`, `VERIANIM_PLANNER_API_KEY`, `VERIANIM_PLANNER_API_VERSION`, `VERIANIM_PLANNER_PROVIDER`
+- `VERIANIM_CODER_API_BASE`, `VERIANIM_CODER_API_KEY`, `VERIANIM_CODER_API_VERSION`, `VERIANIM_CODER_PROVIDER`
+- `VERIANIM_REFINER_API_BASE`, `VERIANIM_REFINER_API_KEY`, `VERIANIM_REFINER_API_VERSION`, `VERIANIM_REFINER_PROVIDER`
+- `VERIANIM_VISION_API_BASE`, `VERIANIM_VISION_API_KEY`, `VERIANIM_VISION_API_VERSION`, `VERIANIM_VISION_PROVIDER`
+- `VERIANIM_VIDEO_API_BASE`, `VERIANIM_VIDEO_API_KEY`, `VERIANIM_VIDEO_API_VERSION`, `VERIANIM_VIDEO_PROVIDER`
 
-LLM calls use `LL3M_LLM_TIMEOUT_SECONDS` as a global timeout. Override a single
-agent with `LL3M_PLANNER_TIMEOUT_SECONDS`, `LL3M_CODER_TIMEOUT_SECONDS`,
-`LL3M_REFINER_TIMEOUT_SECONDS`, `LL3M_VISION_TIMEOUT_SECONDS`, or
-`LL3M_VIDEO_TIMEOUT_SECONDS`.
+LLM calls use `VERIANIM_LLM_TIMEOUT_SECONDS` as a global timeout. Override a single
+agent with `VERIANIM_PLANNER_TIMEOUT_SECONDS`, `VERIANIM_CODER_TIMEOUT_SECONDS`,
+`VERIANIM_REFINER_TIMEOUT_SECONDS`, `VERIANIM_VISION_TIMEOUT_SECONDS`, or
+`VERIANIM_VIDEO_TIMEOUT_SECONDS`.
 
-Leave `LL3M_*_MAX_TOKENS` empty by default. The harness will not send a
+Leave `VERIANIM_*_MAX_TOKENS` empty by default. The harness will not send a
 `max_tokens` cap unless that agent-specific value is set, which avoids
 accidentally clipping long Blender scripts or verifier JSON on providers with
 larger output windows.
@@ -90,12 +90,12 @@ video uses a DashScope/Qwen Omni endpoint.
 
 External texture search is controlled by:
 
-- `LL3M_TEXTURE_SEARCH_ENABLED` (default `true`)
-- `LL3M_TEXTURE_SEARCH_CANDIDATE_LIMIT` (default `4`)
-- `LL3M_TEXTURE_SEARCH_TIMEOUT_SECONDS` (default `20`)
+- `VERIANIM_TEXTURE_SEARCH_ENABLED` (default `true`)
+- `VERIANIM_TEXTURE_SEARCH_CANDIDATE_LIMIT` (default `4`)
+- `VERIANIM_TEXTURE_SEARCH_TIMEOUT_SECONDS` (default `20`)
 
 The texture selector reuses the configured VISION model, so
-`LL3M_VISION_SUPPORTS_IMAGES` must remain enabled for automatic texture approval.
+`VERIANIM_VISION_SUPPORTS_IMAGES` must remain enabled for automatic texture approval.
 
 The default video model hint is `dashscope/qwen-omni-turbo`. Replace it with the
 LiteLLM model name that matches your deployed Qwen Omni or other video-capable
@@ -126,7 +126,7 @@ one compatibility retry only when the provider explicitly rejects
 code-generation IR instead of the full verification IR; the full IR is still
 written to disk and used by validators.
 
-Generated scripts can import `from blender import ll3m_utils as ll3m` for
+Generated scripts can import `from blender import verianim_utils as verianim` for
 shared helpers such as Workbench render setup, scene clearing, collections,
 materials, cameras, lights, and primitive mesh objects. This keeps model output
 shorter and reduces repeated Blender API mistakes.
@@ -139,7 +139,7 @@ The same sanitizer handles selected historical helper/API compatibility issues:
 `llm_utils` import aliases, `make_material(spec_dict=...)`, primitive helper
 `scale`/`rotation` keyword drift, unsupported `WaveModifier.falloff`, empty
 `Vector()` calls, vertex `.co` access for bbox loops, direct `Action.fcurves`
-loops on Blender's layered action API, and object-target `ll3m.look_at` calls.
+loops on Blender's layered action API, and object-target `verianim.look_at` calls.
 These are deterministic rewrites of known invalid Blender API patterns, not a
 general semantic repair layer.
 
@@ -149,7 +149,7 @@ To inspect historical execution failures, run:
 python scripts/summarize_execution_failures.py --max-examples 2
 ```
 
-`LL3M_MAX_STAGNANT_REFINEMENT_ROUNDS` stops a verifier loop when the same
+`VERIANIM_MAX_STAGNANT_REFINEMENT_ROUNDS` stops a verifier loop when the same
 failure signature repeats without progress, preventing repeated expensive
 refiner calls on an unchanged issue.
 
@@ -214,10 +214,10 @@ The harness repeats execute, deterministic validation, screenshot rendering,
 visual/video verification, and code refinement until every enabled verifier
 passes. The loop has safety caps to avoid infinite runs:
 
-- `LL3M_MAX_REFINEMENT_ROUNDS` for the baseline deterministic loop.
-- `LL3M_MAX_VISUAL_REFINEMENT_ROUNDS` for visual-verifier-gated scene repair.
-- `LL3M_MAX_VIDEO_REFINEMENT_ROUNDS` for video-verifier-gated animation repair.
-- `LL3M_RENDER_GIF_EACH_ROUND` to render a complete GIF and MP4 preview during
+- `VERIANIM_MAX_REFINEMENT_ROUNDS` for the baseline deterministic loop.
+- `VERIANIM_MAX_VISUAL_REFINEMENT_ROUNDS` for visual-verifier-gated scene repair.
+- `VERIANIM_MAX_VIDEO_REFINEMENT_ROUNDS` for video-verifier-gated animation repair.
+- `VERIANIM_RENDER_GIF_EACH_ROUND` to render a complete GIF and MP4 preview during
   every video verification pass. Keep this `false` for sampled-frame-only
   experiments; set it `true` when the configured video model directly reads
   video input.
@@ -235,7 +235,7 @@ that plan before rendering:
 
 - If the plan has too few views, `BlenderRuntime` adds canonical inspection
   views such as three-quarter, relation close-up, side/support, and top/layout.
-- Target ids are resolved through `ll3m_id`, then expanded to all matching mesh
+- Target ids are resolved through `verianim_id`, then expanded to all matching mesh
   parts. This avoids framing only a parent Empty and missing the actual object
   geometry.
 - Relation-focused views inherit the subject/object ids of the relation when
@@ -354,7 +354,7 @@ extra temporal checks:
 - Every passed animation run writes a complete final GIF to
   `animation/final/animation.gif` and, when `ffmpeg` is available, an MP4
   preview to `animation/final/animation.mp4`. Validation rounds also produce
-  previews when `LL3M_RENDER_GIF_EACH_ROUND=true`.
+  previews when `VERIANIM_RENDER_GIF_EACH_ROUND=true`.
 
 When an IR contains `extension.prototype`, deterministic animation validation
 also records `deformation_statistics` in `reports/*_animation_trace.json`. The
@@ -442,9 +442,9 @@ the appended Blender repair block under `code/`.
 
 ## Blender Requirement
 
-Open Blender 4.5.4, install the existing `blender/addon.py`, and start the LL3M
+Open Blender 4.5.4, install the existing `blender/addon.py`, and start the VeriAnim
 server in Blender before running the harness. The harness talks to the addon on
-`LL3M_BLENDER_HOST` and `LL3M_BLENDER_PORT`.
+`VERIANIM_BLENDER_HOST` and `VERIANIM_BLENDER_PORT`.
 
 The addon now exposes structured commands used by the local harness:
 

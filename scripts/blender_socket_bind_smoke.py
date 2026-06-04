@@ -15,7 +15,7 @@ LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 try:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    port = int(os.environ.get("LL3M_BLENDER_PORT", "8888"))
+    port = int(os.environ.get("VERIANIM_BLENDER_PORT", "8888"))
     sock.bind(("127.0.0.1", port))
     sock.listen(1)
     LOG_PATH.write_text("bind-ok\n", encoding="utf-8")

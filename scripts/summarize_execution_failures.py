@@ -1,4 +1,4 @@
-"""Summarize Blender execution failures from LL3M run artifacts."""
+"""Summarize Blender execution failures from VeriAnim run artifacts."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Summarize LL3M Blender execution failure reports.")
+    parser = argparse.ArgumentParser(description="Summarize VeriAnim Blender execution failure reports.")
     parser.add_argument("--runs-dir", type=Path, default=Path("runs"), help="Directory containing run_* folders.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON instead of text.")
     parser.add_argument("--max-examples", type=int, default=5, help="Maximum examples per failure class.")

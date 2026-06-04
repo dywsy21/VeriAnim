@@ -1,4 +1,4 @@
-"""CLI runner for the local LL3M scene/animation harness."""
+"""CLI runner for the local VeriAnim scene/animation harness."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def _print_event(event: HarnessEvent) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Local LL3M Blender scene/animation harness")
+    parser = argparse.ArgumentParser(description="Local VeriAnim Blender scene/animation harness")
     parser.add_argument("--text", type=str, help="User prompt for scene or animation generation")
     parser.add_argument("--ir", type=Path, help="Path to an existing GenerationIR JSON file")
     parser.add_argument("--animation", action="store_true", help="Ask planner to include animation")

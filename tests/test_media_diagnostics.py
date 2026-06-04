@@ -111,8 +111,8 @@ class MediaDiagnosticsTest(unittest.TestCase):
         self.assertEqual(report["video"]["status"], "unsupported")
         self.assertEqual(report["vision"]["report"]["issues"][0]["code"], "VISION_INPUT_UNSUPPORTED")
         self.assertEqual(report["video"]["report"]["issues"][0]["code"], "VIDEO_INPUT_UNSUPPORTED")
-        self.assertIn("Configure LL3M_VISION_MODEL", report["vision"]["report"]["issues"][0]["suggested_fix"])
-        self.assertIn("Configure LL3M_VIDEO_MODEL", report["video"]["report"]["issues"][0]["suggested_fix"])
+        self.assertIn("Configure VERIANIM_VISION_MODEL", report["vision"]["report"]["issues"][0]["suggested_fix"])
+        self.assertIn("Configure VERIANIM_VIDEO_MODEL", report["video"]["report"]["issues"][0]["suggested_fix"])
 
 
 if __name__ == "__main__":

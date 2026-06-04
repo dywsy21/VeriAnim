@@ -147,10 +147,11 @@ Chen-Hsuan Lin, Jun Gao, Luming Tang, Towaki Takikawa, Xiaohui Zeng, Xun Huang,
 \newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
   2023.
 
-\bibitem[Lu et~al.(2025)Lu, Zhao, Liu, Chen, Zhang, Lin, and Wang]{lu2025ll3m}
+\bibitem[Lu et~al.(2025)Lu, Zhao, Liu, Chen, Zhang, Lin, and
+  Wang]{lu2025verianim}
 Sining Lu, Yicheng Zhao, Haowen Liu, Yixin Chen, Chi Zhang, Dahua Lin, and
   He~Wang.
-\newblock {LL3M}: Large language 3d modelers.
+\newblock Large language 3d modelers.
 \newblock \emph{arXiv preprint arXiv:2508.08228}, 2025.
 
 \bibitem[Macklin et~al.(2014)Macklin, M{\"u}ller, Chentanez, and

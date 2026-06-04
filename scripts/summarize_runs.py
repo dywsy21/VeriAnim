@@ -17,7 +17,7 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Summarize LL3M run previews.")
+    parser = argparse.ArgumentParser(description="Summarize VeriAnim run previews.")
     parser.add_argument("--runs-dir", type=Path, default=Path("runs"), help="Directory containing run_* folders.")
     parser.add_argument("--output-dir", type=Path, default=Path("runs-summary"), help="Directory to write summaries into.")
     parser.add_argument("--refresh", action="store_true", help="Rebuild summaries that already exist.")

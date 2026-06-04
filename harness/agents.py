@@ -32,36 +32,36 @@ from .serde import from_dict
 from .textures import FREE_STOCK_TEXTURES_LICENSE, FreeStockTexturesClient, TextureCandidate
 
 
-LL3M_UTILS_API_GUIDE = """
-Available `blender.ll3m_utils` API. Import it exactly as:
-`from blender import ll3m_utils as ll3m`
+VERIANIM_UTILS_API_GUIDE = """
+Available `blender.verianim_utils` API. Import it exactly as:
+`from blender import verianim_utils as verianim`
 
-Use only these `ll3m.*` helper names. If a helper you want is not listed here,
-use Blender's native `bpy` data API instead of inventing a new `ll3m` function.
+Use only these `verianim.*` helper names. If a helper you want is not listed here,
+use Blender's native `bpy` data API instead of inventing a new `verianim` function.
 
 Scene and collections:
-- `scene = ll3m.clear_scene()`
-- `collection = ll3m.create_collection(name, parent=None)`
-- `collection = ll3m.ensure_collection(name, parent=None)`
-- `collection = ll3m.get_or_create_collection(name, parent=None)`
-- `obj = ll3m.link_object(obj, collection=None)`
-- `obj = ll3m.link_to_collection(obj, collection=None)`
-- `obj = ll3m.set_ll3m_properties(obj, ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+- `scene = verianim.clear_scene()`
+- `collection = verianim.create_collection(name, parent=None)`
+- `collection = verianim.ensure_collection(name, parent=None)`
+- `collection = verianim.get_or_create_collection(name, parent=None)`
+- `obj = verianim.link_object(obj, collection=None)`
+- `obj = verianim.link_to_collection(obj, collection=None)`
+- `obj = verianim.set_verianim_properties(obj, verianim_id=None, verianim_part=None, verianim_role=None)`
 
 Materials:
-- `mat = ll3m.make_material(name, base_color=None, metallic=None, roughness=None, alpha=None, texture_path=None)`
-- `mat = ll3m.make_material(spec_dict)` where `spec_dict` may contain `id`, `base_color`, `metallic`, `roughness`, `alpha`, and `texture_source.local_path`
-- `mat = ll3m.create_material(...)` is an alias for `make_material`
-- `node = ll3m.find_node_by_type(node_tree, node_type)`
+- `mat = verianim.make_material(name, base_color=None, metallic=None, roughness=None, alpha=None, texture_path=None)`
+- `mat = verianim.make_material(spec_dict)` where `spec_dict` may contain `id`, `base_color`, `metallic`, `roughness`, `alpha`, and `texture_source.local_path`
+- `mat = verianim.create_material(...)` is an alias for `make_material`
+- `node = verianim.find_node_by_type(node_tree, node_type)`
 
 Objects and mesh primitives:
-- `obj = ll3m.create_mesh_object(name, vertices, faces, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), scale=(1,1,1), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
-- `obj = ll3m.add_cube(name, size=1.0, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
-- `obj = ll3m.create_box(name, size=1.0, ...)`
-- `obj = ll3m.make_box(name, size=1.0, ...)`
-- `obj = ll3m.add_plane(name, size=1.0, collection=None, material=None, location=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
-- `obj = ll3m.add_cylinder(name, radius=0.5, depth=1.0, vertices_count=32, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
-- `obj = ll3m.add_uv_sphere(name, radius=0.5, segments=32, rings=16, collection=None, material=None, location=(0,0,0), ll3m_id=None, ll3m_part=None, ll3m_role=None)`
+- `obj = verianim.create_mesh_object(name, vertices, faces, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), scale=(1,1,1), verianim_id=None, verianim_part=None, verianim_role=None)`
+- `obj = verianim.add_cube(name, size=1.0, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), verianim_id=None, verianim_part=None, verianim_role=None)`
+- `obj = verianim.create_box(name, size=1.0, ...)`
+- `obj = verianim.make_box(name, size=1.0, ...)`
+- `obj = verianim.add_plane(name, size=1.0, collection=None, material=None, location=(0,0,0), verianim_id=None, verianim_part=None, verianim_role=None)`
+- `obj = verianim.add_cylinder(name, radius=0.5, depth=1.0, vertices_count=32, collection=None, material=None, location=(0,0,0), rotation=(0,0,0), verianim_id=None, verianim_part=None, verianim_role=None)`
+- `obj = verianim.add_uv_sphere(name, radius=0.5, segments=32, rings=16, collection=None, material=None, location=(0,0,0), verianim_id=None, verianim_part=None, verianim_role=None)`
 
 Primitive coordinate rules:
 - `add_cube`, `create_box`, `make_box`, `add_cylinder`, and `add_uv_sphere`
@@ -77,29 +77,29 @@ Primitive coordinate rules:
   because this helper does not accept that keyword.
 
 Rigid animation and support helpers:
-- `scene = ll3m.set_frame_range(scene=None, start=1, end=120, fps=None)`
-- `bbox = ll3m.world_bbox(obj_or_objs, include_children=True)` returning `min`, `max`, `center`, `size`, `top`, and `bottom`
-- `center = ll3m.bbox_center(obj_or_objs)`, `size = ll3m.bbox_size(obj_or_objs)`, `z = ll3m.bbox_top(obj_or_objs)`, `z = ll3m.bbox_bottom(obj_or_objs)`
-- `obj = ll3m.move_bottom_to_z(obj, z, margin=0.001)` and `obj = ll3m.align_bottom_to_top(subject, support, margin=0.001)`
-- `fingers = ll3m.space_gripper_fingers_around_subject(gripper, subject, axis="X", fingers=None, gap=0.02, align_z="center")`
-- `obj = ll3m.insert_location_keyframe(obj, frame, location, interpolation="LINEAR")`
-- `obj = ll3m.insert_rotation_keyframe(obj, frame, rotation, interpolation="LINEAR")`
-- `obj = ll3m.insert_scale_keyframe(obj, frame, scale, interpolation="LINEAR")`
-- `obj = ll3m.set_keyframe_interpolation(obj, interpolation="LINEAR", easing=None)` or `ll3m.set_linear_interpolation(obj)`
-- `obj = ll3m.animate_translate(obj, [(frame, location), ...], interpolation="LINEAR")`
-- `obj = ll3m.animate_follow_path(obj, [point0, point1, ...], start_frame, end_frame, interpolation="LINEAR")`
-- `obj = ll3m.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame, margin=0.001)`
-- `obj = ll3m.animate_support_sequence(subject, [{"support": support, "frame": frame, "xy": (x,y)}, ...], margin=0.001)`
-- `(driver, carried) = ll3m.animate_attached_carry(driver, carried, [(frame, driver_location), ...], offset=(0,0,-0.5))`
-- `parts = ll3m.create_parallel_gripper("gripper", carried=box, location=(x,y,z), collection=None, material=None, ll3m_id="gripper", axis="Y")`; animate `parts["root"]`, pass `parts["fingers"]` for finger motion.
-- `(gripper, carried) = ll3m.animate_pick_place(gripper, carried, source_support, dest_support, source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, clearance=0.05, gripper_offset=None, avoid_dest_supports=None)`
-- `(gripper, carried) = ll3m.animate_parallel_gripper_pick_place(gripper, carried, source_support, dest_support, fingers=None, axis="Y", source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, avoid_dest_supports=None)`
-- `(pusher, pushed) = ll3m.animate_push(pusher, pushed, support, start_xy, end_xy, start_frame, end_frame, pusher_offset=(-0.8,0,0))`
-- `obj = ll3m.animate_drop_to_support(subject, support, start_location, start_frame, end_frame, end_xy=None)`
-- `obj = ll3m.animate_rotate_about_axis(obj, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
-- `obj = ll3m.animate_hinge(obj, hinge_origin, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
-- `rotor = ll3m.create_rotor_root("rotor", location=hub.location, children=None, collection=None, ll3m_id="rotor")`
-- `rotor = ll3m.animate_rotor(rotor, axis="X", turns=1.0, start_frame=1, end_frame=120)`
+- `scene = verianim.set_frame_range(scene=None, start=1, end=120, fps=None)`
+- `bbox = verianim.world_bbox(obj_or_objs, include_children=True)` returning `min`, `max`, `center`, `size`, `top`, and `bottom`
+- `center = verianim.bbox_center(obj_or_objs)`, `size = verianim.bbox_size(obj_or_objs)`, `z = verianim.bbox_top(obj_or_objs)`, `z = verianim.bbox_bottom(obj_or_objs)`
+- `obj = verianim.move_bottom_to_z(obj, z, margin=0.001)` and `obj = verianim.align_bottom_to_top(subject, support, margin=0.001)`
+- `fingers = verianim.space_gripper_fingers_around_subject(gripper, subject, axis="X", fingers=None, gap=0.02, align_z="center")`
+- `obj = verianim.insert_location_keyframe(obj, frame, location, interpolation="LINEAR")`
+- `obj = verianim.insert_rotation_keyframe(obj, frame, rotation, interpolation="LINEAR")`
+- `obj = verianim.insert_scale_keyframe(obj, frame, scale, interpolation="LINEAR")`
+- `obj = verianim.set_keyframe_interpolation(obj, interpolation="LINEAR", easing=None)` or `verianim.set_linear_interpolation(obj)`
+- `obj = verianim.animate_translate(obj, [(frame, location), ...], interpolation="LINEAR")`
+- `obj = verianim.animate_follow_path(obj, [point0, point1, ...], start_frame, end_frame, interpolation="LINEAR")`
+- `obj = verianim.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame, margin=0.001)`
+- `obj = verianim.animate_support_sequence(subject, [{"support": support, "frame": frame, "xy": (x,y)}, ...], margin=0.001)`
+- `(driver, carried) = verianim.animate_attached_carry(driver, carried, [(frame, driver_location), ...], offset=(0,0,-0.5))`
+- `parts = verianim.create_parallel_gripper("gripper", carried=box, location=(x,y,z), collection=None, material=None, verianim_id="gripper", axis="Y")`; animate `parts["root"]`, pass `parts["fingers"]` for finger motion.
+- `(gripper, carried) = verianim.animate_pick_place(gripper, carried, source_support, dest_support, source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, clearance=0.05, gripper_offset=None, avoid_dest_supports=None)`
+- `(gripper, carried) = verianim.animate_parallel_gripper_pick_place(gripper, carried, source_support, dest_support, fingers=None, axis="Y", source_xy=None, dest_xy=None, frames=(1,25,45,80,100,120), carry_height=1.0, avoid_dest_supports=None)`
+- `(pusher, pushed) = verianim.animate_push(pusher, pushed, support, start_xy, end_xy, start_frame, end_frame, pusher_offset=(-0.8,0,0))`
+- `obj = verianim.animate_drop_to_support(subject, support, start_location, start_frame, end_frame, end_xy=None)`
+- `obj = verianim.animate_rotate_about_axis(obj, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
+- `obj = verianim.animate_hinge(obj, hinge_origin, axis="Z", angle=1.5708, start_frame=1, end_frame=60)`
+- `rotor = verianim.create_rotor_root("rotor", location=hub.location, children=None, collection=None, verianim_id="rotor")`
+- `rotor = verianim.animate_rotor(rotor, axis="X", turns=1.0, start_frame=1, end_frame=120)`
 
 Use these rigid animation helpers for common box-on-table, conveyor, slide,
 push, drop, pick-carry-place, door/lever, and support-to-support motions. They
@@ -125,25 +125,25 @@ source support footprint when the source and destination supports are adjacent.
 For windmills, fans, wheels, and propellers, animate a rotor root/empty at the
 hub or axle, not the blade mesh origin. Parent blade meshes to the rotor root,
 place their local mesh centers offset away from the nacelle/head so only a small
-hub/axle touches the support, then call `ll3m.animate_rotor` on the root. Keep
+hub/axle touches the support, then call `verianim.animate_rotor` on the root. Keep
 the rotor root as the AnimationSpec subject id when possible.
 
 Cameras, lights, and rendering:
-- `camera = ll3m.add_camera(name="camera_main", location=(3,-4,2.5), look_at_target=(0,0,0), lens=35, collection=None, make_active=True)`
-- `camera = ll3m.create_camera(name, location=..., look_at=..., lens=35, collection=None, make_active=True)`
-- `camera = ll3m.make_camera(name, location=..., look_at=..., lens=35, collection=None, make_active=True)`
-- `obj = ll3m.look_at(obj, target)`
-- `light = ll3m.add_light(name, light_type="AREA", location=(0,0,4), rotation=(0,0,0), energy=500, size=None, color=None, collection=None)`
-- `light = ll3m.create_light(name, light_type="AREA", ...)`
-- `light = ll3m.make_light(name, light_type="AREA", ...)`
-- `light = ll3m.create_area_light(name, location=(0,0,4), rotation=(0,0,0), energy=500, size=None, color=None, collection=None)`
-- `engine = ll3m.configure_render(scene, width=None, height=None, fps=None, engine="workbench", transparent_background=None)`
-- `engine = ll3m.set_render_engine(scene, engine="workbench")`
+- `camera = verianim.add_camera(name="camera_main", location=(3,-4,2.5), look_at_target=(0,0,0), lens=35, collection=None, make_active=True)`
+- `camera = verianim.create_camera(name, location=..., look_at=..., lens=35, collection=None, make_active=True)`
+- `camera = verianim.make_camera(name, location=..., look_at=..., lens=35, collection=None, make_active=True)`
+- `obj = verianim.look_at(obj, target)`
+- `light = verianim.add_light(name, light_type="AREA", location=(0,0,4), rotation=(0,0,0), energy=500, size=None, color=None, collection=None)`
+- `light = verianim.create_light(name, light_type="AREA", ...)`
+- `light = verianim.make_light(name, light_type="AREA", ...)`
+- `light = verianim.create_area_light(name, location=(0,0,4), rotation=(0,0,0), energy=500, size=None, color=None, collection=None)`
+- `engine = verianim.configure_render(scene, width=None, height=None, fps=None, engine="workbench", transparent_background=None)`
+- `engine = verianim.set_render_engine(scene, engine="workbench")`
 """.strip()
 
 
-def _with_ll3m_utils_api(system: str) -> str:
-    return f"{system}\n\nll3m_utils API contract:\n{LL3M_UTILS_API_GUIDE}"
+def _with_verianim_utils_api(system: str) -> str:
+    return f"{system}\n\nverianim_utils API contract:\n{VERIANIM_UTILS_API_GUIDE}"
 
 
 class PlannerAgent:
@@ -512,45 +512,45 @@ class CoderAgent:
         self.rag = rag
 
     def generate(self, ir: GenerationIR, *, static_only: bool = False) -> str:
-        query = "Blender 4.5 bpy data API mesh from_pydata material camera light render workbench ll3m_utils keyframe_insert"
+        query = "Blender 4.5 bpy data API mesh from_pydata material camera light render workbench verianim_utils keyframe_insert"
         context = self.rag.format_context(query, limit=4, max_chars=5000)
         coder_ir = _compact_ir_for_coder(ir)
         system = (
             "You are a senior Blender 4.5.4 Python coder. "
             "Generate one complete Python script that creates the requested scene and optional animation. "
-            "Use data API where possible, stable ll3m custom properties, modular factory functions, and explicit collections. "
-            "Prefer importing `from blender import ll3m_utils as ll3m` and using its common helpers for clearing scenes, collections, render setup, materials, cameras, lights, and primitive mesh objects. "
-            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
+            "Use data API where possible, stable verianim custom properties, modular factory functions, and explicit collections. "
+            "Prefer importing `from blender import verianim_utils as verianim` and using its common helpers for clearing scenes, collections, render setup, materials, cameras, lights, and primitive mesh objects. "
+            "Use only the verianim_utils helper functions listed in the API contract below; do not invent helper names. "
             "Blender UI/node names may be localized; never find shader nodes by display name like 'Principled BSDF'. "
             "Find principled shaders by node.type == 'BSDF_PRINCIPLED', set both mat.diffuse_color and shader input values. "
             "When MaterialSpec.texture_source has approved_by_vision=true and local_path is present, load that absolute image path with bpy.data.images.load and wire it into the material shader as an image texture, keeping base_color as a fallback/tint. "
             "If texture_source is absent, approved_by_vision is false, or local_path is empty, do not create an image texture node for that material; use the base_color, roughness, metallic, and simple procedural shader settings only. "
-            "Default render setup must use Workbench via `ll3m.configure_render(scene, engine='workbench')` unless the IR explicitly requires another engine. "
+            "Default render setup must use Workbench via `verianim.configure_render(scene, engine='workbench')` unless the IR explicitly requires another engine. "
             "For Blender 4.5, the raw Workbench enum is BLENDER_WORKBENCH; never use the invalid literal WORKBENCH and never use bpy.types.Scene.bl_rna.properties['render_engine']. "
             "For animation, implement simple explicit keyframes from AnimationSpec events. "
-            "Animate object roots that own the ll3m_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
+            "Animate object roots that own the verianim_id, set scene frame range/fps, insert start/end keyframes, and set interpolation on every generated keyframe. "
             "If setting Blender keyframe interpolation, use valid Blender interpolation enum strings such as LINEAR, BEZIER, SINE, QUAD, CUBIC, QUART, QUINT, EXPO, CIRC, BACK, BOUNCE, ELASTIC, or CONSTANT. If setting keyframe easing, use Blender easing enum strings such as AUTO, EASE_IN, EASE_OUT, or EASE_IN_OUT; never assign SINE to easing. "
-            "Write at least two concrete animation operations for each animated subject, such as explicit keyframe_insert calls, ll3m.insert_*_keyframe calls, or ll3m.animate_* primitive calls. Do not hide all keyframes behind an unlisted custom helper, because the harness static completeness check must see concrete animation operations before Blender execution. "
+            "Write at least two concrete animation operations for each animated subject, such as explicit keyframe_insert calls, verianim.insert_*_keyframe calls, or verianim.animate_* primitive calls. Do not hide all keyframes behind an unlisted custom helper, because the harness static completeness check must see concrete animation operations before Blender execution. "
             "For gripper/end-effector objects, keep the gripper visibly attached to the robotic arm while it moves; if the package is carried, the gripper and package must move together without separating the gripper from the arm. Use the gripper/end-effector root, not the whole arm link/root, as the moving contact object for package carry constraints. "
-            "For ordinary two-finger pick-carry-place animations, use `parts = ll3m.create_parallel_gripper(..., carried=carried, ll3m_id=gripper_id)` and then `ll3m.animate_parallel_gripper_pick_place(parts['root'], carried, source_support, dest_support, fingers=parts['fingers'], ...)`. Do not hand-build the palm/body/finger cubes for this common case, because small offset mistakes create false grippers and penetration. If the IR explicitly asks for a custom end-effector, create the gripper/wrist as the active root, parent finger meshes to that root, call `ll3m.space_gripper_fingers_around_subject(gripper, carried, ...)` after parenting, and prefer `ll3m.animate_pick_place(gripper, carried, source_support, dest_support, ...)`. Do not parent the gripper, wrist, or fingers to the carried object. Do not use Blender CHILD_OF constraints to implement rigid package carry; use explicit keyframes or the listed pick-place primitives so the package has verifiable world-space motion throughout the carry window. If the placed package later rides on a cart/vehicle, start that ride strictly after the pick-place release frame; never overlap `animate_attached_carry` with the gripper carry/release frames for the same package. "
+            "For ordinary two-finger pick-carry-place animations, use `parts = verianim.create_parallel_gripper(..., carried=carried, verianim_id=gripper_id)` and then `verianim.animate_parallel_gripper_pick_place(parts['root'], carried, source_support, dest_support, fingers=parts['fingers'], ...)`. Do not hand-build the palm/body/finger cubes for this common case, because small offset mistakes create false grippers and penetration. If the IR explicitly asks for a custom end-effector, create the gripper/wrist as the active root, parent finger meshes to that root, call `verianim.space_gripper_fingers_around_subject(gripper, carried, ...)` after parenting, and prefer `verianim.animate_pick_place(gripper, carried, source_support, dest_support, ...)`. Do not parent the gripper, wrist, or fingers to the carried object. Do not use Blender CHILD_OF constraints to implement rigid package carry; use explicit keyframes or the listed pick-place primitives so the package has verifiable world-space motion throughout the carry window. If the placed package later rides on a cart/vehicle, start that ride strictly after the pick-place release frame; never overlap `animate_attached_carry` with the gripper carry/release frames for the same package. "
             "For appear/disappear events such as status lights, animate real visibility (hide_viewport/hide_render or scale from near-zero) so the object is not visibly on before its start frame. "
-            "For a subject sliding, riding, or moving across one horizontal support for the whole event, prefer `ll3m.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame)` instead of `ll3m.animate_translate`; this derives z from actual world bboxes and prevents floating table/conveyor motions. "
-            "For support-to-support paths, prefer `ll3m.animate_support_sequence` with one keyframe per support-contact phase instead of hand-written z keyframes. "
+            "For a subject sliding, riding, or moving across one horizontal support for the whole event, prefer `verianim.animate_support_slide(subject, support, start_xy, end_xy, start_frame, end_frame)` instead of `verianim.animate_translate`; this derives z from actual world bboxes and prevents floating table/conveyor motions. "
+            "For support-to-support paths, prefer `verianim.animate_support_sequence` with one keyframe per support-contact phase instead of hand-written z keyframes. "
             "For horizontal supports, compute placements from world-space bbox dimensions after creating and scaling objects: support_top_z = support.location.z + support_height/2, then subject.location.z = support_top_z + subject_height/2 plus a tiny clearance margin; keep subject x/y inside the support footprint. "
             "For tables, shelves, counters, pedestals, and floors, do not guess midpoint z values. Align the subject bottom to the support top and adjust x/y overlap before adding decoration or animation. "
             "For bridge, deck, and platform crossings, never hard-code vehicle/object z keyframes from the prompt alone. After creating the real meshes, compute aggregate world bounding boxes for the moving root and its child/part meshes, compute each support top from the actual support bbox, then keyframe the moving root so its aggregate bottom is just above the active support at every support-contact frame. "
             "A vehicle/object on ground before or after a bridge must be fully outside the deck bbox in the travel axis: use deck_min - subject_half_extent - margin and deck_max + subject_half_extent + margin, not the deck edge itself. "
             "Do not rely on one linear segment from ground height to deck height if that segment passes through a vertical bridge/deck bbox. Add transition keyframes that keep x/y fixed outside the deck footprint while z changes, then move horizontally onto the deck only after the subject bottom is at or above deck top. Reverse the same pattern when leaving the bridge. "
-            "Place bridge supports outside the drivable lane: if the car path is y=0, supports should be at side/corner y positions outside the car half-width plus margin, not directly on y=0. If supports are decorative or intentionally intersect the deck, set their ll3m_id/collision role so they are not collision-enabled active blockers for the car path. "
+            "Place bridge supports outside the drivable lane: if the car path is y=0, supports should be at side/corner y positions outside the car half-width plus margin, not directly on y=0. If supports are decorative or intentionally intersect the deck, set their verianim_id/collision role so they are not collision-enabled active blockers for the car path. "
             "If an AnimationSpec location is fixed, make the generated mesh dimensions, local offsets, and support height compatible with that root location instead of moving the root away from the requested start/end/path transform. "
             "For slanted ramps, define a clear ramp coordinate system and keyframed path along the visible top surface. Place the sliding object's center on the surface plus the surface normal times its half extent, and keep sampled start/middle/end frames free of penetration. "
-            "For windmills, fans, wheels, and propellers, create a rotor root/empty at the visible hub or axle, parent the visible blade meshes to it with local offsets outside the nacelle/head/body, and prefer `ll3m.create_rotor_root` plus `ll3m.animate_rotor`; do not rotate a blade mesh whose bbox remains embedded in the support object. "
+            "For windmills, fans, wheels, and propellers, create a rotor root/empty at the visible hub or axle, parent the visible blade meshes to it with local offsets outside the nacelle/head/body, and prefer `verianim.create_rotor_root` plus `verianim.animate_rotor`; do not rotate a blade mesh whose bbox remains embedded in the support object. "
             "For final-state relations in animation, apply 'near', 'on', or 'inside' by setting the final keyframe/end_transform and corresponding sampled frame, not by moving the static initial pose unless the IR explicitly requires that relation at frame 1. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to leave default interpolation instead of editing fcurves. "
             "Keep the script concise. Do not write long reasoning comments, abandoned design notes, or step-by-step analysis inside the code. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
-        system = _with_ll3m_utils_api(system)
+        system = _with_verianim_utils_api(system)
         if static_only:
             system += (
                 " This is the static scene stage of a two-stage animation pipeline. "
@@ -567,25 +567,25 @@ Blender 4.5.4 RAG context:
 
 Script requirements:
 - Clear the current scene safely at the start.
-- Import `from blender import ll3m_utils as ll3m`; use ll3m helpers where practical instead of reimplementing boilerplate.
-- Use only helper functions listed in the ll3m_utils API contract above. If the contract does not cover something, use native `bpy` data API.
+- Import `from blender import verianim_utils as verianim`; use verianim helpers where practical instead of reimplementing boilerplate.
+- Use only helper functions listed in the verianim_utils API contract above. If the contract does not cover something, use native `bpy` data API.
 - Create all objects, materials, cameras, lights, and environment from the IR.
-- Assign custom properties exactly: root objects must have ll3m_id equal to ObjectSpec.id. Parts may use ll3m_part, but never replace the root object's ll3m_id with a part id.
-- Create every MaterialSpec using a Blender material name equal to MaterialSpec.id and set material['ll3m_id'] to that same id.
+- Assign custom properties exactly: root objects must have verianim_id equal to ObjectSpec.id. Parts may use verianim_part, but never replace the root object's verianim_id with a part id.
+- Create every MaterialSpec using a Blender material name equal to MaterialSpec.id and set material['verianim_id'] to that same id.
 - Keep object names stable and human-readable.
 - Create robust materials by setting mat.diffuse_color and locating shader nodes by node.type, not localized node names.
 - For each MaterialSpec with texture_source.approved_by_vision=true and texture_source.local_path, treat local_path as an absolute path and load it with bpy.data.images.load. Set image colorspace to sRGB when available, add ShaderNodeTexImage, and connect Color to the Principled Base Color.
 - Make the image texture visibly map onto generated geometry: either create a UV map for mesh surfaces or connect Texture Coordinate Generated/Object output through Mapping into the image texture. Do not connect UV coordinates on a mesh that has no UV map.
 - If texture_source.approved_by_vision is false or no local_path is present, skip image texture nodes for that material and create a clean non-image material from base_color and shader parameters.
 - Set bpy.context.scene.camera to the main generated camera.
-- Set render settings with `ll3m.configure_render(scene, engine="workbench")` by default; Blender 4.5 uses BLENDER_WORKBENCH for Workbench and BLENDER_EEVEE_NEXT for Eevee. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
+- Set render settings with `verianim.configure_render(scene, engine="workbench")` by default; Blender 4.5 uses BLENDER_WORKBENCH for Workbench and BLENDER_EEVEE_NEXT for Eevee. Never use bpy.types.Scene.bl_rna.properties['render_engine'].
 - Set frame_start/frame_end/fps if animation exists.
 - Insert keyframes for AnimationSpec events when present. For translate/rotate/scale, mutate the object's location/rotation_euler/scale at start and end frames, insert keyframes, and ensure sampled frames visibly change.
 - If editing interpolation values, use Blender enum values such as `LINEAR` or `BEZIER`; do not use `EASE_IN_OUT`.
-- Use explicit keyframe statements or listed `ll3m.animate_*` primitives for at least the start and end pose of every animated subject. Do not rely on one loop containing a single `keyframe_insert` call for all keyframes; unroll the main start/middle/end insertions or call listed helpers separately for each required keyframe.
+- Use explicit keyframe statements or listed `verianim.animate_*` primitives for at least the start and end pose of every animated subject. Do not rely on one loop containing a single `keyframe_insert` call for all keyframes; unroll the main start/middle/end insertions or call listed helpers separately for each required keyframe.
 - For robotic pick-and-place, keep a continuous articulated chain from arm base to gripper. Do not detach the gripper from the arm just to make it follow the package.
 - For robotic pick-and-place, animate and constrain a compact gripper/end-effector root for package contact. Do not use the large robot arm body/link/root as the contact object for the box; only the end-effector should touch or nearly touch the package.
-- For ordinary two-finger pick-and-place, use `ll3m.create_parallel_gripper(..., carried=carried, ll3m_id=<gripper object id>)` and `ll3m.animate_parallel_gripper_pick_place(...)` unless the IR explicitly asks for a different end-effector. Do not manually build a generic two-finger gripper from raw cubes in this case.
+- For ordinary two-finger pick-and-place, use `verianim.create_parallel_gripper(..., carried=carried, verianim_id=<gripper object id>)` and `verianim.animate_parallel_gripper_pick_place(...)` unless the IR explicitly asks for a different end-effector. Do not manually build a generic two-finger gripper from raw cubes in this case.
 - Do not use Blender `CHILD_OF` constraints to make rigid packages follow grippers/carts. Insert explicit package keyframes or use the listed pick-place/support primitives so deterministic checks see package motion at every sampled frame.
 - If a package rides on a cart after being placed by a gripper, start the cart/package ride after the pick-place release frame. Do not use `animate_attached_carry` on that package with frames that overlap the gripper carry/release window.
 - For appear/disappear events, keyframe hide_viewport/hide_render and/or near-zero scale before activation; material emission alone is not enough if the verifier can still see the light.
@@ -597,11 +597,11 @@ Script requirements:
 - When AnimationSpec start/end/path locations are explicit, preserve those root coordinates by choosing compatible mesh dimensions/local offsets/support heights; do not "fix" contact by moving the final root location away from the IR.
 - For ramp sliding, keep all sampled frame positions on the ramp top surface or just above it. Use the ramp's length direction for path points and avoid placing the cube center at an arbitrary world z midpoint.
 - For final animation placement such as "stops near a box", set the end keyframe near the target while preserving the start pose and intermediate contact path.
-- For windmills/fans/wheels/propellers, animate a rotor root/empty at the hub with `ll3m.animate_rotor`; parent blade meshes to the root and offset them locally so blade bboxes do not touch or penetrate the nacelle/body except through a small separate hub/axle connector.
+- For windmills/fans/wheels/propellers, animate a rotor root/empty at the hub with `verianim.animate_rotor`; parent blade meshes to the root and offset them locally so blade bboxes do not touch or penetrate the nacelle/body except through a small separate hub/axle connector.
 - Do not read action.fcurves directly. Blender 5 uses layered actions; if you need fcurves, traverse action.layers, strip.channelbags, and bag.fcurves. Prefer leaving default keyframe interpolation if direct fcurve access is not required.
 - If AnimationEventSpec has path points or start/end transforms, use them exactly; otherwise infer a simple motion that satisfies the event description.
-- Define a final variable named LL3M_METADATA with object ids and created object names.
-- End the script with a complete LL3M_METADATA assignment. Keep comments short so the response does not truncate before metadata.
+- Define a final variable named VERIANIM_METADATA with object ids and created object names.
+- End the script with a complete VERIANIM_METADATA assignment. Keep comments short so the response does not truncate before metadata.
 """
         if static_only:
             user += """
@@ -634,9 +634,9 @@ class RefinerAgent:
         system = (
             "You are a Blender 4.5.4 refiner. Repair the Python script locally. "
             "Keep correct existing structure. Treat visual verifier failures as blocking. "
-            "Return a complete executable script, not a patch or excerpt. Preserve imports, object ids, created root objects with ll3m_id, animation keyframes, and the final LL3M_METADATA assignment unless a specific reported issue requires a local change. "
-            "Prefer preserving or adding `from blender import ll3m_utils as ll3m` for common render setup, materials, cameras, lights, and primitive mesh objects instead of duplicating boilerplate. "
-            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
+            "Return a complete executable script, not a patch or excerpt. Preserve imports, object ids, created root objects with verianim_id, animation keyframes, and the final VERIANIM_METADATA assignment unless a specific reported issue requires a local change. "
+            "Prefer preserving or adding `from blender import verianim_utils as verianim` for common render setup, materials, cameras, lights, and primitive mesh objects instead of duplicating boilerplate. "
+            "Use only the verianim_utils helper functions listed in the API contract below; do not invent helper names. "
             "For floating, detached, penetrated, or misaligned object parts, fix transforms, origins, connector geometry, parenting, and contact points directly in code. "
             "For RELATION_ON_TOP_OF_FAILED, use the numeric evidence: first adjust x/y so overlap_x and overlap_y are both positive, then move the subject so its bottom z equals the reported support_z; do not rename ids or leave the object floating. "
             "For RELATION_DISTANCE_FAILED, determine whether the relation is a static scene requirement or an animation final-state requirement. For final states such as 'stops near', move the end keyframe/end_transform and matching sampled frame, not the initial static pose. "
@@ -653,20 +653,20 @@ class RefinerAgent:
             "For 'on floor of a room/greenhouse/enclosure' relations, place wheels/tanks/props on the interior floor plane, not on the roof or top of the enclosing walls. "
             "For ramp failures, do not convert the slanted ramp contact into a horizontal on_top_of stack. Keep the sliding object on the ramp surface along the path and fix start/middle/end frames with support/nonpenetration constraints. "
             "For animation failures, fix keyframe data paths, object roots, frame ranges, interpolation, and start/end transforms so sampled frames visibly match the AnimationSpec. "
-            "For CODE_MISSING_ANIMATION_KEYFRAMES, unroll keyframe insertion or use listed ll3m animation primitives so the script contains multiple concrete animation operations. A single keyframe_insert inside one loop over a keyframe list is still treated as too few by the static completeness check. "
+            "For CODE_MISSING_ANIMATION_KEYFRAMES, unroll keyframe insertion or use listed verianim animation primitives so the script contains multiple concrete animation operations. A single keyframe_insert inside one loop over a keyframe list is still treated as too few by the static completeness check. "
             "For Blender interpolation errors, replace IR aliases such as EASE_IN_OUT with valid Blender interpolation enum values like BEZIER or LINEAR, or remove custom interpolation edits entirely. "
-            "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames with explicit keyframes or listed ll3m pick-place primitives so screenshots show continuous contact. Do not use Blender CHILD_OF constraints for rigid package carry; inverse mistakes commonly leave the package behind and fail deterministic contact checks. If a cart/vehicle carries the package after placement, its attached-carry or ride keyframes must start after the pick-place release frame, not during the gripper carry window. "
+            "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames with explicit keyframes or listed verianim pick-place primitives so screenshots show continuous contact. Do not use Blender CHILD_OF constraints for rigid package carry; inverse mistakes commonly leave the package behind and fail deterministic contact checks. If a cart/vehicle carries the package after placement, its attached-carry or ride keyframes must start after the pick-place release frame, not during the gripper carry window. "
             "For rotor/propeller failures, preserve a separate hub or axle as the only attached connector. Move blade mesh children outward in local coordinates and animate the rotor root/empty instead of embedding the blade bbox in the nacelle/head/body. "
             "Keep the gripper attached to the robotic arm at every sampled frame; moving the gripper as a detached block is a failure. "
             "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
             "If materials render as default gray/white, fix localized Blender node lookup by finding BSDF_PRINCIPLED nodes by type and setting mat.diffuse_color. "
-            "Default render setup should use Workbench via `ll3m.configure_render(scene, engine='workbench')` unless the IR explicitly requires another engine. "
+            "Default render setup should use Workbench via `verianim.configure_render(scene, engine='workbench')` unless the IR explicitly requires another engine. "
             "If a material has a vision-approved texture_source.local_path in the IR, preserve or add the image texture node so the downloaded surface remains visible. "
-            "Keep the script concise and complete. Remove long comments, scratch reasoning, and abandoned implementation notes. Never drop LL3M_METADATA, required imports, cameras, lights, or unaffected scene objects while repairing a local relation/contact issue. "
+            "Keep the script concise and complete. Remove long comments, scratch reasoning, and abandoned implementation notes. Never drop VERIANIM_METADATA, required imports, cameras, lights, or unaffected scene objects while repairing a local relation/contact issue. "
             "Return only the full corrected Python script."
         )
-        system = _with_ll3m_utils_api(system)
+        system = _with_verianim_utils_api(system)
         user = f"""
 Compact GenerationIR:
 {json.dumps(_compact_ir_for_coder(ir), indent=2)}
@@ -711,11 +711,11 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
             "You are an interactive Blender 4.5.4 code refiner. "
             "Update the existing full Python script to satisfy the user's new request. "
             "Preserve working code and object ids where possible. "
-            "Use `from blender import ll3m_utils as ll3m` for common helpers when adding new render, material, camera, light, or primitive object code. "
-            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
+            "Use `from blender import verianim_utils as verianim` for common helpers when adding new render, material, camera, light, or primitive object code. "
+            "Use only the verianim_utils helper functions listed in the API contract below; do not invent helper names. "
             "Return only the full corrected Python script."
         )
-        system = _with_ll3m_utils_api(system)
+        system = _with_verianim_utils_api(system)
         user = f"""
 Compact revised GenerationIR:
 {json.dumps(_compact_ir_for_coder(ir), indent=2)}
@@ -744,9 +744,9 @@ Current script:
             "Only add or adjust animation setup, keyframes, frame range, visibility timing, and metadata needed for the AnimationSpec. "
             "Do not rewrite the whole scene from scratch unless absolutely necessary. "
             "Keep the existing validated scene code as the base. Do not call clear_scene again, delete objects, or recreate the static geometry when adding only animation; append or minimally edit animation code around the existing root objects. "
-            "Preserve helper imports such as `from blender import ll3m_utils as ll3m`; use `ll3m.configure_render(scene, engine='workbench')` for default render setup. "
-            "Use only the ll3m_utils helper functions listed in the API contract below; do not invent helper names. "
-            "Write explicit keyframe_insert statements or listed ll3m animation primitive calls for at least the start and end pose of every animated subject. Do not hide all keyframes behind a single loop over a list; the pre-execution static check must see multiple actual keyframe call sites or multiple explicit helper calls. "
+            "Preserve helper imports such as `from blender import verianim_utils as verianim`; use `verianim.configure_render(scene, engine='workbench')` for default render setup. "
+            "Use only the verianim_utils helper functions listed in the API contract below; do not invent helper names. "
+            "Write explicit keyframe_insert statements or listed verianim animation primitive calls for at least the start and end pose of every animated subject. Do not hide all keyframes behind a single loop over a list; the pre-execution static check must see multiple actual keyframe call sites or multiple explicit helper calls. "
             "For bridge, deck, platform, floor, table, and ramp contact windows, derive animation keyframes from actual world bounding boxes in the validated scene. Align the moving root's aggregate bbox bottom to the active support top at each support-contact frame, and keep start/end positions fully outside a bridge/deck footprint by subject half extent plus margin unless the IR says the object is on that support at those frames. "
             "If the static bridge has vertical sides and no ramp, do not animate a single straight segment from ground to deck that intersects the bridge volume. Add transition keyframes at the same outside x/y: first ground outside, then deck height outside, then horizontal entry over the deck. Use the reverse sequence for exit. "
             "Before adding car keyframes, verify bridge supports do not occupy the car's lane. If supports are on the same y centerline as the car path, move them to side/corner locations or treat them as decorative non-collision parts before animating the crossing. "
@@ -754,7 +754,7 @@ Current script:
             "Keep the script concise and complete; no long reasoning comments. "
             "Return only the full corrected Python script."
         )
-        system = _with_ll3m_utils_api(system)
+        system = _with_verianim_utils_api(system)
         user = f"""
 Validated static scene script:
 ```python
@@ -773,18 +773,18 @@ Relevant Blender 4.5.4 notes:
 Requirements:
 - Keep the validated static scene intact.
 - Add frame_start, frame_end, fps, and explicit keyframes for every animation event.
-- For each animated subject, write separate concrete statements for start, middle if present, and end keyframe insertion, or use listed `ll3m.animate_*` primitives. Avoid a single `for keyframe in keyframes: obj.keyframe_insert(...)` loop as the only keyframe call site.
+- For each animated subject, write separate concrete statements for start, middle if present, and end keyframe insertion, or use listed `verianim.animate_*` primitives. Avoid a single `for keyframe in keyframes: obj.keyframe_insert(...)` loop as the only keyframe call site.
 - If you set interpolation, use Blender enum values such as `LINEAR` or `BEZIER`; never use `EASE_IN_OUT`.
 - For appear/disappear events, keyframe actual visibility or near-zero scale, not emission only.
 - For contact/carry events, keep the interacting objects visibly connected at sampled frames.
-- For pick-carry-place events, keep the gripper as the active root and fingers/wrist as gripper children. Do not parent gripper parts to the carried object. Prefer `ll3m.space_gripper_fingers_around_subject` followed by `ll3m.animate_pick_place`.
-- For a subject sliding/riding across one horizontal support, use `ll3m.animate_support_slide` rather than `ll3m.animate_translate`; for multiple support phases, use `ll3m.animate_support_sequence`. These helpers are preferred because they compute contact z from the current Blender scene graph.
+- For pick-carry-place events, keep the gripper as the active root and fingers/wrist as gripper children. Do not parent gripper parts to the carried object. Prefer `verianim.space_gripper_fingers_around_subject` followed by `verianim.animate_pick_place`.
+- For a subject sliding/riding across one horizontal support, use `verianim.animate_support_slide` rather than `verianim.animate_translate`; for multiple support phases, use `verianim.animate_support_sequence`. These helpers are preferred because they compute contact z from the current Blender scene graph.
 - For support/nonpenetration windows on bridges, decks, platforms, floors, tables, or ramps, compute actual world bbox top/bottom after loading the static scene and set keyframes so the moving subject's aggregate bottom rests on the active support top without penetration or floating.
 - Keep the moving subject fully outside bridge/deck x/y footprint at frames where it is supposed to be on the ground rather than on the bridge/deck; use subject half extent plus a small margin beyond the deck bound, not an edge-touching center coordinate.
 - Add outside-footprint transition keyframes when moving from ground height to deck height: keep x/y outside the bridge/deck bbox while z changes, then move horizontally onto the deck at deck height. Reverse this on exit so interpolation never passes through the bridge/deck bbox.
 - Ensure bridge supports are not collision obstacles in the travel lane; move them to side/corner y positions or make them decorative non-collision parts before keyframing the moving object.
 - Preserve explicit AnimationSpec root locations by adjusting mesh local offsets/support dimensions when necessary; avoid changing the requested final root coordinate and causing ANIMATION_END_LOCATION_MISMATCH.
-- End with a complete LL3M_METADATA assignment.
+- End with a complete VERIANIM_METADATA assignment.
 """
         return _sanitize_generated_blender_code(extract_code_block(self.llm.complete_text(system, user)))
 
@@ -860,7 +860,7 @@ Critical checks:
                         ),
                         severity=Severity.CRITICAL if unsupported_media else Severity.MAJOR,
                         suggested_fix=(
-                            "Configure LL3M_VISION_MODEL/API_BASE for a multimodal model that accepts image_url inputs, "
+                            "Configure VERIANIM_VISION_MODEL/API_BASE for a multimodal model that accepts image_url inputs, "
                             "or rerun with --skip-vision."
                             if unsupported_media
                             else None
@@ -976,7 +976,7 @@ If deterministic transform trace and images disagree, explain the mismatch and f
                         ),
                         severity=Severity.CRITICAL if unsupported_media else Severity.MAJOR,
                         suggested_fix=(
-                            "Configure LL3M_VIDEO_MODEL/API_BASE for a multimodal model that accepts video_url/image_url inputs, "
+                            "Configure VERIANIM_VIDEO_MODEL/API_BASE for a multimodal model that accepts video_url/image_url inputs, "
                             "or rerun with --skip-video."
                             if unsupported_media
                             else None
@@ -1032,7 +1032,7 @@ Do not judge whether the animation is correct in this probe.
                         ),
                         severity=Severity.CRITICAL if unsupported_media else Severity.MAJOR,
                         suggested_fix=(
-                            "Configure LL3M_VIDEO_MODEL/API_BASE for a multimodal model that accepts video_url inputs, "
+                            "Configure VERIANIM_VIDEO_MODEL/API_BASE for a multimodal model that accepts video_url inputs, "
                             "or rerun with --skip-video."
                             if unsupported_media
                             else None
@@ -2144,7 +2144,7 @@ def _promote_animation_end_effectors(data: dict[str, Any]) -> None:
                 "importance": "required",
                 "required_features": ["visible end-effector", "attached to robotic arm", "contacts package during carry"],
                 "material_ids": [material_id] if material_id else [],
-                "generation_notes": "Create as its own root object or empty with ll3m_id so animation verification can track contact.",
+                "generation_notes": "Create as its own root object or empty with verianim_id so animation verification can track contact.",
             }
             objects.append(promoted_obj)
             promoted.append((object_id, str(obj.get("id") or ""), promoted_obj))
@@ -3109,9 +3109,9 @@ def _sanitize_generated_blender_code(code: str) -> str:
     }
     for bad, good in replacements.items():
         code = code.replace(bad, good)
-    code = _patch_ll3m_utils_import_aliases(code)
-    code = _patch_ll3m_helper_keyword_compatibility(code)
-    code = _patch_ll3m_look_at_object_targets(code)
+    code = _patch_verianim_utils_import_aliases(code)
+    code = _patch_verianim_helper_keyword_compatibility(code)
+    code = _patch_verianim_look_at_object_targets(code)
     code = _patch_cone_diameter_keywords(code)
     code = _patch_fcurve_interpolation_assignments(code)
     code = _patch_common_blender_api_hallucinations(code)
@@ -3125,56 +3125,56 @@ def _sanitize_generated_blender_code(code: str) -> str:
     return code
 
 
-def _patch_ll3m_utils_import_aliases(code: str) -> str:
+def _patch_verianim_utils_import_aliases(code: str) -> str:
     code = re.sub(
         r"^([ \t]*)from blender import llm_utils(\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?([ \t]*(?:#.*)?)$",
-        r"\1from blender import ll3m_utils\2\3",
+        r"\1from blender import verianim_utils\2\3",
         code,
         flags=re.MULTILINE,
     )
     code = re.sub(
         r"^([ \t]*)import blender\.llm_utils(\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?([ \t]*(?:#.*)?)$",
-        r"\1import blender.ll3m_utils\2\3",
+        r"\1import blender.verianim_utils\2\3",
         code,
         flags=re.MULTILINE,
     )
     return code
 
 
-def _patch_ll3m_helper_keyword_compatibility(code: str) -> str:
+def _patch_verianim_helper_keyword_compatibility(code: str) -> str:
     """Route common generated helper keyword drift through local wrappers."""
 
     code = _regex_sub_unprotected(
-        r"\b((?:ll3m|llm)\.make_material)\(\s*spec_dict\s*=",
+        r"\b((?:verianim|llm)\.make_material)\(\s*spec_dict\s*=",
         r"\1(",
         code,
     )
-    needs_wrapper = bool(re.search(r"\b(?:ll3m|llm)\.add_(?:cube|plane)\(", code)) and bool(
+    needs_wrapper = bool(re.search(r"\b(?:verianim|llm)\.add_(?:cube|plane)\(", code)) and bool(
         re.search(r"\b(?:scale|rotation)\s*=", code)
     )
     if not needs_wrapper:
         return code
-    patched = _regex_sub_unprotected(r"\b(?:ll3m|llm)\.add_cube\(", "ll3m_safe_add_cube(", code)
-    patched = _regex_sub_unprotected(r"\b(?:ll3m|llm)\.add_plane\(", "ll3m_safe_add_plane(", patched)
-    if patched == code or "def ll3m_safe_add_cube(" in patched:
+    patched = _regex_sub_unprotected(r"\b(?:verianim|llm)\.add_cube\(", "verianim_safe_add_cube(", code)
+    patched = _regex_sub_unprotected(r"\b(?:verianim|llm)\.add_plane\(", "verianim_safe_add_plane(", patched)
+    if patched == code or "def verianim_safe_add_cube(" in patched:
         return patched
     helper = '''
-def _ll3m_safe_utils():
-    utils = globals().get("ll3m") or globals().get("llm")
+def _verianim_safe_utils():
+    utils = globals().get("verianim") or globals().get("llm")
     if utils is None:
-        raise RuntimeError("LL3M helper alias ll3m/llm is not available")
+        raise RuntimeError("VeriAnim helper alias verianim/llm is not available")
     return utils
 
 
-def ll3m_safe_add_cube(*args, scale=None, **kwargs):
-    obj = _ll3m_safe_utils().add_cube(*args, **kwargs)
+def verianim_safe_add_cube(*args, scale=None, **kwargs):
+    obj = _verianim_safe_utils().add_cube(*args, **kwargs)
     if scale is not None:
         obj.scale = scale
     return obj
 
 
-def ll3m_safe_add_plane(*args, scale=None, rotation=None, **kwargs):
-    obj = _ll3m_safe_utils().add_plane(*args, **kwargs)
+def verianim_safe_add_plane(*args, scale=None, rotation=None, **kwargs):
+    obj = _verianim_safe_utils().add_plane(*args, **kwargs)
     if rotation is not None:
         obj.rotation_euler = rotation
     if scale is not None:
@@ -3184,30 +3184,30 @@ def ll3m_safe_add_plane(*args, scale=None, rotation=None, **kwargs):
     return helper + "\n" + patched
 
 
-def _patch_ll3m_look_at_object_targets(code: str) -> str:
-    if not re.search(r"\b(?:ll3m|llm)\.look_at\(", code):
+def _patch_verianim_look_at_object_targets(code: str) -> str:
+    if not re.search(r"\b(?:verianim|llm)\.look_at\(", code):
         return code
-    patched = _regex_sub_unprotected(r"\b(?:ll3m|llm)\.look_at\(", "ll3m_safe_look_at(", code)
+    patched = _regex_sub_unprotected(r"\b(?:verianim|llm)\.look_at\(", "verianim_safe_look_at(", code)
     if patched == code:
         return code
     helpers: list[str] = []
-    if "def _ll3m_safe_utils(" not in patched:
+    if "def _verianim_safe_utils(" not in patched:
         helpers.append(
             '''
-def _ll3m_safe_utils():
-    utils = globals().get("ll3m") or globals().get("llm")
+def _verianim_safe_utils():
+    utils = globals().get("verianim") or globals().get("llm")
     if utils is None:
-        raise RuntimeError("LL3M helper alias ll3m/llm is not available")
+        raise RuntimeError("VeriAnim helper alias verianim/llm is not available")
     return utils
 '''.lstrip()
         )
-    if "def ll3m_safe_look_at(" not in patched:
+    if "def verianim_safe_look_at(" not in patched:
         helpers.append(
             '''
-def ll3m_safe_look_at(obj, target):
+def verianim_safe_look_at(obj, target):
     if hasattr(target, "location"):
         target = target.location
-    return _ll3m_safe_utils().look_at(obj, target)
+    return _verianim_safe_utils().look_at(obj, target)
 '''.lstrip()
         )
     if helpers:
@@ -3234,8 +3234,8 @@ def _fcurve_interpolation_replacement(match: re.Match[str]) -> str:
     indent, fcurve_name, value, comment = match.groups()
     return "\n".join(
         [
-            f"{indent}for _ll3m_kp in {fcurve_name}.keyframe_points:{comment}",
-            f"{indent}    _ll3m_kp.interpolation = {value.strip()}",
+            f"{indent}for _verianim_kp in {fcurve_name}.keyframe_points:{comment}",
+            f"{indent}    _verianim_kp.interpolation = {value.strip()}",
         ]
     )
 
@@ -3245,7 +3245,7 @@ def _patch_common_blender_api_hallucinations(code: str) -> str:
 
     if "bpy.data.remove(" in code:
         helper = '''
-def ll3m_remove_datablock(data_block):
+def verianim_remove_datablock(data_block):
     """Remove Blender datablocks through the owning collection API when possible."""
     if data_block is None:
         return
@@ -3263,13 +3263,13 @@ def ll3m_remove_datablock(data_block):
         except Exception:
             pass
 '''.lstrip()
-        if "def ll3m_remove_datablock(" not in code:
+        if "def verianim_remove_datablock(" not in code:
             code = helper + "\n" + code
-        code = re.sub(r"\bbpy\.data\.remove\(", "ll3m_remove_datablock(", code)
+        code = re.sub(r"\bbpy\.data\.remove\(", "verianim_remove_datablock(", code)
 
     code = re.sub(
         r"^([ \t]*)([\w.]+collection[\w.]*|master_collection|scene_coll)\.name\s*=\s*([^\n]+)$",
-        r"\1# LL3M sanitizer: collection.name assignment removed (read-only for scene master collection)",
+        r"\1# VeriAnim sanitizer: collection.name assignment removed (read-only for scene master collection)",
         code,
         flags=re.MULTILINE,
     )
@@ -3305,7 +3305,7 @@ def _patch_wave_modifier_falloff(code: str) -> str:
         match = pattern.match(line_body)
         if match and "wave" in match.group(2).lower():
             lines.append(
-                f"{match.group(1)}# LL3M sanitizer: removed unsupported WaveModifier falloff assignment{match.group(4)}{newline}"
+                f"{match.group(1)}# VeriAnim sanitizer: removed unsupported WaveModifier falloff assignment{match.group(4)}{newline}"
             )
         else:
             lines.append(line)
@@ -3318,7 +3318,7 @@ def _patch_mode_set_context(code: str) -> str:
     if "bpy.ops.object.mode_set(" not in code:
         return code
     helper = '''
-def ll3m_safe_mode_set(mode):
+def verianim_safe_mode_set(mode):
     """Switch object mode only after ensuring Blender has an active object."""
     view_layer = bpy.context.view_layer
     obj = view_layer.objects.active
@@ -3336,9 +3336,9 @@ def ll3m_safe_mode_set(mode):
     except Exception:
         return False
 '''.lstrip()
-    if "def ll3m_safe_mode_set(" not in code:
+    if "def verianim_safe_mode_set(" not in code:
         code = helper + "\n" + code
-    return re.sub(r"\bbpy\.ops\.object\.mode_set\(", "ll3m_safe_mode_set(", code)
+    return re.sub(r"\bbpy\.ops\.object\.mode_set\(", "verianim_safe_mode_set(", code)
 
 
 def _patch_context_sensitive_ops(code: str) -> str:
@@ -3349,10 +3349,10 @@ def _patch_context_sensitive_ops(code: str) -> str:
     if not needs_mesh_select and not needs_translate:
         return code
     helpers: list[str] = []
-    if needs_mesh_select and "def ll3m_safe_mesh_select_all(" not in code:
+    if needs_mesh_select and "def verianim_safe_mesh_select_all(" not in code:
         helpers.append(
             '''
-def ll3m_safe_mesh_select_all(action="SELECT"):
+def verianim_safe_mesh_select_all(action="SELECT"):
     try:
         bpy.ops.mesh.select_all(action=action)
         return True
@@ -3360,10 +3360,10 @@ def ll3m_safe_mesh_select_all(action="SELECT"):
         return False
 '''.lstrip()
         )
-    if needs_translate and "def ll3m_safe_transform_translate(" not in code:
+    if needs_translate and "def verianim_safe_transform_translate(" not in code:
         helpers.append(
             '''
-def ll3m_safe_transform_translate(value=(0, 0, 0)):
+def verianim_safe_transform_translate(value=(0, 0, 0)):
     try:
         bpy.ops.transform.translate(value=value)
         return True
@@ -3379,8 +3379,8 @@ def ll3m_safe_transform_translate(value=(0, 0, 0)):
         )
     if helpers:
         code = "\n".join(helpers) + "\n" + code
-    code = re.sub(r"\bbpy\.ops\.mesh\.select_all\(", "ll3m_safe_mesh_select_all(", code)
-    code = re.sub(r"\bbpy\.ops\.transform\.translate\(", "ll3m_safe_transform_translate(", code)
+    code = re.sub(r"\bbpy\.ops\.mesh\.select_all\(", "verianim_safe_mesh_select_all(", code)
+    code = re.sub(r"\bbpy\.ops\.transform\.translate\(", "verianim_safe_transform_translate(", code)
     return code
 
 
@@ -3402,9 +3402,9 @@ def _append_active_camera_fallback(code: str) -> str:
     snippet = '''
 
 if bpy.context.scene.camera is None:
-    for _ll3m_camera in bpy.data.objects:
-        if _ll3m_camera.type == "CAMERA":
-            bpy.context.scene.camera = _ll3m_camera
+    for _verianim_camera in bpy.data.objects:
+        if _verianim_camera.type == "CAMERA":
+            bpy.context.scene.camera = _verianim_camera
             break
 '''.rstrip()
     if "bpy.context.scene.camera is None" in code or "scene.camera is None" in code:
@@ -3433,7 +3433,7 @@ def _patch_common_ir_id_drift(code: str) -> str:
 
 def _patch_direct_action_fcurve_loops(code: str) -> str:
     helper = '''
-def ll3m_iter_action_fcurves(action):
+def verianim_iter_action_fcurves(action):
     """Yield fcurves from both legacy and Blender 5 layered actions."""
     if not action:
         return
@@ -3446,7 +3446,7 @@ def ll3m_iter_action_fcurves(action):
                 for fcurve in getattr(bag, "fcurves", []):
                     yield fcurve
 '''.strip()
-    already_has_helper = "def ll3m_iter_action_fcurves(" in code
+    already_has_helper = "def verianim_iter_action_fcurves(" in code
     lines = code.splitlines(keepends=True)
     helper_body_lines = _fcurve_iterator_body_line_indexes(lines)
     patched_lines: list[str] = []
@@ -3454,15 +3454,15 @@ def ll3m_iter_action_fcurves(action):
     patterns: list[tuple[re.Pattern[str], str]] = [
         (
             re.compile(r"^([ \t]*)for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.animation_data\.action\.fcurves\s*:(.*)$"),
-            r"\1for \2 in ll3m_iter_action_fcurves(\3.animation_data.action):\4",
+            r"\1for \2 in verianim_iter_action_fcurves(\3.animation_data.action):\4",
         ),
         (
             re.compile(r"^([ \t]*)for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.action\.fcurves\s*:(.*)$"),
-            r"\1for \2 in ll3m_iter_action_fcurves(\3.action):\4",
+            r"\1for \2 in verianim_iter_action_fcurves(\3.action):\4",
         ),
         (
             re.compile(r"^([ \t]*)for\s+(\w+)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\.fcurves\s*:(.*)$"),
-            r"\1for \2 in ll3m_iter_action_fcurves(\3):\4",
+            r"\1for \2 in verianim_iter_action_fcurves(\3):\4",
         ),
     ]
     for line_index, line in enumerate(lines):

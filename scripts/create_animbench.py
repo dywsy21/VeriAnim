@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "benchmark"
-OUT_PATH = OUT_DIR / "ll3m_animbench.jsonl"
+OUT_PATH = OUT_DIR / "verianim_animbench.jsonl"
 README_PATH = OUT_DIR / "README.md"
 
 
@@ -152,8 +152,8 @@ def main() -> None:
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
     README_PATH.write_text(
-        "# LL3M-AnimBench\n\n"
-        "LL3M-AnimBench contains 300 natural-language Blender animation prompts.\n"
+        "# VeriAnim-AnimBench\n\n"
+        "VeriAnim-AnimBench contains 300 natural-language Blender animation prompts.\n"
         "The benchmark has 100 easy, 100 medium, and 100 hard prompts.\n\n"
         "- Easy prompts isolate one object and one dominant motion.\n"
         "- Medium prompts coordinate two or three objects, contact relations, or camera coverage.\n"

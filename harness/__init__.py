@@ -1,4 +1,4 @@
-"""Local harness components for LL3M animation experiments."""
+"""Local harness components for VeriAnim animation experiments."""
 
 from .config import HarnessConfig
 

@@ -1,4 +1,4 @@
-"""Configuration for the local LL3M harness."""
+"""Configuration for the local VeriAnim harness."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ def _load_dotenv() -> None:
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(override=_env_bool("LL3M_DOTENV_OVERRIDE", True))
+        load_dotenv(override=_env_bool("VERIANIM_DOTENV_OVERRIDE", True))
     except Exception:
         # Keep imports usable before optional dependencies are installed.
         env_path = Path(".env")
@@ -105,7 +105,7 @@ class HarnessConfig:
         _load_dotenv()
         rag_docs = tuple(
             Path(part.strip())
-            for part in _env("LL3M_RAG_DOCS", "docs/rag,docs/ir.md").split(",")
+            for part in _env("VERIANIM_RAG_DOCS", "docs/rag,docs/ir.md").split(",")
             if part.strip()
         )
         return cls(
@@ -114,30 +114,30 @@ class HarnessConfig:
             refiner=_agent_config("refiner", "openai/gpt-4.1", 0.1),
             vision=_agent_config("vision", "openai/gpt-4.1", 0.0, default_supports_images=True),
             video=_agent_config("video", "dashscope/qwen-omni-turbo", 0.0, default_supports_images=True),
-            max_refinement_rounds=_env_int("LL3M_MAX_REFINEMENT_ROUNDS", 2),
-            max_visual_refinement_rounds=_env_int("LL3M_MAX_VISUAL_REFINEMENT_ROUNDS", 6),
-            max_video_refinement_rounds=_env_int("LL3M_MAX_VIDEO_REFINEMENT_ROUNDS", 6),
-            max_stagnant_refinement_rounds=_env_int("LL3M_MAX_STAGNANT_REFINEMENT_ROUNDS", 3),
-            planner_max_retries=_env_int("LL3M_PLANNER_MAX_RETRIES", 1),
+            max_refinement_rounds=_env_int("VERIANIM_MAX_REFINEMENT_ROUNDS", 2),
+            max_visual_refinement_rounds=_env_int("VERIANIM_MAX_VISUAL_REFINEMENT_ROUNDS", 6),
+            max_video_refinement_rounds=_env_int("VERIANIM_MAX_VIDEO_REFINEMENT_ROUNDS", 6),
+            max_stagnant_refinement_rounds=_env_int("VERIANIM_MAX_STAGNANT_REFINEMENT_ROUNDS", 3),
+            planner_max_retries=_env_int("VERIANIM_PLANNER_MAX_RETRIES", 1),
             rag_docs=rag_docs,
-            runs_dir=Path(_env("LL3M_RUNS_DIR", "runs")),
-            blender_host=_env("LL3M_BLENDER_HOST", "localhost"),
-            blender_port=_env_int("LL3M_BLENDER_PORT", 8888),
-            headless_rendering=_env_bool("LL3M_HEADLESS_RENDERING", False),
-            render_width=_env_int("LL3M_RENDER_WIDTH", 1280),
-            render_height=_env_int("LL3M_RENDER_HEIGHT", 720),
-            render_gif_each_round=_env_bool("LL3M_RENDER_GIF_EACH_ROUND", True),
-            texture_search_enabled=_env_bool("LL3M_TEXTURE_SEARCH_ENABLED", True),
-            texture_search_candidate_limit=max(1, _env_int("LL3M_TEXTURE_SEARCH_CANDIDATE_LIMIT", 4)),
-            texture_search_timeout_seconds=max(3, _env_int("LL3M_TEXTURE_SEARCH_TIMEOUT_SECONDS", 20)),
-            tui_initial_animation=_env_bool("LL3M_TUI_INITIAL_ANIMATION", False),
-            tui_skip_vision=_env_bool("LL3M_TUI_SKIP_VISION", False),
-            tui_skip_video=_env_bool("LL3M_TUI_SKIP_VIDEO", False),
+            runs_dir=Path(_env("VERIANIM_RUNS_DIR", "runs")),
+            blender_host=_env("VERIANIM_BLENDER_HOST", "localhost"),
+            blender_port=_env_int("VERIANIM_BLENDER_PORT", 8888),
+            headless_rendering=_env_bool("VERIANIM_HEADLESS_RENDERING", False),
+            render_width=_env_int("VERIANIM_RENDER_WIDTH", 1280),
+            render_height=_env_int("VERIANIM_RENDER_HEIGHT", 720),
+            render_gif_each_round=_env_bool("VERIANIM_RENDER_GIF_EACH_ROUND", True),
+            texture_search_enabled=_env_bool("VERIANIM_TEXTURE_SEARCH_ENABLED", True),
+            texture_search_candidate_limit=max(1, _env_int("VERIANIM_TEXTURE_SEARCH_CANDIDATE_LIMIT", 4)),
+            texture_search_timeout_seconds=max(3, _env_int("VERIANIM_TEXTURE_SEARCH_TIMEOUT_SECONDS", 20)),
+            tui_initial_animation=_env_bool("VERIANIM_TUI_INITIAL_ANIMATION", False),
+            tui_skip_vision=_env_bool("VERIANIM_TUI_SKIP_VISION", False),
+            tui_skip_video=_env_bool("VERIANIM_TUI_SKIP_VIDEO", False),
         )
 
 
 def _agent_config(name: str, default_model: str, default_temperature: float, *, default_supports_images: bool = False) -> AgentModelConfig:
-    prefix = f"LL3M_{name.upper()}"
+    prefix = f"VERIANIM_{name.upper()}"
     global_api_base = _env_optional("LITELLM_API_BASE")
     global_api_key = _env_optional("LITELLM_API_KEY")
     return AgentModelConfig(
@@ -145,8 +145,8 @@ def _agent_config(name: str, default_model: str, default_temperature: float, *, 
         model=_env(f"{prefix}_MODEL", default_model),
         temperature=_env_float(f"{prefix}_TEMPERATURE", default_temperature),
         max_tokens=_env_int(f"{prefix}_MAX_TOKENS", 0) or None,
-        timeout_seconds=_env_int(f"{prefix}_TIMEOUT_SECONDS", _env_int("LL3M_LLM_TIMEOUT_SECONDS", 90)),
-        stream=_env_bool(f"{prefix}_STREAM", _env_bool("LL3M_LLM_STREAM", True)),
+        timeout_seconds=_env_int(f"{prefix}_TIMEOUT_SECONDS", _env_int("VERIANIM_LLM_TIMEOUT_SECONDS", 90)),
+        stream=_env_bool(f"{prefix}_STREAM", _env_bool("VERIANIM_LLM_STREAM", True)),
         api_base=_env_optional(f"{prefix}_API_BASE") or global_api_base,
         api_key=_env_optional(f"{prefix}_API_KEY") or global_api_key,
         api_version=_env_optional(f"{prefix}_API_VERSION"),

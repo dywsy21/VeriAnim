@@ -21,7 +21,7 @@
 
 \newcommand{\code}[1]{\texttt{#1}}
 
-\title{Animation Extension Contracts for Verifiable LL3M-Generated Blender Programs}
+\title{VeriAnim: Animation Extension Contracts for Verifiable Blender Programs}
 
 \author{Anonymous Authors\\
 Anonymous Institution\\
@@ -34,14 +34,14 @@ Anonymous Institution\\
 \maketitle
 
 \begin{abstract}
-Executable 3D generation needs static and temporal contracts. LL3M shows that large language models can use Blender code as a medium for 3D modeling. Animation adds obligations that static generation does not expose: object identities must persist, events must own frame windows, contacts must hold across interpolation, cameras must reveal the motion, and unsupported dynamics must fail with clear scope. We present a static SceneSpec IR, an animation-extension layer, and LL3M-AnimBench for LL3M-style Blender programs. SceneSpec represents object identity, parts, materials, relations, cameras, collision proxies, and evidence plans before code generation. The animation layer extends that verified baseline with rigid motion, camera motion, visibility changes, and deformable events. The harness executes generated Blender programs, records scene graphs and media artifacts, checks deterministic geometry predicates, queries visual and video verifiers, and applies bounded repair when measured evidence identifies a local violation. LL3M-AnimBench contributes 300 natural-language prompts across easy, medium, and hard animation tiers.
+Executable 3D generation needs static and temporal contracts. Blender programs give language models an inspectable medium for 3D modeling. Animation adds obligations that static generation does not expose: object identities must persist, events must own frame windows, contacts must hold across interpolation, cameras must reveal the motion, and unsupported dynamics must fail with clear scope. We present VeriAnim, a static SceneSpec IR, an animation-extension layer, and VeriAnim-AnimBench for verifiable Blender programs. SceneSpec represents object identity, parts, materials, relations, cameras, collision proxies, and evidence plans before code generation. The animation layer extends that verified baseline with rigid motion, camera motion, visibility changes, and deformable events. The harness executes generated Blender programs, records scene graphs and media artifacts, checks deterministic geometry predicates, queries visual and video verifiers, and applies bounded repair when measured evidence identifies a local violation. VeriAnim-AnimBench contributes 300 natural-language prompts across easy, medium, and hard animation tiers.
 \end{abstract}
 
 \section{Introduction}
 
 Blender has become a programmable medium for communicating dynamic 3D ideas: demonstrations, robotics mockups, educational animations, game prototypes, and synthetic data scenes all rely on motion as much as shape. A useful language interface should therefore produce an executable animation, not just a static arrangement of objects. A prompt such as ``a gripper moves a box from a conveyor to a cart while the camera follows'' requires object construction, event sequencing, contact maintenance, camera coverage, and temporal verification.
 
-LL3M establishes a strong starting point for this interface by treating Blender Python as a target language for large language 3D modeling~\citep{lu2025ll3m}. Static scene generation already benefits from code: object creation, materials, lights, cameras, and layout constraints become inspectable program structure. We add a static SceneSpec IR that makes those obligations explicit before code generation. Animation exposes the next structural gap. A static scene contract says what exists and where it starts. An animation contract must say which object moves, who controls each frame window, which relation persists, which evidence verifies the motion, and which runtime executes the behavior.
+Blender Python gives this interface a practical target language for large language 3D modeling~\citep{lu2025verianim}. Static scene generation already benefits from code: object creation, materials, lights, cameras, and layout constraints become inspectable program structure. We add a static SceneSpec IR that makes those obligations explicit before code generation. Animation exposes the next structural gap. A static scene contract says what exists and where it starts. An animation contract must say which object moves, who controls each frame window, which relation persists, which evidence verifies the motion, and which runtime executes the behavior.
 
 Direct keyframe generation collapses these obligations into unstructured code. The generated script may satisfy the final frame while interpolating through a support surface, move a payload while leaving the gripper behind, or render a video in which the important contact point is hidden. These outcomes do not mean Blender code is the wrong medium. They show that animation needs a contract layer between language planning, code generation, execution, verification, and repair.
 
@@ -52,9 +52,9 @@ The design follows a simple rule: every generated animation feature must name th
 This paper makes four contributions:
 \begin{itemize}
     \item \textbf{Static and temporal IR contracts.} We define \code{SceneSpec} for static Blender scenes and an animation extension that organizes families, probes, capability profiles, event windows, and artifact ownership.
-    \item \textbf{Verifier-facing Blender harness.} We build on LL3M's code-as-3D-medium and add staged static-to-animation generation, deterministic checks, visual/video verification, media diagnostics, and bounded repair.
+    \item \textbf{Verifier-facing Blender harness.} We use Blender code as a 3D medium and add staged static-to-animation generation, deterministic checks, visual/video verification, media diagnostics, and bounded repair.
     \item \textbf{Rigid primitive methodology.} We instantiate the contract with geometry-aware rigid primitives for support motion, paired interaction, pick-place manipulation, articulation, and temporal composition.
-    \item \textbf{LL3M-AnimBench.} We release a 300-prompt benchmark with easy, medium, and hard tiers for measuring scene complexity, temporal composition, verifier coverage, and repair cost.
+    \item \textbf{VeriAnim-AnimBench.} We release a 300-prompt benchmark with easy, medium, and hard tiers for measuring scene complexity, temporal composition, verifier coverage, and repair cost.
 \end{itemize}
 The implementation supports static scene generation, camera and rigid animation events, texture resolution, visual/video verifier loops, deformable Blender events, capability-profile reporting, and benchmark generation.
 
@@ -112,8 +112,8 @@ The implementation supports static scene generation, camera and rigid animation 
 \paragraph{LLMs as program generators.}
 Large language models generate code and use tools across many domains~\citep{chen2021evaluating,austin2021program,yao2023react,schick2023toolformer}. Blender scripting fits this trend because scenes, materials, cameras, render settings, and keyframes all have executable APIs. Animation raises the bar from syntactic execution to temporal correctness. Our contract makes the generated program expose the objects, events, probes, and artifacts that validation needs.
 
-\paragraph{LL3M and code-based 3D modeling.}
-LL3M frames large language models as 3D modelers that generate Blender programs as their primary output~\citep{lu2025ll3m}. We build directly on that premise. The difference is scope: LL3M targets code-driven 3D modeling, while this paper adds an animation-extension layer with event windows, family-specific probes, video evidence, and repair contracts.
+\paragraph{Code-based 3D modeling.}
+VeriAnim uses LL3M code as a reference for the premise that large language models can generate Blender programs as their primary 3D output~\citep{lu2025verianim}. The system changes the problem scope from code-driven static modeling to verifier-facing animation, adding event windows, family-specific probes, video evidence, and repair contracts.
 
 \paragraph{3D modeling IRs and scene representations.}
 Existing 3D representations optimize different contracts. USD and COLLADA encode rich production assets and interchange metadata~\citep{pixar2016usd,khronos2025collada}. ShapeAssembly and StructureNet represent object part structure through programs or hierarchical graphs~\citep{jones2020shapeassembly,mo2019structurenet}. 3D scene graphs and graph-conditioned generators encode objects as nodes and relations as edges~\citep{armeni2019scenegraph,gao2024graphdreamer}. Holodeck and SceneScript show that structured scene commands can support language-guided environment generation and reconstruction~\citep{yang2024holodeck,avetisyan2024scenescript}. These IRs provide assets, layouts, or relations. \code{SceneSpec} targets a different contract: LLM-generated Blender programs must expose stable ids, collision proxies, camera evidence, verifier probes, and repair scope before animation begins.
@@ -210,7 +210,7 @@ The same prompt can target Blender, Unity, Maya, or other runtimes, but the harn
 
 The harness generates a static scene before it generates animation. The static stage owns objects, materials, relations, cameras, lighting, texture policy, and screenshot plans. The animation stage references those stable ids and may add keyframes, media sampling, contact constraints, and camera events. This separation lets repair edit a motion path without rebuilding the scene to hide the original problem.
 
-The Blender runtime acts as the shared measurement substrate. It executes generated code, records object summaries, aggregates descendants by \code{ll3m\_id}, samples transforms at semantic frames and dense audit windows, renders screenshots, and renders preview videos when requested. Verifiers and repair routines consume these artifacts as structured evidence about the generated script.
+The Blender runtime acts as the shared measurement substrate. It executes generated code, records object summaries, aggregates descendants by \code{verianim\_id}, samples transforms at semantic frames and dense audit windows, renders screenshots, and renders preview videos when requested. Verifiers and repair routines consume these artifacts as structured evidence about the generated script.
 
 \subsection{Rigid Primitives Encode Motion Contracts}
 
@@ -283,13 +283,13 @@ The implemented harness includes a Blender addon server, Python runner, typed IR
 
 Texture resolution is an explicit preprocessing step. The planner marks materials with \code{texture\_policy}, \code{needs\_texture}, and \code{texture\_query}. A material agent searches public texture pages, downloads candidates, asks a vision model to approve surface suitability, and writes approved local paths back into the IR. If search or vision approval fails, the coder falls back to procedural colors and shader parameters. This keeps appearance assets auditable without making texture retrieval part of the animation claim.
 
-Prompt caching supports iterative refinement. The stable \code{ll3m\_utils} API contract appears in a fixed prompt prefix shared by coder, refiner, user-edit, and animation-extension calls. Per-run IR, verifier reports, and media evidence remain in the user payload. This organization reduces repeated prompt cost while preserving fresh failure evidence.
+Prompt caching supports iterative refinement. The stable \code{verianim\_utils} API contract appears in a fixed prompt prefix shared by coder, refiner, user-edit, and animation-extension calls. Per-run IR, verifier reports, and media evidence remain in the user payload. This organization reduces repeated prompt cost while preserving fresh failure evidence.
 
 \section{Benchmark and Evaluation}
 
-LL3M-AnimBench tests both the contract and the current primitive library. Figure~\ref{fig:evaluation-plan} organizes the evaluation matrix. Prompt families span rigid support motion, paired interaction, manipulation, articulation, camera motion, visibility/state changes, deformable events, and mixed scenes. System variants remove one layer at a time: direct keyframes, IR without extension profiles, extension without primitives, primitives without repair, and the full verifier-facing harness.
+VeriAnim-AnimBench tests both the contract and the current primitive library. Figure~\ref{fig:evaluation-plan} organizes the evaluation matrix. Prompt families span rigid support motion, paired interaction, manipulation, articulation, camera motion, visibility/state changes, deformable events, and mixed scenes. System variants remove one layer at a time: direct keyframes, IR without extension profiles, extension without primitives, primitives without repair, and the full verifier-facing harness.
 
-We define \emph{LL3M-AnimBench}, a 300-prompt benchmark stored in \code{benchmark/}. The benchmark contains 100 easy, 100 medium, and 100 hard natural-language prompts. Easy prompts isolate one object or one relation, medium prompts combine two coordinated events or camera requirements, and hard prompts require multi-object composition, concurrent motion, or family mixtures. Each record stores the prompt, animation families, required motions, verifier focus, and expected difficulty rationale.
+We define \emph{VeriAnim-AnimBench}, a 300-prompt benchmark stored in \code{benchmark/}. The benchmark contains 100 easy, 100 medium, and 100 hard natural-language prompts. Easy prompts isolate one object or one relation, medium prompts combine two coordinated events or camera requirements, and hard prompts require multi-object composition, concurrent motion, or family mixtures. Each record stores the prompt, animation families, required motions, verifier focus, and expected difficulty rationale.
 
 \begin{figure}[t]
 \centering
@@ -327,7 +327,7 @@ The current system provides a contract layer and a runnable Blender harness, whi
 
 \section{Conclusion}
 
-Animation changes LL3M-style Blender generation from static modeling into temporal program synthesis. The Animation Extension Contract makes that shift explicit: it freezes a verified scene baseline, adds typed animation families, names verifier probes, records runtime capability, and routes repair through measured evidence. Rigid-body primitives demonstrate the contract's value today by turning support, carry, pick-place, articulation, and composition into geometry-aware Blender helpers. The broader methodology replaces direct keyframe writing with staged, auditable, and extensible animation contracts.
+Animation changes VeriAnim-style Blender generation from static modeling into temporal program synthesis. The Animation Extension Contract makes that shift explicit: it freezes a verified scene baseline, adds typed animation families, names verifier probes, records runtime capability, and routes repair through measured evidence. Rigid-body primitives demonstrate the contract's value today by turning support, carry, pick-place, articulation, and composition into geometry-aware Blender helpers. The broader methodology replaces direct keyframe writing with staged, auditable, and extensible animation contracts.
 
 \bibliography{references}
 \bibliographystyle{iclr2026_conference}

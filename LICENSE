@@ -2,7 +2,7 @@
 
 This Demonstration License Agreement (“**Agreement**”), effective as of Customer’s acceptance of the terms of this Agreement (the “**Effective Date**”) is between the person or party accepting the terms of this Agreement (“**Customer**”); and [Threedle at the University of Chicago] (“**Licensor**”). BY ACCESSING OR USING THE SOFTWARE IN ANY WAY, INCLUDING, WITHOUT LIMITATION, BY CLICKING “I ACCEPT” WHEN PRESENTED WITH THIS AGREEMENT IN CONNECTION WITH THE SOFTWARE, CUSTOMER AGREES TO BE BOUND BY THIS AGREEMENT. IF CUSTOMER DOES NOT ACCEPT ANY OF THE TERMS OF THIS AGREEMENT AND/OR DOES NOT MEET OR COMPLY WITH ITS PROVISIONS, CUSTOMER MAY NOT USE THE SOFTWARE.
 
-**WHEREAS**, Customer wishes to use and access Licensor’s LL3M software, further described at https://threedle.github.io/ll3m/ (the “Software”), solely for non-commercial academic and evaluation purposes (collectively, the “**Purpose**”).
+**WHEREAS**, Customer wishes to use and access Licensor’s VeriAnim software, further described at https://threedle.github.io/verianim/ (the “Software”), solely for non-commercial academic and evaluation purposes (collectively, the “**Purpose**”).
 
 **WHEREAS**, Licensor is willing to permit such access under the terms and conditions contained herein;
 

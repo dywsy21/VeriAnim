@@ -124,15 +124,15 @@ def blender_static_support_repair_script(plan: StaticSupportRepairPlan) -> str:
         return ""
     payload = json.dumps(plan.to_dict(), ensure_ascii=True, sort_keys=True)
     return f"""
-# LL3M deterministic static support repair
-import json as _ll3m_static_repair_json
-from mathutils import Vector as _ll3m_static_repair_Vector
-import bpy as _ll3m_static_repair_bpy
+# VeriAnim deterministic static support repair
+import json as _verianim_static_repair_json
+from mathutils import Vector as _verianim_static_repair_Vector
+import bpy as _verianim_static_repair_bpy
 
-_LL3M_STATIC_SUPPORT_REPAIR_PLAN = _ll3m_static_repair_json.loads({payload!r})
+_VERIANIM_STATIC_SUPPORT_REPAIR_PLAN = _verianim_static_repair_json.loads({payload!r})
 
-def _ll3m_static_repair_find_objects(ll3m_id):
-    marker = str(ll3m_id)
+def _verianim_static_repair_find_objects(verianim_id):
+    marker = str(verianim_id)
     matches = []
     def add_with_descendants(obj):
         if obj not in matches:
@@ -143,40 +143,40 @@ def _ll3m_static_repair_find_objects(ll3m_id):
             if child not in matches:
                 matches.append(child)
             stack.extend(list(getattr(child, "children", [])))
-    exact = _ll3m_static_repair_bpy.data.objects.get(marker)
+    exact = _verianim_static_repair_bpy.data.objects.get(marker)
     if exact:
         add_with_descendants(exact)
-    for obj in _ll3m_static_repair_bpy.data.objects:
-        obj_id = str(obj.get("ll3m_id", ""))
+    for obj in _verianim_static_repair_bpy.data.objects:
+        obj_id = str(obj.get("verianim_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             add_with_descendants(obj)
-    for obj in _ll3m_static_repair_bpy.data.objects:
+    for obj in _verianim_static_repair_bpy.data.objects:
         if obj not in matches and obj.name.startswith(marker):
             add_with_descendants(obj)
     return matches
 
-def _ll3m_static_repair_apply_delta(subject_id, support_id, delta):
-    objects = _ll3m_static_repair_find_objects(subject_id)
+def _verianim_static_repair_apply_delta(subject_id, support_id, delta):
+    objects = _verianim_static_repair_find_objects(subject_id)
     if not objects:
         return
-    _ll3m_static_repair_normalize_child_offsets(objects)
+    _verianim_static_repair_normalize_child_offsets(objects)
     before_locations = {{obj: obj.matrix_world.translation.copy() for obj in objects}}
     exact_roots = [
         obj for obj in objects
-        if str(obj.get("ll3m_id", "")) == str(subject_id) and obj.parent is None
+        if str(obj.get("verianim_id", "")) == str(subject_id) and obj.parent is None
     ]
-    exact = [obj for obj in objects if str(obj.get("ll3m_id", "")) == str(subject_id)]
+    exact = [obj for obj in objects if str(obj.get("verianim_id", "")) == str(subject_id)]
     targets = exact_roots or exact[:1] or objects
-    vector = _ll3m_static_repair_current_delta(
+    vector = _verianim_static_repair_current_delta(
         subject_id,
         delta,
         support_id,
     )
-    frame = int(_ll3m_static_repair_bpy.context.scene.frame_current)
+    frame = int(_verianim_static_repair_bpy.context.scene.frame_current)
     for obj in targets:
         obj.location = obj.location + vector
-        _ll3m_static_repair_shift_location_keyframes(obj, vector, frame=frame)
-    _ll3m_static_repair_bpy.context.view_layer.update()
+        _verianim_static_repair_shift_location_keyframes(obj, vector, frame=frame)
+    _verianim_static_repair_bpy.context.view_layer.update()
     for obj in objects:
         before = before_locations.get(obj)
         if before is None:
@@ -186,24 +186,24 @@ def _ll3m_static_repair_apply_delta(subject_id, support_id, delta):
         if max(abs(float(remainder.x)), abs(float(remainder.y)), abs(float(remainder.z))) <= 1e-6:
             continue
         obj.matrix_world.translation = obj.matrix_world.translation + remainder
-        _ll3m_static_repair_shift_location_keyframes(obj, remainder, frame=frame)
+        _verianim_static_repair_shift_location_keyframes(obj, remainder, frame=frame)
 
-def _ll3m_static_repair_normalize_child_offsets(objects):
-    roots = [obj for obj in objects if str(obj.get("ll3m_id", "")) and obj.parent is None]
+def _verianim_static_repair_normalize_child_offsets(objects):
+    roots = [obj for obj in objects if str(obj.get("verianim_id", "")) and obj.parent is None]
     root = roots[0] if roots else (objects[0] if objects else None)
     if root is None:
         return
     direct_children = [obj for obj in objects if obj is not root and obj.parent == root]
     if not direct_children:
         return
-    center = _ll3m_static_repair_Vector((0.0, 0.0, 0.0))
+    center = _verianim_static_repair_Vector((0.0, 0.0, 0.0))
     for child in direct_children:
         center += child.location
     center /= len(direct_children)
     root_extent = max([float(value) for value in getattr(root, "dimensions", (0.0, 0.0, 0.0)) if float(value) >= 0.0] or [0.0])
     if center.length <= max(root_extent * 0.75, 0.25):
         return
-    bbox = _ll3m_static_repair_world_bbox(objects)
+    bbox = _verianim_static_repair_world_bbox(objects)
     reference = (bbox[0] + bbox[1]) * 0.5 if bbox else root.matrix_world.translation
     threshold = max(root_extent * 2.0, 1.0)
     if (center - reference).length > threshold:
@@ -215,25 +215,25 @@ def _ll3m_static_repair_normalize_child_offsets(objects):
     for child in direct_children:
         offset = child.location - center
         child.location = basis @ offset if basis is not None else offset
-    _ll3m_static_repair_bpy.context.view_layer.update()
+    _verianim_static_repair_bpy.context.view_layer.update()
 
-def _ll3m_static_repair_world_bbox(objects):
-    _ll3m_static_repair_bpy.context.view_layer.update()
+def _verianim_static_repair_world_bbox(objects):
+    _verianim_static_repair_bpy.context.view_layer.update()
     points = []
-    depsgraph = _ll3m_static_repair_bpy.context.evaluated_depsgraph_get()
+    depsgraph = _verianim_static_repair_bpy.context.evaluated_depsgraph_get()
     for obj in objects:
         if obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} or not getattr(obj, "bound_box", None):
             continue
         evaluated = obj.evaluated_get(depsgraph)
-        points.extend(evaluated.matrix_world @ _ll3m_static_repair_Vector(corner) for corner in evaluated.bound_box)
+        points.extend(evaluated.matrix_world @ _verianim_static_repair_Vector(corner) for corner in evaluated.bound_box)
     if not points:
         return None
     return (
-        _ll3m_static_repair_Vector((min(point.x for point in points), min(point.y for point in points), min(point.z for point in points))),
-        _ll3m_static_repair_Vector((max(point.x for point in points), max(point.y for point in points), max(point.z for point in points))),
+        _verianim_static_repair_Vector((min(point.x for point in points), min(point.y for point in points), min(point.z for point in points))),
+        _verianim_static_repair_Vector((max(point.x for point in points), max(point.y for point in points), max(point.z for point in points))),
     )
 
-def _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, axis, margin=0.02):
+def _verianim_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, axis, margin=0.02):
     overlap = min(subject_max[axis], support_max[axis]) - max(subject_min[axis], support_min[axis])
     if overlap > 0:
         return 0.0
@@ -246,28 +246,28 @@ def _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, suppor
     target_center = min(max(subject_center, low), high) if low <= high else support_center
     return target_center - subject_center
 
-def _ll3m_static_repair_current_delta(subject_id, fallback_delta, support_id):
-    vector = _ll3m_static_repair_Vector(tuple(float(value) for value in fallback_delta))
+def _verianim_static_repair_current_delta(subject_id, fallback_delta, support_id):
+    vector = _verianim_static_repair_Vector(tuple(float(value) for value in fallback_delta))
     if not support_id:
         return vector
-    subject_bbox = _ll3m_static_repair_world_bbox(_ll3m_static_repair_find_objects(subject_id))
-    support_bbox = _ll3m_static_repair_select_support_bbox(subject_bbox, _ll3m_static_repair_find_objects(support_id))
+    subject_bbox = _verianim_static_repair_world_bbox(_verianim_static_repair_find_objects(subject_id))
+    support_bbox = _verianim_static_repair_select_support_bbox(subject_bbox, _verianim_static_repair_find_objects(support_id))
     if not subject_bbox or not support_bbox:
         return vector
     subject_min, subject_max = subject_bbox
     support_min, support_max = support_bbox
-    return _ll3m_static_repair_Vector((
-        _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, 0),
-        _ll3m_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, 1),
+    return _verianim_static_repair_Vector((
+        _verianim_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, 0),
+        _verianim_static_repair_axis_delta(subject_min, subject_max, support_min, support_max, 1),
         float(support_max.z - subject_min.z),
     ))
 
-def _ll3m_static_repair_select_support_bbox(subject_bbox, support_objects):
+def _verianim_static_repair_select_support_bbox(subject_bbox, support_objects):
     if not subject_bbox:
-        return _ll3m_static_repair_world_bbox(support_objects)
+        return _verianim_static_repair_world_bbox(support_objects)
     candidates = []
     for obj in support_objects:
-        bbox = _ll3m_static_repair_world_bbox([obj])
+        bbox = _verianim_static_repair_world_bbox([obj])
         if not bbox:
             continue
         bmin, bmax = bbox
@@ -276,7 +276,7 @@ def _ll3m_static_repair_select_support_bbox(subject_bbox, support_objects):
             continue
         candidates.append(bbox)
     if not candidates:
-        return _ll3m_static_repair_world_bbox(support_objects)
+        return _verianim_static_repair_world_bbox(support_objects)
     subject_min, subject_max = subject_bbox
     def axis_gap(bmin, bmax, axis):
         if subject_max[axis] < bmin[axis]:
@@ -293,7 +293,7 @@ def _ll3m_static_repair_select_support_bbox(subject_bbox, support_objects):
         return (z_gap + top_above_penalty * 2.0, xy_gap, abs(float(size.z)))
     return min(candidates, key=score)
 
-def _ll3m_static_repair_shift_location_keyframes(obj, vector, frame=None):
+def _verianim_static_repair_shift_location_keyframes(obj, vector, frame=None):
     action = obj.animation_data.action if obj.animation_data else None
     if not action:
         return
@@ -328,14 +328,14 @@ def _ll3m_static_repair_shift_location_keyframes(obj, vector, frame=None):
             point.handle_right.y += offset
         fcurve.update()
 
-for _ll3m_static_repair_adjustment in _LL3M_STATIC_SUPPORT_REPAIR_PLAN.get("adjustments", []):
-    _ll3m_static_repair_apply_delta(
-        _ll3m_static_repair_adjustment.get("subject_id"),
-        _ll3m_static_repair_adjustment.get("support_id"),
-        _ll3m_static_repair_adjustment.get("delta", [0.0, 0.0, 0.0]),
+for _verianim_static_repair_adjustment in _VERIANIM_STATIC_SUPPORT_REPAIR_PLAN.get("adjustments", []):
+    _verianim_static_repair_apply_delta(
+        _verianim_static_repair_adjustment.get("subject_id"),
+        _verianim_static_repair_adjustment.get("support_id"),
+        _verianim_static_repair_adjustment.get("delta", [0.0, 0.0, 0.0]),
     )
 
-_ll3m_static_repair_bpy.context.view_layer.update()
+_verianim_static_repair_bpy.context.view_layer.update()
 """.strip()
 
 

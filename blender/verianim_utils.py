@@ -1,4 +1,4 @@
-"""Reusable Blender helpers for LL3M-generated scene scripts.
+"""Reusable Blender helpers for VeriAnim-generated scene scripts.
 
 The functions in this module intentionally import ``bpy`` lazily so the module
 can be imported by normal Python tests outside Blender.
@@ -188,21 +188,21 @@ def link_object(obj: Any, collection: Any | None = None) -> Any:
     return obj
 
 
-def set_ll3m_properties(
+def set_verianim_properties(
     obj: Any,
     *,
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
-    """Attach standard LL3M custom properties to an object."""
+    """Attach standard VeriAnim custom properties to an object."""
 
-    if ll3m_id:
-        obj["ll3m_id"] = ll3m_id
-    if ll3m_part:
-        obj["ll3m_part"] = ll3m_part
-    if ll3m_role:
-        obj["ll3m_role"] = ll3m_role
+    if verianim_id:
+        obj["verianim_id"] = verianim_id
+    if verianim_part:
+        obj["verianim_part"] = verianim_part
+    if verianim_role:
+        obj["verianim_role"] = verianim_role
     return obj
 
 
@@ -224,7 +224,7 @@ def make_material(
     alpha: float | None = None,
     texture_path: str | None = None,
 ) -> Any:
-    """Create or update a Principled material with stable LL3M metadata."""
+    """Create or update a Principled material with stable VeriAnim metadata."""
 
     bpy = _bpy()
     if isinstance(name, Mapping):
@@ -239,7 +239,7 @@ def make_material(
             texture_path = str(texture_source["local_path"])
     color = _rgba(base_color, alpha)
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
-    mat["ll3m_id"] = name
+    mat["verianim_id"] = name
     mat.diffuse_color = color
     mat.use_nodes = True
     principled = find_node_by_type(mat.node_tree, "BSDF_PRINCIPLED") if mat.node_tree else None
@@ -288,9 +288,9 @@ def create_mesh_object(
     location: Sequence[float] = (0.0, 0.0, 0.0),
     rotation: Sequence[float] = (0.0, 0.0, 0.0),
     scale: Sequence[float] = (1.0, 1.0, 1.0),
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
     """Create a mesh object using Blender's data API."""
 
@@ -304,7 +304,7 @@ def create_mesh_object(
     obj.scale = _vector(scale, default=1.0)
     if material is not None:
         obj.data.materials.append(material)
-    set_ll3m_properties(obj, ll3m_id=ll3m_id, ll3m_part=ll3m_part, ll3m_role=ll3m_role)
+    set_verianim_properties(obj, verianim_id=verianim_id, verianim_part=verianim_part, verianim_role=verianim_role)
     return link_object(obj, collection)
 
 
@@ -334,9 +334,9 @@ def add_cube(
     material: Any | None = None,
     location: Sequence[float] = (0.0, 0.0, 0.0),
     rotation: Sequence[float] = (0.0, 0.0, 0.0),
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
     """Create a box mesh centered on its origin."""
 
@@ -355,9 +355,9 @@ def add_cube(
         material=material,
         location=location,
         rotation=rotation,
-        ll3m_id=ll3m_id,
-        ll3m_part=ll3m_part,
-        ll3m_role=ll3m_role,
+        verianim_id=verianim_id,
+        verianim_part=verianim_part,
+        verianim_role=verianim_role,
     )
 
 
@@ -369,9 +369,9 @@ def create_box(
     material: Any | None = None,
     location: Sequence[float] = (0.0, 0.0, 0.0),
     rotation: Sequence[float] = (0.0, 0.0, 0.0),
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
     """Compatibility alias for generated code."""
 
@@ -382,9 +382,9 @@ def create_box(
         material=material,
         location=location,
         rotation=rotation,
-        ll3m_id=ll3m_id,
-        ll3m_part=ll3m_part,
-        ll3m_role=ll3m_role,
+        verianim_id=verianim_id,
+        verianim_part=verianim_part,
+        verianim_role=verianim_role,
     )
 
 
@@ -396,9 +396,9 @@ def make_box(
     material: Any | None = None,
     location: Sequence[float] = (0.0, 0.0, 0.0),
     rotation: Sequence[float] = (0.0, 0.0, 0.0),
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
     """Compatibility alias that accepts size as a positional argument."""
 
@@ -409,9 +409,9 @@ def make_box(
         material=material,
         location=location,
         rotation=rotation,
-        ll3m_id=ll3m_id,
-        ll3m_part=ll3m_part,
-        ll3m_role=ll3m_role,
+        verianim_id=verianim_id,
+        verianim_part=verianim_part,
+        verianim_role=verianim_role,
     )
 
 
@@ -422,9 +422,9 @@ def add_plane(
     collection: Any | None = None,
     material: Any | None = None,
     location: Sequence[float] = (0.0, 0.0, 0.0),
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
     """Create a flat XY plane centered on its origin."""
 
@@ -440,9 +440,9 @@ def add_plane(
         collection=collection,
         material=material,
         location=location,
-        ll3m_id=ll3m_id,
-        ll3m_part=ll3m_part,
-        ll3m_role=ll3m_role,
+        verianim_id=verianim_id,
+        verianim_part=verianim_part,
+        verianim_role=verianim_role,
     )
 
 
@@ -456,9 +456,9 @@ def add_cylinder(
     material: Any | None = None,
     location: Sequence[float] = (0.0, 0.0, 0.0),
     rotation: Sequence[float] = (0.0, 0.0, 0.0),
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
     """Create a vertical cylinder centered on its origin."""
 
@@ -481,9 +481,9 @@ def add_cylinder(
         material=material,
         location=location,
         rotation=rotation,
-        ll3m_id=ll3m_id,
-        ll3m_part=ll3m_part,
-        ll3m_role=ll3m_role,
+        verianim_id=verianim_id,
+        verianim_part=verianim_part,
+        verianim_role=verianim_role,
     )
 
 
@@ -496,9 +496,9 @@ def add_uv_sphere(
     collection: Any | None = None,
     material: Any | None = None,
     location: Sequence[float] = (0.0, 0.0, 0.0),
-    ll3m_id: str | None = None,
-    ll3m_part: str | None = None,
-    ll3m_role: str | None = None,
+    verianim_id: str | None = None,
+    verianim_part: str | None = None,
+    verianim_role: str | None = None,
 ) -> Any:
     """Create a simple UV sphere mesh centered on its origin."""
 
@@ -535,9 +535,9 @@ def add_uv_sphere(
         collection=collection,
         material=material,
         location=location,
-        ll3m_id=ll3m_id,
-        ll3m_part=ll3m_part,
-        ll3m_role=ll3m_role,
+        verianim_id=verianim_id,
+        verianim_part=verianim_part,
+        verianim_role=verianim_role,
     )
 
 
@@ -632,7 +632,7 @@ def space_gripper_fingers_around_subject(
         fingers = [
             child
             for child in getattr(gripper, "children", []) or []
-            if "finger" in str(getattr(child, "name", "")).lower() or str(child.get("ll3m_part", "")).lower() == "finger"
+            if "finger" in str(getattr(child, "name", "")).lower() or str(child.get("verianim_part", "")).lower() == "finger"
         ]
     selected = list(fingers)[:2]
     if len(selected) < 2:
@@ -662,7 +662,7 @@ def create_parallel_gripper(
     location: Sequence[float] = (0.0, 0.0, 1.0),
     collection: Any = None,
     material: Any = None,
-    ll3m_id: str | None = None,
+    verianim_id: str | None = None,
     axis: str = "Y",
     finger_length: float | None = None,
     finger_thickness: float = 0.06,
@@ -672,7 +672,7 @@ def create_parallel_gripper(
 ) -> dict[str, Any]:
     """Create a visible two-finger gripper rooted at a palm object.
 
-    The returned ``root`` owns ``ll3m_id`` and is the object to animate. The
+    The returned ``root`` owns ``verianim_id`` and is the object to animate. The
     palm, stem, and fingers are children, so a single root path keeps the whole
     gripper coherent.
     """
@@ -686,7 +686,7 @@ def create_parallel_gripper(
     root.empty_display_size = 0.15
     root.location = _vector(location)
     link_object(root, collection)
-    set_ll3m_properties(root, ll3m_id=ll3m_id or name, ll3m_role="active")
+    set_verianim_properties(root, verianim_id=verianim_id or name, verianim_role="active")
 
     carried_size = bbox_size(carried) if carried is not None else (0.35, 0.35, 0.25)
     grip_span = carried_size[axis_index] if carried is not None else 0.35
@@ -699,13 +699,13 @@ def create_parallel_gripper(
             max(0.24, carried_size[1] + 2.0 * thickness),
             thickness,
         )
-    palm = add_cube(f"{name}_palm", size=1.0, collection=collection, material=material, ll3m_part="palm")
+    palm = add_cube(f"{name}_palm", size=1.0, collection=collection, material=material, verianim_part="palm")
     palm.scale = _vector(palm_size)
     palm.parent = root
     palm_z = vertical_size / 2.0 + thickness / 2.0 + 0.02
     palm.location = (0.0, 0.0, palm_z)
 
-    stem = add_cube(f"{name}_stem", size=1.0, collection=collection, material=material, ll3m_part="stem")
+    stem = add_cube(f"{name}_stem", size=1.0, collection=collection, material=material, verianim_part="stem")
     stem.scale = (thickness, thickness, float(stem_height))
     stem.parent = root
     stem.location = (0.0, 0.0, palm_z + float(stem_height) / 2.0 + float(palm_size[2]) / 2.0)
@@ -713,8 +713,8 @@ def create_parallel_gripper(
     finger_scale = [thickness, thickness, length]
     finger_offset = grip_span / 2.0 + thickness / 2.0 + float(open_gap)
     finger_z = 0.0
-    left = add_cube(f"{name}_left_finger", size=1.0, collection=collection, material=material, ll3m_part="finger")
-    right = add_cube(f"{name}_right_finger", size=1.0, collection=collection, material=material, ll3m_part="finger")
+    left = add_cube(f"{name}_left_finger", size=1.0, collection=collection, material=material, verianim_part="finger")
+    right = add_cube(f"{name}_right_finger", size=1.0, collection=collection, material=material, verianim_part="finger")
     for sign, finger in ((-1.0, left), (1.0, right)):
         finger.scale = tuple(finger_scale)
         finger.parent = root
@@ -1007,7 +1007,7 @@ def animate_parallel_gripper_pick_place(
         fingers = [
             child
             for child in getattr(gripper, "children", []) or []
-            if "finger" in str(getattr(child, "name", "")).lower() or str(child.get("ll3m_part", "")).lower() == "finger"
+            if "finger" in str(getattr(child, "name", "")).lower() or str(child.get("verianim_part", "")).lower() == "finger"
         ]
     selected = list(fingers)[:2]
     if len(selected) >= 2:
@@ -1136,8 +1136,8 @@ def create_rotor_root(
     location: Sequence[float] = (0.0, 0.0, 0.0),
     children: Sequence[Any] | None = None,
     collection: Any | None = None,
-    ll3m_id: str | None = None,
-    ll3m_role: str | None = "kinematic",
+    verianim_id: str | None = None,
+    verianim_role: str | None = "kinematic",
 ) -> Any:
     """Create an empty pivot root for propellers, rotors, wheels, and fans."""
 
@@ -1147,7 +1147,7 @@ def create_rotor_root(
     root.empty_display_size = 0.25
     root.location = _vector(location)
     link_to_collection(root, collection)
-    set_ll3m_properties(root, ll3m_id=ll3m_id or name, ll3m_role=ll3m_role)
+    set_verianim_properties(root, verianim_id=verianim_id or name, verianim_role=verianim_role)
     for child in children or []:
         child.parent = root
         if hasattr(child, "matrix_parent_inverse"):
@@ -1394,7 +1394,7 @@ __all__ = [
     "make_light",
     "make_material",
     "normalize_engine_name",
-    "set_ll3m_properties",
+    "set_verianim_properties",
     "set_render_engine",
     "animate_rotor",
 ]

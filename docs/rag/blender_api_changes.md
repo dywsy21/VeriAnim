@@ -251,7 +251,7 @@ obj.keyframe_insert(data_path="location", frame=1)
 scene.camera = camera_obj
 
 # Custom properties
-obj["ll3m_id"] = "my_id"
+obj["verianim_id"] = "my_id"
 ```
 
 ### Deprecated (still works but avoid)
@@ -297,10 +297,10 @@ context.asset_file_handle              # Use context.asset
 ## Safe Minimal Render Setup for 4.5.4
 
 ```python
-from blender import ll3m_utils as ll3m
+from blender import verianim_utils as verianim
 
 scene = bpy.context.scene
-ll3m.configure_render(scene, width=960, height=540, engine="workbench", transparent_background=False)
+verianim.configure_render(scene, width=960, height=540, engine="workbench", transparent_background=False)
 # Do NOT set any scene.eevee.* properties unless verified
 ```
 

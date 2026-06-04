@@ -1,4 +1,4 @@
-"""Start the LL3M Blender addon server from a Blender Python process."""
+"""Start the VeriAnim Blender addon server from a Blender Python process."""
 
 from __future__ import annotations
 
@@ -27,9 +27,9 @@ def _load_project_env() -> None:
 
 
 _load_project_env()
-PORT = int(os.environ.get("LL3M_BLENDER_PORT", "8888"))
+PORT = int(os.environ.get("VERIANIM_BLENDER_PORT", "8888"))
 
-spec = importlib.util.spec_from_file_location("ll3m_blender_addon", ADDON_PATH)
+spec = importlib.util.spec_from_file_location("verianim_blender_addon", ADDON_PATH)
 if spec is None or spec.loader is None:
     raise RuntimeError(f"Could not load addon from {ADDON_PATH}")
 
@@ -42,12 +42,12 @@ if hasattr(bpy.types, "blendercustomagent_server") and bpy.types.blendercustomag
         bpy.types.blendercustomagent_server.stop()
     except Exception:
         pass
-bpy.types.blendercustomagent_server = addon.LL3MAgentServer(host="127.0.0.1", port=PORT)
+bpy.types.blendercustomagent_server = addon.VeriAnimAgentServer(host="127.0.0.1", port=PORT)
 bpy.types.blendercustomagent_server.start()
 bpy.context.scene.blendercustomagent_port = PORT
 bpy.context.scene.blendercustomagent_server_running = bpy.types.blendercustomagent_server.running
 
-print(f"LL3M Blender server started on localhost:{PORT}", flush=True)
+print(f"VeriAnim Blender server started on localhost:{PORT}", flush=True)
 
 while True:
     processed = bpy.types.blendercustomagent_server.process_pending_commands()

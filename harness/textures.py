@@ -89,7 +89,7 @@ class FreeStockTexturesClient:
         self.session.headers.update(
             {
                 "User-Agent": user_agent
-                or "LL3M texture search (+https://freestocktextures.com/license/; public CC0 textures)",
+                or "VeriAnim texture search (+https://freestocktextures.com/license/; public CC0 textures)",
                 "Accept": "text/html,image/*;q=0.9,*/*;q=0.8",
             }
         )

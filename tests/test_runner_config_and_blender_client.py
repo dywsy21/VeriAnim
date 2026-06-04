@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 
 from blender.client import BlenderClient
-from blender import ll3m_utils
+from blender import verianim_utils
 from harness.animation_repair import repair_animation_ir
 from harness.blender_runtime import BlenderRunResult, BlenderRuntime, _relation_frame_overrides
 from harness.config import AgentModelConfig, HarnessConfig
@@ -90,11 +90,11 @@ class RunnerLockTest(unittest.TestCase):
 class ConfigEnvTest(unittest.TestCase):
     def test_config_reads_port_and_model_env(self) -> None:
         env = {
-            "LL3M_BLENDER_PORT": "43210",
-            "LL3M_PLANNER_MODEL": "openai/test-planner",
-            "LL3M_CODER_STREAM": "false",
-            "LL3M_TEXTURE_SEARCH_CANDIDATE_LIMIT": "0",
-            "LL3M_DOTENV_OVERRIDE": "false",
+            "VERIANIM_BLENDER_PORT": "43210",
+            "VERIANIM_PLANNER_MODEL": "openai/test-planner",
+            "VERIANIM_CODER_STREAM": "false",
+            "VERIANIM_TEXTURE_SEARCH_CANDIDATE_LIMIT": "0",
+            "VERIANIM_DOTENV_OVERRIDE": "false",
         }
         with mock.patch.dict(os.environ, env, clear=False):
             config = HarnessConfig.from_env()
@@ -105,25 +105,25 @@ class ConfigEnvTest(unittest.TestCase):
         self.assertEqual(config.texture_search_candidate_limit, 1)
 
     def test_config_uses_8888_default_port(self) -> None:
-        with mock.patch.dict(os.environ, {"LL3M_DOTENV_OVERRIDE": "false"}, clear=False):
-            os.environ.pop("LL3M_BLENDER_PORT", None)
+        with mock.patch.dict(os.environ, {"VERIANIM_DOTENV_OVERRIDE": "false"}, clear=False):
+            os.environ.pop("VERIANIM_BLENDER_PORT", None)
             config = HarnessConfig.from_env()
 
         self.assertEqual(config.blender_port, 8888)
 
 
 class BlenderUtilsTest(unittest.TestCase):
-    def test_ll3m_utils_imports_without_blender_runtime(self) -> None:
-        self.assertEqual(ll3m_utils.DEFAULT_RENDER_ENGINE, "BLENDER_WORKBENCH")
+    def test_verianim_utils_imports_without_blender_runtime(self) -> None:
+        self.assertEqual(verianim_utils.DEFAULT_RENDER_ENGINE, "BLENDER_WORKBENCH")
 
     def test_normalize_engine_name_prefers_valid_blender_enums(self) -> None:
-        self.assertEqual(ll3m_utils.normalize_engine_name(None), "BLENDER_WORKBENCH")
-        self.assertEqual(ll3m_utils.normalize_engine_name("workbench"), "BLENDER_WORKBENCH")
-        self.assertEqual(ll3m_utils.normalize_engine_name("WORKBENCH"), "BLENDER_WORKBENCH")
-        self.assertEqual(ll3m_utils.normalize_engine_name("eevee"), "BLENDER_EEVEE_NEXT")
-        self.assertEqual(ll3m_utils.normalize_engine_name("BLENDER_EEVEE"), "BLENDER_EEVEE")
+        self.assertEqual(verianim_utils.normalize_engine_name(None), "BLENDER_WORKBENCH")
+        self.assertEqual(verianim_utils.normalize_engine_name("workbench"), "BLENDER_WORKBENCH")
+        self.assertEqual(verianim_utils.normalize_engine_name("WORKBENCH"), "BLENDER_WORKBENCH")
+        self.assertEqual(verianim_utils.normalize_engine_name("eevee"), "BLENDER_EEVEE_NEXT")
+        self.assertEqual(verianim_utils.normalize_engine_name("BLENDER_EEVEE"), "BLENDER_EEVEE")
 
-    def test_ll3m_utils_exposes_rigid_animation_primitives(self) -> None:
+    def test_verianim_utils_exposes_rigid_animation_primitives(self) -> None:
         for name in (
             "world_bbox",
             "align_bottom_to_top",
@@ -141,14 +141,14 @@ class BlenderUtilsTest(unittest.TestCase):
             "animate_rotor",
             "animate_hinge",
         ):
-            self.assertTrue(callable(getattr(ll3m_utils, name)))
+            self.assertTrue(callable(getattr(verianim_utils, name)))
 
-    def test_static_keyframe_counter_accepts_ll3m_animation_primitives(self) -> None:
+    def test_static_keyframe_counter_accepts_verianim_animation_primitives(self) -> None:
         tree = ast.parse(
             """
-from blender import ll3m_utils as ll3m
-ll3m.animate_pick_place(gripper, cube, table, tray)
-ll3m.animate_rotor(rotor, axis="X", turns=1.0, start_frame=1, end_frame=120)
+from blender import verianim_utils as verianim
+verianim.animate_pick_place(gripper, cube, table, tray)
+verianim.animate_rotor(rotor, axis="X", turns=1.0, start_frame=1, end_frame=120)
 """
         )
         self.assertGreaterEqual(len(_count_effective_keyframe_calls(tree)), 5)
@@ -160,18 +160,18 @@ ll3m.animate_rotor(rotor, axis="X", turns=1.0, start_frame=1, end_frame=120)
 class PreflightTest(unittest.TestCase):
     def test_preflight_reports_blender_and_missing_key_errors(self) -> None:
         env = {
-            "LL3M_DOTENV_OVERRIDE": "false",
+            "VERIANIM_DOTENV_OVERRIDE": "false",
             "OPENAI_API_KEY": "",
             "LITELLM_API_KEY": "",
-            "LL3M_PLANNER_API_KEY": "",
-            "LL3M_CODER_API_KEY": "",
-            "LL3M_REFINER_API_KEY": "",
-            "LL3M_VISION_API_KEY": "",
-            "LL3M_PLANNER_MODEL": "openai/test-planner",
-            "LL3M_CODER_MODEL": "openai/test-coder",
-            "LL3M_REFINER_MODEL": "openai/test-refiner",
-            "LL3M_VISION_MODEL": "openai/test-vision",
-            "LL3M_RUNS_DIR": tempfile.mkdtemp(),
+            "VERIANIM_PLANNER_API_KEY": "",
+            "VERIANIM_CODER_API_KEY": "",
+            "VERIANIM_REFINER_API_KEY": "",
+            "VERIANIM_VISION_API_KEY": "",
+            "VERIANIM_PLANNER_MODEL": "openai/test-planner",
+            "VERIANIM_CODER_MODEL": "openai/test-coder",
+            "VERIANIM_REFINER_MODEL": "openai/test-refiner",
+            "VERIANIM_VISION_MODEL": "openai/test-vision",
+            "VERIANIM_RUNS_DIR": tempfile.mkdtemp(),
         }
         with mock.patch.dict(os.environ, env, clear=True):
             config = HarnessConfig.from_env()
@@ -195,9 +195,9 @@ class PreflightTest(unittest.TestCase):
 
     def test_preflight_accepts_successful_blender_and_provider_key(self) -> None:
         env = {
-            "LL3M_DOTENV_OVERRIDE": "false",
+            "VERIANIM_DOTENV_OVERRIDE": "false",
             "OPENAI_API_KEY": "test-key",
-            "LL3M_RUNS_DIR": tempfile.mkdtemp(),
+            "VERIANIM_RUNS_DIR": tempfile.mkdtemp(),
         }
         with mock.patch.dict(os.environ, env, clear=True):
             config = HarnessConfig.from_env()
@@ -491,13 +491,13 @@ def bridge_scene_graph() -> dict:
         "objects": [
             {
                 "name": "car",
-                "ll3m_id": "car",
+                "verianim_id": "car",
                 "type": "MESH",
                 "bbox": {"min": [-3.0, -0.2, 0.0], "max": [-2.0, 0.2, 0.4]},
             },
             {
                 "name": "bridge_deck",
-                "ll3m_id": "bridge_deck",
+                "verianim_id": "bridge_deck",
                 "type": "MESH",
                 "bbox": {"min": [-1.0, -0.8, 0.5], "max": [1.0, 0.8, 0.7]},
             },
@@ -531,13 +531,13 @@ def support_repair_scene_graph() -> dict:
         "objects": [
             {
                 "name": "mug",
-                "ll3m_id": "mug",
+                "verianim_id": "mug",
                 "type": "MESH",
                 "bbox": {"min": [0.0, 0.0, 1.0], "max": [0.3, 0.3, 1.4]},
             },
             {
                 "name": "table",
-                "ll3m_id": "table",
+                "verianim_id": "table",
                 "type": "MESH",
                 "bbox": {"min": [-1.0, -1.0, 0.0], "max": [1.0, 1.0, 0.5]},
             },
@@ -550,7 +550,7 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
             session.ir = minimal_ir()
-            session.code = "import bpy\nx = math.pi\nLL3M_METADATA = {}\n"
+            session.code = "import bpy\nx = math.pi\nVERIANIM_METADATA = {}\n"
 
             report = session._static_code_report()
 
@@ -563,12 +563,12 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             session.ir = pick_place_ir()
             session.code = "\n".join(
                 [
-                    "from blender import ll3m_utils as ll3m",
-                    "ll3m.insert_location_keyframe(gripper, 1, (0, 0, 1))",
-                    "ll3m.insert_location_keyframe(gripper, 80, (1, 0, 1))",
-                    "ll3m.insert_location_keyframe(yellow_box, 1, (0, 0, 1))",
-                    "ll3m.insert_location_keyframe(yellow_box, 80, (1, 0, 1))",
-                    "LL3M_METADATA = {}",
+                    "from blender import verianim_utils as verianim",
+                    "verianim.insert_location_keyframe(gripper, 1, (0, 0, 1))",
+                    "verianim.insert_location_keyframe(gripper, 80, (1, 0, 1))",
+                    "verianim.insert_location_keyframe(yellow_box, 1, (0, 0, 1))",
+                    "verianim.insert_location_keyframe(yellow_box, 80, (1, 0, 1))",
+                    "VERIANIM_METADATA = {}",
                 ]
             )
 
@@ -583,10 +583,10 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             session.ir = pick_place_ir()
             session.code = "\n".join(
                 [
-                    "from blender import ll3m_utils as ll3m",
-                    "parts = ll3m.create_parallel_gripper('gripper', carried=yellow_box, ll3m_id='gripper')",
-                    "ll3m.animate_parallel_gripper_pick_place(parts['root'], yellow_box, shelf, trolley, fingers=parts['fingers'])",
-                    "LL3M_METADATA = {}",
+                    "from blender import verianim_utils as verianim",
+                    "parts = verianim.create_parallel_gripper('gripper', carried=yellow_box, verianim_id='gripper')",
+                    "verianim.animate_parallel_gripper_pick_place(parts['root'], yellow_box, shelf, trolley, fingers=parts['fingers'])",
+                    "VERIANIM_METADATA = {}",
                 ]
             )
 
@@ -600,10 +600,10 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             session.ir = pick_place_ir()
             session.code = "\n".join(
                 [
-                    "from blender import ll3m_utils as ll3m",
-                    "ll3m.animate_parallel_gripper_pick_place(gripper, yellow_box, shelf, trolley, frames=(1, 30, 45, 60, 75, 90))",
-                    "ll3m.animate_attached_carry(trolley, yellow_box, [(75, (3, 0, 0)), (120, (5, 0, 0))])",
-                    "LL3M_METADATA = {}",
+                    "from blender import verianim_utils as verianim",
+                    "verianim.animate_parallel_gripper_pick_place(gripper, yellow_box, shelf, trolley, frames=(1, 30, 45, 60, 75, 90))",
+                    "verianim.animate_attached_carry(trolley, yellow_box, [(75, (3, 0, 0)), (120, (5, 0, 0))])",
+                    "VERIANIM_METADATA = {}",
                 ]
             )
 
@@ -618,10 +618,10 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             session.ir = pick_place_ir()
             session.code = "\n".join(
                 [
-                    "from blender import ll3m_utils as ll3m",
-                    "ll3m.animate_parallel_gripper_pick_place(gripper, yellow_box, shelf, trolley, frames=(1, 30, 45, 60, 75, 90))",
-                    "ll3m.animate_attached_carry(trolley, yellow_box, [(91, (3, 0, 0)), (120, (5, 0, 0))])",
-                    "LL3M_METADATA = {}",
+                    "from blender import verianim_utils as verianim",
+                    "verianim.animate_parallel_gripper_pick_place(gripper, yellow_box, shelf, trolley, frames=(1, 30, 45, 60, 75, 90))",
+                    "verianim.animate_attached_carry(trolley, yellow_box, [(91, (3, 0, 0)), (120, (5, 0, 0))])",
+                    "VERIANIM_METADATA = {}",
                 ]
             )
 
@@ -634,7 +634,7 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
             session.ir = minimal_ir()
             session.store = ArtifactStore.create(Path(tmp))
-            session.code = "LL3M_METADATA = {}\n"
+            session.code = "VERIANIM_METADATA = {}\n"
             result = BlenderRunResult(
                 ok=False,
                 message="bad",
@@ -646,7 +646,7 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             with mock.patch.object(session.blender, "execute_scene_code", return_value=result), mock.patch.object(
                 session.refiner,
                 "refine",
-                return_value="LL3M_METADATA = {}\n",
+                return_value="VERIANIM_METADATA = {}\n",
             ):
                 session._execute_validate_refine(reason="initial")
 
@@ -679,7 +679,7 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             session = InteractiveHarnessSession(minimal_config(Path(tmp)), skip_vision=True, skip_video=True)
             session.ir = support_repair_ir()
             session.store = ArtifactStore.create(Path(tmp))
-            session.code = "LL3M_METADATA = {}\n"
+            session.code = "VERIANIM_METADATA = {}\n"
             failed_report = ValidationReport.failed(
                 VerificationMode.DETERMINISTIC,
                 [
@@ -728,9 +728,9 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
 
         self.assertTrue(repair_plan["applied"], repair_plan)
         self.assertAlmostEqual(repair_plan["adjustments"][0]["delta"][2], -0.5)
-        self.assertIn("LL3M deterministic static support repair", repair_script)
-        self.assertIn("LL3M deterministic static support repair", persisted_script)
-        self.assertIn("LL3M deterministic static support repair", session.code or "")
+        self.assertIn("VeriAnim deterministic static support repair", repair_script)
+        self.assertIn("VeriAnim deterministic static support repair", persisted_script)
+        self.assertIn("VeriAnim deterministic static support repair", session.code or "")
         self.assertIn("repair ok", execution_log)
         self.assertTrue(after_report["passed"], after_report)
         execute_code.assert_called_once()
@@ -758,7 +758,7 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
 
         script = _animation_contact_repair_script(report)
 
-        self.assertIn("LL3M deterministic animation contact repair", script)
+        self.assertIn("VeriAnim deterministic animation contact repair", script)
         self.assertIn('"constant_deltas": {"box": -0.0405}', script)
         self.assertIn("point.co.y += float(dz)", script)
 
@@ -784,7 +784,7 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         script = _animation_contact_repair_script(report)
 
         self.assertIn('"support_pairs": {"crate": "table"}', script)
-        self.assertIn("_ll3m_contact_repair_align_keyed_support", script)
+        self.assertIn("_verianim_contact_repair_align_keyed_support", script)
         self.assertIn("support_box[5] - subject_box[2] + 0.001", script)
 
     def test_animation_contact_repair_skips_multi_support_subjects(self) -> None:
@@ -814,14 +814,14 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True, skip_vision=True, skip_video=True)
             session.store = ArtifactStore.create(Path(tmp))
-            with mock.patch.object(session.coder, "generate", return_value="LL3M_METADATA = {}\n"), mock.patch.object(
+            with mock.patch.object(session.coder, "generate", return_value="VERIANIM_METADATA = {}\n"), mock.patch.object(
                 session,
                 "_execute_validate_refine",
                 side_effect=[True, True],
             ), mock.patch.object(session.blender, "get_scene_graph", return_value=bridge_scene_graph()), mock.patch.object(
                 session.refiner,
                 "add_animation",
-                return_value="import bpy\nLL3M_METADATA = {}\n",
+                return_value="import bpy\nVERIANIM_METADATA = {}\n",
             ):
                 session._run_two_stage_animation_start(bridge_animation_ir())
 
@@ -830,9 +830,9 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             repaired_ir = json.loads((session.store.root / "ir_animation_stage_repaired.json").read_text(encoding="utf-8"))
 
         self.assertTrue(plan["applied"], plan)
-        self.assertIn("LL3M deterministic animation path repair", script)
-        self.assertIn("_ll3m_repair_recalibrate_keyframes", script)
-        self.assertIn("_ll3m_repair_keyframe.get(\"location\"", script)
+        self.assertIn("VeriAnim deterministic animation path repair", script)
+        self.assertIn("_verianim_repair_recalibrate_keyframes", script)
+        self.assertIn("_verianim_repair_keyframe.get(\"location\"", script)
         support = repaired_ir["animation"]["events"][0]["contact_constraints"][0]
         self.assertEqual((support["start_frame"], support["end_frame"]), (37, 84))
 
@@ -859,10 +859,10 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
             )
 
             code = session._append_static_support_repair(
-                "LL3M_METADATA = {}\n# LL3M deterministic static support repair\nold\n"
+                "VERIANIM_METADATA = {}\n# VeriAnim deterministic static support repair\nold\n"
             )
 
-        self.assertNotIn("LL3M deterministic static support repair", code)
+        self.assertNotIn("VeriAnim deterministic static support repair", code)
 
 
 class BackgroundCommandQueueTest(unittest.TestCase):

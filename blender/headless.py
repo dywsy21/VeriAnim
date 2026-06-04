@@ -1,5 +1,5 @@
 """
-Headless Blender execution module for LL3M Client.
+Headless Blender execution module for VeriAnim Client.
 
 This module provides functionality to execute Blender code in headless mode
 using subprocess, which is useful for rendering operations on less powerful computers.

@@ -1,7 +1,7 @@
 # Blender 4.5.4 High-Value API Notes for Agents
 
 This file summarizes official Blender 4.5 API documentation into coding rules
-for the local LL3M animation harness. It is deliberately concise so it can be
+for the local VeriAnim animation harness. It is deliberately concise so it can be
 retrieved directly by planner, coder, verifier, and refiner agents.
 
 Sources are official Blender pages listed in `blender_4_5_official_sources.md`.
@@ -41,7 +41,7 @@ operators can fail their `poll()` check when context is wrong.
 Generated code should create predictable collections:
 
 ```python
-root = bpy.data.collections.new("ll3m_scene")
+root = bpy.data.collections.new("verianim_scene")
 bpy.context.scene.collection.children.link(root)
 
 objects_col = bpy.data.collections.new("objects")
@@ -56,9 +56,9 @@ of relying on the active context.
 Recommended custom properties:
 
 ```python
-obj["ll3m_id"] = "cup"
-obj["ll3m_role"] = "primary"
-obj["ll3m_part"] = "handle"
+obj["verianim_id"] = "cup"
+obj["verianim_role"] = "primary"
+obj["verianim_part"] = "handle"
 ```
 
 These properties make deterministic and visual-verification reports easier to
@@ -208,10 +208,10 @@ regenerating modeled objects.
 Use the scene render settings before invoking render operators:
 
 ```python
-from blender import ll3m_utils as ll3m
+from blender import verianim_utils as verianim
 
 scene = bpy.context.scene
-ll3m.configure_render(scene, width=1280, height=720, fps=24, engine="workbench")
+verianim.configure_render(scene, width=1280, height=720, fps=24, engine="workbench")
 scene.frame_set(frame)
 scene.camera = camera
 scene.render.filepath = output_path

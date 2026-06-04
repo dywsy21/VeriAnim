@@ -27,9 +27,9 @@ class HarnessEvent:
 
 
 EventCallback = Callable[[HarnessEvent], None]
-_ANIMATION_REPAIR_MARKER = "# LL3M deterministic animation path repair"
-_STATIC_SUPPORT_REPAIR_MARKER = "# LL3M deterministic static support repair"
-_ANIMATION_CONTACT_REPAIR_MARKER = "# LL3M deterministic animation contact repair"
+_ANIMATION_REPAIR_MARKER = "# VeriAnim deterministic animation path repair"
+_STATIC_SUPPORT_REPAIR_MARKER = "# VeriAnim deterministic static support repair"
+_ANIMATION_CONTACT_REPAIR_MARKER = "# VeriAnim deterministic animation contact repair"
 _REPAIR_MARKERS = (_STATIC_SUPPORT_REPAIR_MARKER, _ANIMATION_REPAIR_MARKER, _ANIMATION_CONTACT_REPAIR_MARKER)
 
 
@@ -125,26 +125,26 @@ def _animation_contact_repair_script(report: ValidationReport) -> str:
     )
     return f"""
 {_ANIMATION_CONTACT_REPAIR_MARKER}
-import json as _ll3m_contact_repair_json
-import bpy as _ll3m_contact_repair_bpy
-from mathutils import Vector as _ll3m_contact_repair_Vector
+import json as _verianim_contact_repair_json
+import bpy as _verianim_contact_repair_bpy
+from mathutils import Vector as _verianim_contact_repair_Vector
 
-_LL3M_ANIMATION_CONTACT_REPAIRS = _ll3m_contact_repair_json.loads({payload!r})
+_VERIANIM_ANIMATION_CONTACT_REPAIRS = _verianim_contact_repair_json.loads({payload!r})
 
-def _ll3m_contact_repair_find_root(ll3m_id):
-    marker = str(ll3m_id)
-    exact = _ll3m_contact_repair_bpy.data.objects.get(marker)
+def _verianim_contact_repair_find_root(verianim_id):
+    marker = str(verianim_id)
+    exact = _verianim_contact_repair_bpy.data.objects.get(marker)
     if exact is not None:
         return exact
-    for obj in _ll3m_contact_repair_bpy.data.objects:
-        if str(obj.get("ll3m_id", "")) == marker:
+    for obj in _verianim_contact_repair_bpy.data.objects:
+        if str(obj.get("verianim_id", "")) == marker:
             return obj
-    for obj in _ll3m_contact_repair_bpy.data.objects:
+    for obj in _verianim_contact_repair_bpy.data.objects:
         if obj.name.startswith(marker):
             return obj
     return None
 
-def _ll3m_contact_repair_iter_fcurves(action):
+def _verianim_contact_repair_iter_fcurves(action):
     if not action:
         return
     seen = set()
@@ -163,10 +163,10 @@ def _ll3m_contact_repair_iter_fcurves(action):
                         seen.add(marker)
                         yield fcurve
 
-def _ll3m_contact_repair_shift_z(obj, dz):
+def _verianim_contact_repair_shift_z(obj, dz):
     obj.location.z += float(dz)
     action = obj.animation_data.action if obj.animation_data else None
-    for fcurve in _ll3m_contact_repair_iter_fcurves(action):
+    for fcurve in _verianim_contact_repair_iter_fcurves(action):
         if fcurve.data_path != "location" or fcurve.array_index != 2:
             continue
         for point in fcurve.keyframe_points:
@@ -175,17 +175,17 @@ def _ll3m_contact_repair_shift_z(obj, dz):
             point.handle_right.y += float(dz)
         fcurve.update()
 
-def _ll3m_contact_repair_descendants(root):
+def _verianim_contact_repair_descendants(root):
     yield root
     for child in root.children:
-        yield from _ll3m_contact_repair_descendants(child)
+        yield from _verianim_contact_repair_descendants(child)
 
-def _ll3m_contact_repair_bbox(root):
+def _verianim_contact_repair_bbox(root):
     corners = []
-    for obj in _ll3m_contact_repair_descendants(root):
+    for obj in _verianim_contact_repair_descendants(root):
         if not hasattr(obj, "bound_box") or not obj.bound_box:
             continue
-        corners.extend(obj.matrix_world @ _ll3m_contact_repair_Vector(corner) for corner in obj.bound_box)
+        corners.extend(obj.matrix_world @ _verianim_contact_repair_Vector(corner) for corner in obj.bound_box)
     if not corners:
         loc = root.matrix_world.translation
         return (loc.x, loc.y, loc.z, loc.x, loc.y, loc.z)
@@ -198,23 +198,23 @@ def _ll3m_contact_repair_bbox(root):
         max(corner.z for corner in corners),
     )
 
-def _ll3m_contact_repair_xy_overlap(a, b):
+def _verianim_contact_repair_xy_overlap(a, b):
     return min(a[3], b[3]) > max(a[0], b[0]) and min(a[4], b[4]) > max(a[1], b[1])
 
-def _ll3m_contact_repair_z_fcurves(obj):
+def _verianim_contact_repair_z_fcurves(obj):
     action = obj.animation_data.action if obj.animation_data else None
-    for fcurve in _ll3m_contact_repair_iter_fcurves(action):
+    for fcurve in _verianim_contact_repair_iter_fcurves(action):
         if fcurve.data_path == "location" and fcurve.array_index == 2:
             yield fcurve
 
-def _ll3m_contact_repair_align_keyed_support(subject, support):
-    scene = _ll3m_contact_repair_bpy.context.scene
-    fcurves = list(_ll3m_contact_repair_z_fcurves(subject))
+def _verianim_contact_repair_align_keyed_support(subject, support):
+    scene = _verianim_contact_repair_bpy.context.scene
+    fcurves = list(_verianim_contact_repair_z_fcurves(subject))
     if not fcurves:
-        _ll3m_contact_repair_bpy.context.view_layer.update()
-        subject_box = _ll3m_contact_repair_bbox(subject)
-        support_box = _ll3m_contact_repair_bbox(support)
-        if _ll3m_contact_repair_xy_overlap(subject_box, support_box):
+        _verianim_contact_repair_bpy.context.view_layer.update()
+        subject_box = _verianim_contact_repair_bbox(subject)
+        support_box = _verianim_contact_repair_bbox(support)
+        if _verianim_contact_repair_xy_overlap(subject_box, support_box):
             dz = support_box[5] - subject_box[2] + 0.001
             if abs(dz) <= 0.25:
                 subject.location.z += dz
@@ -224,10 +224,10 @@ def _ll3m_contact_repair_align_keyed_support(subject, support):
         for point in fcurve.keyframe_points:
             frame = int(round(point.co.x))
             scene.frame_set(frame)
-            _ll3m_contact_repair_bpy.context.view_layer.update()
-            subject_box = _ll3m_contact_repair_bbox(subject)
-            support_box = _ll3m_contact_repair_bbox(support)
-            if not _ll3m_contact_repair_xy_overlap(subject_box, support_box):
+            _verianim_contact_repair_bpy.context.view_layer.update()
+            subject_box = _verianim_contact_repair_bbox(subject)
+            support_box = _verianim_contact_repair_bbox(support)
+            if not _verianim_contact_repair_xy_overlap(subject_box, support_box):
                 continue
             dz = support_box[5] - subject_box[2] + 0.001
             if abs(dz) > 0.25 or abs(dz) <= 1e-5:
@@ -238,18 +238,18 @@ def _ll3m_contact_repair_align_keyed_support(subject, support):
         fcurve.update()
     scene.frame_set(original_frame)
 
-for _ll3m_contact_repair_id, _ll3m_contact_repair_support_id in _LL3M_ANIMATION_CONTACT_REPAIRS.get("support_pairs", {{}}).items():
-    _ll3m_contact_repair_obj = _ll3m_contact_repair_find_root(_ll3m_contact_repair_id)
-    _ll3m_contact_repair_support = _ll3m_contact_repair_find_root(_ll3m_contact_repair_support_id)
-    if _ll3m_contact_repair_obj is not None and _ll3m_contact_repair_support is not None:
-        _ll3m_contact_repair_align_keyed_support(_ll3m_contact_repair_obj, _ll3m_contact_repair_support)
+for _verianim_contact_repair_id, _verianim_contact_repair_support_id in _VERIANIM_ANIMATION_CONTACT_REPAIRS.get("support_pairs", {{}}).items():
+    _verianim_contact_repair_obj = _verianim_contact_repair_find_root(_verianim_contact_repair_id)
+    _verianim_contact_repair_support = _verianim_contact_repair_find_root(_verianim_contact_repair_support_id)
+    if _verianim_contact_repair_obj is not None and _verianim_contact_repair_support is not None:
+        _verianim_contact_repair_align_keyed_support(_verianim_contact_repair_obj, _verianim_contact_repair_support)
 
-for _ll3m_contact_repair_id, _ll3m_contact_repair_dz in _LL3M_ANIMATION_CONTACT_REPAIRS.get("constant_deltas", {{}}).items():
-    _ll3m_contact_repair_obj = _ll3m_contact_repair_find_root(_ll3m_contact_repair_id)
-    if _ll3m_contact_repair_obj is not None:
-        _ll3m_contact_repair_shift_z(_ll3m_contact_repair_obj, _ll3m_contact_repair_dz)
+for _verianim_contact_repair_id, _verianim_contact_repair_dz in _VERIANIM_ANIMATION_CONTACT_REPAIRS.get("constant_deltas", {{}}).items():
+    _verianim_contact_repair_obj = _verianim_contact_repair_find_root(_verianim_contact_repair_id)
+    if _verianim_contact_repair_obj is not None:
+        _verianim_contact_repair_shift_z(_verianim_contact_repair_obj, _verianim_contact_repair_dz)
 
-_ll3m_contact_repair_bpy.context.view_layer.update()
+_verianim_contact_repair_bpy.context.view_layer.update()
 """.strip()
 
 
@@ -678,11 +678,11 @@ class InteractiveHarnessSession:
             for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
         }
-        if "LL3M_METADATA" not in assigned_names:
+        if "VERIANIM_METADATA" not in assigned_names:
             issues.append(
                 ValidationIssue(
                     code="CODE_MISSING_METADATA",
-                    message="Generated script must finish with LL3M_METADATA so the harness can tell it is complete.",
+                    message="Generated script must finish with VERIANIM_METADATA so the harness can tell it is complete.",
                     severity=Severity.MAJOR,
                 )
             )
@@ -709,7 +709,7 @@ class InteractiveHarnessSession:
                 issues.append(
                     ValidationIssue(
                         code="CODE_MISSING_ANIMATION_KEYFRAMES",
-                        message="Animation script has too few actual keyframe operations or ll3m animation primitive calls for the planned events.",
+                        message="Animation script has too few actual keyframe operations or verianim animation primitive calls for the planned events.",
                         severity=Severity.CRITICAL,
                     )
                 )
@@ -719,7 +719,7 @@ class InteractiveHarnessSession:
                         code="CODE_MISSING_PICK_PLACE_PRIMITIVE",
                         message=(
                             "Pick-carry-place animation with a gripper and carried object must use "
-                            "ll3m.animate_parallel_gripper_pick_place or ll3m.animate_pick_place; "
+                            "verianim.animate_parallel_gripper_pick_place or verianim.animate_pick_place; "
                             "manual gripper/package keyframes repeatedly cause contact penetration."
                         ),
                         severity=Severity.CRITICAL,
@@ -975,7 +975,7 @@ def _undefined_module_references(tree: ast.AST) -> list[str]:
 
 
 def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
-    ll3m_animation_helpers = {
+    verianim_animation_helpers = {
         "insert_location_keyframe",
         "insert_rotation_keyframe",
         "insert_scale_keyframe",
@@ -1011,7 +1011,7 @@ def _count_effective_keyframe_calls(tree: ast.AST) -> list[ast.Call]:
             calls.append(node)
         elif isinstance(node.func, ast.Name) and node.func.id in helper_names:
             calls.append(node)
-        elif isinstance(node.func, ast.Attribute) and node.func.attr in ll3m_animation_helpers:
+        elif isinstance(node.func, ast.Attribute) and node.func.attr in verianim_animation_helpers:
             calls.append(node)
             if node.func.attr == "animate_pick_place":
                 calls.extend([node, node, node])
@@ -1144,8 +1144,8 @@ def _scene_preservation_report(
         for event in [*ir.animation.events, *ir.animation.camera_events]:
             animated_ids.update(event.subject_ids)
             animated_ids.update(event.target_ids)
-    baseline = _objects_by_ll3m_id(baseline_graph)
-    current = _objects_by_ll3m_id(current_graph)
+    baseline = _objects_by_verianim_id(baseline_graph)
+    current = _objects_by_verianim_id(current_graph)
     issues: list[ValidationIssue] = []
     for obj in ir.scene.objects:
         if obj.id in animated_ids:
@@ -1189,14 +1189,14 @@ def _scene_preservation_report(
     return ValidationReport.ok(VerificationMode.DETERMINISTIC, "Animation stage preserved static scene baseline geometry.")
 
 
-def _objects_by_ll3m_id(scene_graph: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _objects_by_verianim_id(scene_graph: dict[str, Any]) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for obj in scene_graph.get("objects", []) if isinstance(scene_graph, dict) else []:
         if not isinstance(obj, dict):
             continue
-        ll3m_id = obj.get("ll3m_id")
-        if isinstance(ll3m_id, str) and ll3m_id and ll3m_id not in result:
-            result[ll3m_id] = obj
+        verianim_id = obj.get("verianim_id")
+        if isinstance(verianim_id, str) and verianim_id and verianim_id not in result:
+            result[verianim_id] = obj
     return result
 
 

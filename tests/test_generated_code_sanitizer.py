@@ -11,32 +11,32 @@ class GeneratedCodeSanitizerTest(unittest.TestCase):
 
         sanitized = _sanitize_generated_blender_code(code)
 
-        self.assertIn("from blender import ll3m_utils as llm", sanitized)
+        self.assertIn("from blender import verianim_utils as llm", sanitized)
         self.assertNotIn("from blender import llm_utils", sanitized)
 
     def test_rewrites_make_material_spec_dict_keyword(self) -> None:
-        code = "mat = ll3m.make_material(spec_dict={'id': 'mat', 'base_color': [1, 0, 0, 1]})\n"
+        code = "mat = verianim.make_material(spec_dict={'id': 'mat', 'base_color': [1, 0, 0, 1]})\n"
 
         sanitized = _sanitize_generated_blender_code(code)
 
-        self.assertIn("ll3m.make_material({'id': 'mat'", sanitized)
+        self.assertIn("verianim.make_material({'id': 'mat'", sanitized)
         self.assertNotIn("spec_dict=", sanitized)
 
     def test_wraps_helper_scale_and_rotation_keywords(self) -> None:
         code = """
-from blender import ll3m_utils as ll3m
-floor = ll3m.add_plane(name="floor", size=1.0, scale=(10, 10, 1), rotation=(0, 0, 0))
-ramp = ll3m.add_cube("ramp", size=1.0, scale=(3, 1, 0.2))
-print("ll3m.add_cube(scale='text only')")
+from blender import verianim_utils as verianim
+floor = verianim.add_plane(name="floor", size=1.0, scale=(10, 10, 1), rotation=(0, 0, 0))
+ramp = verianim.add_cube("ramp", size=1.0, scale=(3, 1, 0.2))
+print("verianim.add_cube(scale='text only')")
 """
 
         sanitized = _sanitize_generated_blender_code(code)
 
-        self.assertIn("def ll3m_safe_add_cube", sanitized)
-        self.assertIn("def ll3m_safe_add_plane", sanitized)
-        self.assertIn("floor = ll3m_safe_add_plane(", sanitized)
-        self.assertIn("ramp = ll3m_safe_add_cube(", sanitized)
-        self.assertIn("print(\"ll3m.add_cube(scale='text only')\")", sanitized)
+        self.assertIn("def verianim_safe_add_cube", sanitized)
+        self.assertIn("def verianim_safe_add_plane", sanitized)
+        self.assertIn("floor = verianim_safe_add_plane(", sanitized)
+        self.assertIn("ramp = verianim_safe_add_cube(", sanitized)
+        self.assertIn("print(\"verianim.add_cube(scale='text only')\")", sanitized)
 
     def test_removes_wave_modifier_falloff_assignment_only(self) -> None:
         code = """
@@ -70,7 +70,7 @@ text = "Vector()"
 
     def test_patches_direct_action_fcurve_loop_without_touching_helper_body(self) -> None:
         code = """
-def ll3m_iter_action_fcurves(action):
+def verianim_iter_action_fcurves(action):
     if hasattr(action, "fcurves"):
         for fcurve in action.fcurves:
             yield fcurve
@@ -82,8 +82,8 @@ for fcurve in action.fcurves:
         sanitized = _sanitize_generated_blender_code(code)
 
         self.assertIn("for fcurve in action.fcurves:\n            yield fcurve", sanitized)
-        self.assertIn("for fcurve in ll3m_iter_action_fcurves(action):", sanitized)
-        self.assertEqual(sanitized.count("def ll3m_iter_action_fcurves"), 1)
+        self.assertIn("for fcurve in verianim_iter_action_fcurves(action):", sanitized)
+        self.assertEqual(sanitized.count("def verianim_iter_action_fcurves"), 1)
 
     def test_adds_action_fcurve_helper_when_missing(self) -> None:
         code = """
@@ -95,8 +95,8 @@ if obj.animation_data and obj.animation_data.action:
 
         sanitized = _sanitize_generated_blender_code(code)
 
-        self.assertIn("def ll3m_iter_action_fcurves", sanitized)
-        self.assertIn("for fc in ll3m_iter_action_fcurves(action):", sanitized)
+        self.assertIn("def verianim_iter_action_fcurves", sanitized)
+        self.assertIn("for fc in verianim_iter_action_fcurves(action):", sanitized)
 
     def test_preserves_valid_interpolation_assignment(self) -> None:
         code = """
@@ -116,36 +116,36 @@ class HistoricalGeneratedCodeSanitizerSmokeTest(unittest.TestCase):
         cases = [
             (
                 "make_material spec_dict keyword",
-                "mat = ll3m.make_material(spec_dict={'id': 'mat', 'base_color': [1, 0, 0, 1]})\n",
+                "mat = verianim.make_material(spec_dict={'id': 'mat', 'base_color': [1, 0, 0, 1]})\n",
                 ["spec_dict="],
-                ["ll3m.make_material({"],
+                ["verianim.make_material({"],
             ),
             (
                 "helper scale keywords",
                 """
-from blender import ll3m_utils as ll3m
-ground = ll3m.add_plane("ground", size=4, scale=(1, 1, 1), rotation=(0, 0, 0))
-deck = ll3m.add_cube("deck", size=1, scale=(2, 1, 0.2))
+from blender import verianim_utils as verianim
+ground = verianim.add_plane("ground", size=4, scale=(1, 1, 1), rotation=(0, 0, 0))
+deck = verianim.add_cube("deck", size=1, scale=(2, 1, 0.2))
 """,
-                ["ll3m.add_plane(", "ll3m.add_cube("],
-                ["ll3m_safe_add_plane(", "ll3m_safe_add_cube("],
+                ["verianim.add_plane(", "verianim.add_cube("],
+                ["verianim_safe_add_plane(", "verianim_safe_add_cube("],
             ),
             (
                 "wave modifier falloff and helper scale",
                 """
-from blender import ll3m_utils as ll3m
-ground = ll3m.add_plane("ground", size=4, scale=(1, 1, 1))
+from blender import verianim_utils as verianim
+ground = verianim.add_plane("ground", size=4, scale=(1, 1, 1))
 wave = cloth.modifiers["Wave"]
 wave.falloff = "NONE"
 """,
                 ["wave.falloff"],
-                ["removed unsupported WaveModifier falloff assignment", "ll3m_safe_add_plane("],
+                ["removed unsupported WaveModifier falloff assignment", "verianim_safe_add_plane("],
             ),
             (
                 "legacy llm_utils import alias",
                 "from blender import llm_utils as llm\nscene = llm.clear_scene()\n",
                 ["from blender import llm_utils as llm"],
-                ["from blender import ll3m_utils as llm"],
+                ["from blender import verianim_utils as llm"],
             ),
             (
                 "direct action fcurve loop",
@@ -155,13 +155,13 @@ for fcurve in action.fcurves:
     fcurve.update()
 """,
                 [],
-                ["for fcurve in ll3m_iter_action_fcurves(action):"],
+                ["for fcurve in verianim_iter_action_fcurves(action):"],
             ),
             (
                 "look_at object target",
-                "ll3m.look_at(bpy.data.objects['ground'], leg)\n",
-                ["ll3m.look_at(bpy.data.objects['ground'], leg)"],
-                ["ll3m_safe_look_at(bpy.data.objects['ground'], leg)"],
+                "verianim.look_at(bpy.data.objects['ground'], leg)\n",
+                ["verianim.look_at(bpy.data.objects['ground'], leg)"],
+                ["verianim_safe_look_at(bpy.data.objects['ground'], leg)"],
             ),
         ]
 

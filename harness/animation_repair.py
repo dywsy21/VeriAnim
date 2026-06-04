@@ -267,14 +267,14 @@ def blender_repair_script(plan: AnimationRepairPlan) -> str:
     body = "\n\n".join(blocks)
     return f"""
 
-# LL3M deterministic animation path repair
-import json as _ll3m_repair_json
-import bpy as _ll3m_repair_bpy
-from mathutils import Vector as _ll3m_repair_Vector
+# VeriAnim deterministic animation path repair
+import json as _verianim_repair_json
+import bpy as _verianim_repair_bpy
+from mathutils import Vector as _verianim_repair_Vector
 
-_LL3M_ANIMATION_REPAIR_PLAN = _ll3m_repair_json.loads({payload!r})
+_VERIANIM_ANIMATION_REPAIR_PLAN = _verianim_repair_json.loads({payload!r})
 
-def _ll3m_repair_descendants(obj):
+def _verianim_repair_descendants(obj):
     found = []
     stack = list(getattr(obj, "children", []))
     while stack:
@@ -285,14 +285,14 @@ def _ll3m_repair_descendants(obj):
         stack.extend(list(getattr(child, "children", [])))
     return found
 
-def _ll3m_repair_add_match(matches, obj):
+def _verianim_repair_add_match(matches, obj):
     if obj not in matches:
         matches.append(obj)
-    for child in _ll3m_repair_descendants(obj):
+    for child in _verianim_repair_descendants(obj):
         if child not in matches:
             matches.append(child)
 
-def _ll3m_repair_add_parent_roots(matches, marker):
+def _verianim_repair_add_parent_roots(matches, marker):
     for obj in list(matches):
         parent = getattr(obj, "parent", None)
         while parent is not None:
@@ -300,33 +300,33 @@ def _ll3m_repair_add_parent_roots(matches, marker):
                 child
                 for child in getattr(parent, "children", [])
                 if child in matches
-                or str(child.get("ll3m_id", "")) == marker
+                or str(child.get("verianim_id", "")) == marker
                 or child.name.startswith(marker)
             ]
             if len(matching_children) >= 2 or parent.name.startswith(marker) or "root" in parent.name.lower():
                 if parent not in matches:
                     matches.insert(0, parent)
-                _ll3m_repair_add_match(matches, parent)
+                _verianim_repair_add_match(matches, parent)
                 break
             parent = getattr(parent, "parent", None)
 
-def _ll3m_repair_find_objects(ll3m_id):
-    marker = str(ll3m_id)
+def _verianim_repair_find_objects(verianim_id):
+    marker = str(verianim_id)
     matches = []
-    exact = _ll3m_repair_bpy.data.objects.get(marker)
+    exact = _verianim_repair_bpy.data.objects.get(marker)
     if exact:
-        _ll3m_repair_add_match(matches, exact)
-    for obj in _ll3m_repair_bpy.data.objects:
-        obj_id = str(obj.get("ll3m_id", ""))
+        _verianim_repair_add_match(matches, exact)
+    for obj in _verianim_repair_bpy.data.objects:
+        obj_id = str(obj.get("verianim_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
-            _ll3m_repair_add_match(matches, obj)
-    for obj in _ll3m_repair_bpy.data.objects:
+            _verianim_repair_add_match(matches, obj)
+    for obj in _verianim_repair_bpy.data.objects:
         if obj not in matches and obj.name.startswith(marker):
-            _ll3m_repair_add_match(matches, obj)
-    _ll3m_repair_add_parent_roots(matches, marker)
+            _verianim_repair_add_match(matches, obj)
+    _verianim_repair_add_parent_roots(matches, marker)
     return matches
 
-def _ll3m_repair_iter_action_fcurves(action):
+def _verianim_repair_iter_action_fcurves(action):
     if not action:
         return
     seen = set()
@@ -347,7 +347,7 @@ def _ll3m_repair_iter_action_fcurves(action):
                             seen.add(marker)
                             yield collection, fcurve
 
-def _ll3m_repair_remove_fcurve(collection, fcurve):
+def _verianim_repair_remove_fcurve(collection, fcurve):
     try:
         collection.remove(fcurve)
         return
@@ -360,21 +360,21 @@ def _ll3m_repair_remove_fcurve(collection, fcurve):
     except Exception:
         pass
 
-def _ll3m_repair_clear_location_animation(obj):
+def _verianim_repair_clear_location_animation(obj):
     if obj.animation_data and obj.animation_data.action:
-        for collection, fcurve in list(_ll3m_repair_iter_action_fcurves(obj.animation_data.action)):
+        for collection, fcurve in list(_verianim_repair_iter_action_fcurves(obj.animation_data.action)):
             if fcurve.data_path == "location":
-                _ll3m_repair_remove_fcurve(collection, fcurve)
+                _verianim_repair_remove_fcurve(collection, fcurve)
 
-def _ll3m_repair_normalize_child_offsets(root, objects, reference_location):
+def _verianim_repair_normalize_child_offsets(root, objects, reference_location):
     direct_children = [obj for obj in objects if obj is not root and obj.parent == root]
     if not direct_children:
         return
-    center = _ll3m_repair_Vector((0.0, 0.0, 0.0))
+    center = _verianim_repair_Vector((0.0, 0.0, 0.0))
     for child in direct_children:
         center += child.location
     center /= len(direct_children)
-    reference = _ll3m_repair_Vector(tuple(float(value) for value in reference_location))
+    reference = _verianim_repair_Vector(tuple(float(value) for value in reference_location))
     root_extent = max(float(value) for value in getattr(root, "dimensions", (1.0, 1.0, 1.0)) if float(value) >= 0.0)
     threshold = max(root_extent * 2.0, 10.0)
     if center.length <= max(root_extent * 0.75, 0.25):
@@ -389,17 +389,17 @@ def _ll3m_repair_normalize_child_offsets(root, objects, reference_location):
         offset = child.location - center
         child.location = basis @ offset if basis is not None else offset
 
-def _ll3m_repair_select_anchor(ll3m_id, objects):
-    marker = str(ll3m_id)
-    exact = _ll3m_repair_bpy.data.objects.get(marker)
+def _verianim_repair_select_anchor(verianim_id, objects):
+    marker = str(verianim_id)
+    exact = _verianim_repair_bpy.data.objects.get(marker)
     if exact in objects:
         return exact
-    candidates = [obj for obj in objects if str(obj.get("ll3m_id", "")) == marker]
+    candidates = [obj for obj in objects if str(obj.get("verianim_id", "")) == marker]
     named_roots = [
         obj
         for obj in objects
         if (obj.name == marker or "root" in obj.name.lower())
-        and any(child in objects for child in _ll3m_repair_descendants(obj))
+        and any(child in objects for child in _verianim_repair_descendants(obj))
     ]
     if named_roots:
         named_roots.sort(key=lambda obj: (0 if obj.name == marker else 1, 0 if "root" in obj.name.lower() else 1, obj.name))
@@ -408,7 +408,7 @@ def _ll3m_repair_select_anchor(ll3m_id, objects):
     with_children = [
         obj
         for obj in parent_roots
-        if any(child in objects for child in _ll3m_repair_descendants(obj))
+        if any(child in objects for child in _verianim_repair_descendants(obj))
     ]
     if with_children:
         return with_children[0]
@@ -417,58 +417,58 @@ def _ll3m_repair_select_anchor(ll3m_id, objects):
         return empty_roots[0]
     return (parent_roots or candidates or objects or [None])[0]
 
-def _ll3m_repair_uses_flat_group(anchor, objects):
+def _verianim_repair_uses_flat_group(anchor, objects):
     if anchor is None:
         return False
-    if any(child in objects for child in _ll3m_repair_descendants(anchor)):
+    if any(child in objects for child in _verianim_repair_descendants(anchor)):
         return False
     parent_roots = [obj for obj in objects if getattr(obj, "parent", None) not in objects]
     return len(parent_roots) > 1
 
-def _ll3m_repair_apply_flat_group_keyframes(anchor, objects, keyframes):
-    anchor_location = _ll3m_repair_Vector(anchor.location)
-    offsets = [(obj, _ll3m_repair_Vector(obj.location) - anchor_location) for obj in objects]
+def _verianim_repair_apply_flat_group_keyframes(anchor, objects, keyframes):
+    anchor_location = _verianim_repair_Vector(anchor.location)
+    offsets = [(obj, _verianim_repair_Vector(obj.location) - anchor_location) for obj in objects]
     for obj, offset in offsets:
         for keyframe in keyframes:
-            location = _ll3m_repair_Vector(tuple(float(value) for value in keyframe.get("location", [0.0, 0.0, 0.0]))) + offset
-            _ll3m_repair_insert_location(obj, list(location), keyframe.get("frame", 1))
-        _ll3m_repair_set_linear_location(obj)
+            location = _verianim_repair_Vector(tuple(float(value) for value in keyframe.get("location", [0.0, 0.0, 0.0]))) + offset
+            _verianim_repair_insert_location(obj, list(location), keyframe.get("frame", 1))
+        _verianim_repair_set_linear_location(obj)
 
-def _ll3m_repair_world_bbox(objects):
-    _ll3m_repair_bpy.context.view_layer.update()
+def _verianim_repair_world_bbox(objects):
+    _verianim_repair_bpy.context.view_layer.update()
     points = []
     for obj in objects:
         if obj.type not in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} or not getattr(obj, "bound_box", None):
             continue
-        points.extend(obj.matrix_world @ _ll3m_repair_Vector(corner) for corner in obj.bound_box)
+        points.extend(obj.matrix_world @ _verianim_repair_Vector(corner) for corner in obj.bound_box)
     if not points:
         return None
     return (
-        _ll3m_repair_Vector((min(point.x for point in points), min(point.y for point in points), min(point.z for point in points))),
-        _ll3m_repair_Vector((max(point.x for point in points), max(point.y for point in points), max(point.z for point in points))),
+        _verianim_repair_Vector((min(point.x for point in points), min(point.y for point in points), min(point.z for point in points))),
+        _verianim_repair_Vector((max(point.x for point in points), max(point.y for point in points), max(point.z for point in points))),
     )
 
-def _ll3m_repair_root_to_bottom(root, objects):
-    bbox = _ll3m_repair_world_bbox(objects)
+def _verianim_repair_root_to_bottom(root, objects):
+    bbox = _verianim_repair_world_bbox(objects)
     if not bbox:
         return 0.0
     return float(root.matrix_world.translation.z - bbox[0].z)
 
-def _ll3m_repair_support_top(support_id):
-    support_objects = _ll3m_repair_find_objects(support_id)
-    bbox = _ll3m_repair_world_bbox(support_objects)
+def _verianim_repair_support_top(support_id):
+    support_objects = _verianim_repair_find_objects(support_id)
+    bbox = _verianim_repair_world_bbox(support_objects)
     if not bbox:
         return None
     return float(bbox[1].z)
 
-def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
+def _verianim_repair_recalibrate_keyframes(plan, root, objects):
     keyframes = list(plan.get("keyframes", []))
-    support_top = _ll3m_repair_support_top(plan.get("support_id"))
-    root_to_bottom = _ll3m_repair_root_to_bottom(root, objects)
+    support_top = _verianim_repair_support_top(plan.get("support_id"))
+    root_to_bottom = _verianim_repair_root_to_bottom(root, objects)
     support_z = support_top + root_to_bottom + 0.001 if support_top is not None else None
     terminal_z = None
     for terminal_id in ("ground", "floor", "terrain"):
-        terminal_top = _ll3m_repair_support_top(terminal_id)
+        terminal_top = _verianim_repair_support_top(terminal_id)
         if terminal_top is not None:
             terminal_z = terminal_top + root_to_bottom + 0.001
             break
@@ -480,7 +480,7 @@ def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
         label = str(keyframe.get("label", "")).lower()
         label_prefix = "centered on support "
         if label.startswith(label_prefix):
-            label_support_top = _ll3m_repair_support_top(label[len(label_prefix):].strip())
+            label_support_top = _verianim_repair_support_top(label[len(label_prefix):].strip())
             if label_support_top is not None:
                 location[2] = label_support_top + root_to_bottom + 0.001
                 keyframe["location"] = location
@@ -497,16 +497,16 @@ def _ll3m_repair_recalibrate_keyframes(plan, root, objects):
             keyframe["location"] = location
     return keyframes
 
-def _ll3m_repair_insert_location(obj, location, frame):
+def _verianim_repair_insert_location(obj, location, frame):
     obj.location = tuple(location)
     obj.keyframe_insert(data_path="location", frame=int(frame))
 
-def _ll3m_repair_set_linear_location(obj):
+def _verianim_repair_set_linear_location(obj):
     if obj.animation_data and obj.animation_data.action:
-        for _ll3m_repair_collection, _ll3m_repair_fcurve in _ll3m_repair_iter_action_fcurves(obj.animation_data.action):
-            if _ll3m_repair_fcurve.data_path == "location":
-                for _ll3m_repair_key in _ll3m_repair_fcurve.keyframe_points:
-                    _ll3m_repair_key.interpolation = "LINEAR"
+        for _verianim_repair_collection, _verianim_repair_fcurve in _verianim_repair_iter_action_fcurves(obj.animation_data.action):
+            if _verianim_repair_fcurve.data_path == "location":
+                for _verianim_repair_key in _verianim_repair_fcurve.keyframe_points:
+                    _verianim_repair_key.interpolation = "LINEAR"
 
 {body}
 """.rstrip()
@@ -531,7 +531,7 @@ def _scene_bboxes(scene_graph: dict[str, Any], object_ids: set[str]) -> dict[str
 
 def _candidate_object_ids(obj: dict[str, Any], object_ids: set[str]) -> set[str]:
     candidates: set[str] = set()
-    for key in ("ll3m_id", "name", "parent"):
+    for key in ("verianim_id", "name", "parent"):
         value = obj.get(key)
         if isinstance(value, str) and value:
             candidates.update(_matching_object_ids(value, object_ids))
@@ -556,7 +556,7 @@ def _scene_root_to_bottom(
     for obj in scene_graph.get("objects", []) if isinstance(scene_graph, dict) else []:
         if not isinstance(obj, dict):
             continue
-        if str(obj.get("ll3m_id", "")) != subject_id:
+        if str(obj.get("verianim_id", "")) != subject_id:
             continue
         location = obj.get("location")
         bbox = _bbox_from_payload(obj.get("bbox"))
@@ -580,30 +580,30 @@ def _merge_bbox(left: BBox, right: BBox) -> BBox:
 def _blender_repair_event_block(plan_index: int, plan: RepairedEventPlan) -> str:
     subject_literal = json.dumps(plan.subject_id, ensure_ascii=False)
     return f"""
-_ll3m_repair_plan = _LL3M_ANIMATION_REPAIR_PLAN["plans"][{plan_index}]
-_ll3m_repair_objects = _ll3m_repair_find_objects({subject_literal})
-_ll3m_repair_obj = _ll3m_repair_select_anchor({subject_literal}, _ll3m_repair_objects)
-if _ll3m_repair_obj is not None:
-    _ll3m_repair_obj["ll3m_id"] = {subject_literal}
-    for _ll3m_repair_clear_obj in _ll3m_repair_objects:
-        _ll3m_repair_clear_location_animation(_ll3m_repair_clear_obj)
-    if _ll3m_repair_uses_flat_group(_ll3m_repair_obj, _ll3m_repair_objects):
-        _ll3m_repair_keyframes = _ll3m_repair_recalibrate_keyframes(_ll3m_repair_plan, _ll3m_repair_obj, _ll3m_repair_objects)
-        _ll3m_repair_apply_flat_group_keyframes(_ll3m_repair_obj, _ll3m_repair_objects, _ll3m_repair_keyframes)
+_verianim_repair_plan = _VERIANIM_ANIMATION_REPAIR_PLAN["plans"][{plan_index}]
+_verianim_repair_objects = _verianim_repair_find_objects({subject_literal})
+_verianim_repair_obj = _verianim_repair_select_anchor({subject_literal}, _verianim_repair_objects)
+if _verianim_repair_obj is not None:
+    _verianim_repair_obj["verianim_id"] = {subject_literal}
+    for _verianim_repair_clear_obj in _verianim_repair_objects:
+        _verianim_repair_clear_location_animation(_verianim_repair_clear_obj)
+    if _verianim_repair_uses_flat_group(_verianim_repair_obj, _verianim_repair_objects):
+        _verianim_repair_keyframes = _verianim_repair_recalibrate_keyframes(_verianim_repair_plan, _verianim_repair_obj, _verianim_repair_objects)
+        _verianim_repair_apply_flat_group_keyframes(_verianim_repair_obj, _verianim_repair_objects, _verianim_repair_keyframes)
     else:
-        _ll3m_repair_normalize_child_offsets(
-            _ll3m_repair_obj,
-            _ll3m_repair_objects,
+        _verianim_repair_normalize_child_offsets(
+            _verianim_repair_obj,
+            _verianim_repair_objects,
             ({plan.keyframes[0].location[0]!r}, {plan.keyframes[0].location[1]!r}, {plan.keyframes[0].location[2]!r}),
         )
-        for _ll3m_repair_keyframe in _ll3m_repair_recalibrate_keyframes(_ll3m_repair_plan, _ll3m_repair_obj, _ll3m_repair_objects):
-            _ll3m_repair_insert_location(
-                _ll3m_repair_obj,
-                _ll3m_repair_keyframe.get("location", [0.0, 0.0, 0.0]),
-                _ll3m_repair_keyframe.get("frame", 1),
+        for _verianim_repair_keyframe in _verianim_repair_recalibrate_keyframes(_verianim_repair_plan, _verianim_repair_obj, _verianim_repair_objects):
+            _verianim_repair_insert_location(
+                _verianim_repair_obj,
+                _verianim_repair_keyframe.get("location", [0.0, 0.0, 0.0]),
+                _verianim_repair_keyframe.get("frame", 1),
             )
-        _ll3m_repair_set_linear_location(_ll3m_repair_obj)
-    _ll3m_repair_bpy.context.view_layer.update()
+        _verianim_repair_set_linear_location(_verianim_repair_obj)
+    _verianim_repair_bpy.context.view_layer.update()
 """.strip()
 
 

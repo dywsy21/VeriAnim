@@ -1,5 +1,5 @@
 """
-Configuration loader for LL3M Client.
+Configuration loader for VeriAnim Client.
 Loads client configuration from YAML files.
 """
 
@@ -45,7 +45,7 @@ def get_server_config() -> Dict[str, Any]:
     """Get server configuration with environment variable overrides.
     
     Environment variables override YAML config:
-    - LL3M_SERVER_URL
+    - VERIANIM_SERVER_URL
     
     Returns:
         Dict with server settings.
@@ -57,7 +57,7 @@ def get_server_config() -> Dict[str, Any]:
     url = server_cfg.get("url", "http://localhost:8080")
     
     # Environment variable overrides
-    url = os.environ.get("LL3M_SERVER_URL", url)
+    url = os.environ.get("VERIANIM_SERVER_URL", url)
     
     return {
         "url": url,
@@ -100,10 +100,10 @@ def get_blender_config() -> Dict[str, Any]:
     fallback_to_socket = True  # Always fallback for reliability
     
     # Environment variable overrides (for development/testing)
-    headless_rendering = os.environ.get("LL3M_BLENDER_HEADLESS_RENDERING", str(headless_rendering)).lower() == 'true'
-    gpu_rendering = os.environ.get("LL3M_BLENDER_GPU_RENDERING", str(gpu_rendering)).lower() == 'true'
-    headless_timeout = int(os.environ.get("LL3M_BLENDER_HEADLESS_TIMEOUT", str(headless_timeout)))
-    fallback_to_socket = os.environ.get("LL3M_BLENDER_FALLBACK_TO_SOCKET", str(fallback_to_socket)).lower() == 'true'
+    headless_rendering = os.environ.get("VERIANIM_BLENDER_HEADLESS_RENDERING", str(headless_rendering)).lower() == 'true'
+    gpu_rendering = os.environ.get("VERIANIM_BLENDER_GPU_RENDERING", str(gpu_rendering)).lower() == 'true'
+    headless_timeout = int(os.environ.get("VERIANIM_BLENDER_HEADLESS_TIMEOUT", str(headless_timeout)))
+    fallback_to_socket = os.environ.get("VERIANIM_BLENDER_FALLBACK_TO_SOCKET", str(fallback_to_socket)).lower() == 'true'
     
     return {
         "headless_rendering": headless_rendering,

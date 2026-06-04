@@ -6,51 +6,51 @@ import importlib
 
 import bpy
 
-import blender.ll3m_utils as ll3m
+import blender.verianim_utils as verianim
 
 
-ll3m = importlib.reload(ll3m)
+verianim = importlib.reload(verianim)
 
-scene = ll3m.clear_scene()
-scene = ll3m.set_frame_range(scene, start=1, end=130, fps=24)
-collection = ll3m.create_collection("factory_showcase")
+scene = verianim.clear_scene()
+scene = verianim.set_frame_range(scene, start=1, end=130, fps=24)
+collection = verianim.create_collection("factory_showcase")
 
-orange = ll3m.make_material("orange_plastic", base_color=(1.0, 0.38, 0.02, 1.0))
-gray = ll3m.make_material("gray_metal", base_color=(0.42, 0.42, 0.42, 1.0))
-blue = ll3m.make_material("blue_plastic", base_color=(0.05, 0.22, 0.9, 1.0))
-silver = ll3m.make_material("gripper_metal", base_color=(0.78, 0.78, 0.78, 1.0), metallic=0.4, roughness=0.35)
-green = ll3m.make_material("green_light", base_color=(0.0, 1.0, 0.1, 1.0))
+orange = verianim.make_material("orange_plastic", base_color=(1.0, 0.38, 0.02, 1.0))
+gray = verianim.make_material("gray_metal", base_color=(0.42, 0.42, 0.42, 1.0))
+blue = verianim.make_material("blue_plastic", base_color=(0.05, 0.22, 0.9, 1.0))
+silver = verianim.make_material("gripper_metal", base_color=(0.78, 0.78, 0.78, 1.0), metallic=0.4, roughness=0.35)
+green = verianim.make_material("green_light", base_color=(0.0, 1.0, 0.1, 1.0))
 
-conveyor = ll3m.add_cube("conveyor", size=1.0, collection=collection, material=gray, ll3m_id="conveyor", ll3m_role="support")
+conveyor = verianim.add_cube("conveyor", size=1.0, collection=collection, material=gray, verianim_id="conveyor", verianim_role="support")
 conveyor.scale = (1.5, 0.34, 0.12)
 conveyor.location = (0.0, 0.0, 0.72)
 
-tray = ll3m.add_cube("tray", size=1.0, collection=collection, material=blue, ll3m_id="tray", ll3m_role="support")
+tray = verianim.add_cube("tray", size=1.0, collection=collection, material=blue, verianim_id="tray", verianim_role="support")
 tray.scale = (0.48, 0.34, 0.10)
 tray.location = (0.82, 0.0, 0.72)
 
-box = ll3m.add_cube("box", size=1.0, collection=collection, material=orange, ll3m_id="box", ll3m_role="carried")
+box = verianim.add_cube("box", size=1.0, collection=collection, material=orange, verianim_id="box", verianim_role="carried")
 box.scale = (0.20, 0.20, 0.20)
 box.location = (-0.45, 0.0, 1.0)
-ll3m.align_bottom_to_top(box, conveyor, margin=0.002)
+verianim.align_bottom_to_top(box, conveyor, margin=0.002)
 
-parts = ll3m.create_parallel_gripper(
+parts = verianim.create_parallel_gripper(
     "gripper",
     carried=box,
     location=(0.10, 0.0, 1.15),
     collection=collection,
     material=silver,
-    ll3m_id="gripper",
+    verianim_id="gripper",
     axis="Y",
 )
 
-indicator = ll3m.add_uv_sphere(
+indicator = verianim.add_uv_sphere(
     "indicator_light",
     radius=0.06,
     collection=collection,
     material=green,
     location=(1.2, -0.28, 0.98),
-    ll3m_id="indicator_light",
+    verianim_id="indicator_light",
 )
 for frame, visible in ((1, False), (112, False), (118, True)):
     indicator.hide_viewport = not visible
@@ -58,8 +58,8 @@ for frame, visible in ((1, False), (112, False), (118, True)):
     indicator.keyframe_insert(data_path="hide_viewport", frame=frame)
     indicator.keyframe_insert(data_path="hide_render", frame=frame)
 
-ll3m.animate_support_slide(box, conveyor, (-0.45, 0.0), (0.10, 0.0), 1, 30)
-ll3m.animate_parallel_gripper_pick_place(
+verianim.animate_support_slide(box, conveyor, (-0.45, 0.0), (0.10, 0.0), 1, 30)
+verianim.animate_parallel_gripper_pick_place(
     parts["root"],
     box,
     conveyor,
@@ -73,13 +73,13 @@ ll3m.animate_parallel_gripper_pick_place(
     clearance=0.04,
 )
 
-ll3m.add_camera("camera_main", location=(2.3, -2.2, 1.7), look_at_target=(0.35, 0.0, 0.9), lens=35, make_active=True)
-ll3m.add_light("key_light", light_type="AREA", location=(0.0, -3.0, 4.0), energy=600, size=4)
-ll3m.configure_render(scene, width=960, height=540, fps=24, engine="workbench")
+verianim.add_camera("camera_main", location=(2.3, -2.2, 1.7), look_at_target=(0.35, 0.0, 0.9), lens=35, make_active=True)
+verianim.add_light("key_light", light_type="AREA", location=(0.0, -3.0, 4.0), energy=600, size=4)
+verianim.configure_render(scene, width=960, height=540, fps=24, engine="workbench")
 
 bpy.context.scene.render.image_settings.file_format = "PNG"
 
-LL3M_METADATA = {
+VERIANIM_METADATA = {
     "objects": {
         "box": "box",
         "conveyor": "conveyor",

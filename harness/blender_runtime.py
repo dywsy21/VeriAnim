@@ -15,9 +15,9 @@ from .config import HarnessConfig
 from .ir import GenerationIR, Severity, ValidationIssue, ValidationReport, VerificationMode
 
 
-REPORT_MARKER = "LL3M_VALIDATION_REPORT:"
-SCREENSHOT_MARKER = "LL3M_SCREENSHOTS:"
-ANIMATION_MARKER = "LL3M_ANIMATION_REPORT:"
+REPORT_MARKER = "VERIANIM_VALIDATION_REPORT:"
+SCREENSHOT_MARKER = "VERIANIM_SCREENSHOTS:"
+ANIMATION_MARKER = "VERIANIM_ANIMATION_REPORT:"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -27,23 +27,23 @@ import importlib, sys
 if {str(PROJECT_ROOT)!r} not in sys.path:
     sys.path.insert(0, {str(PROJECT_ROOT)!r})
 try:
-    import blender.ll3m_utils as _ll3m_utils
-    importlib.reload(_ll3m_utils)
+    import blender.verianim_utils as _verianim_utils
+    importlib.reload(_verianim_utils)
 except Exception:
     pass
 import bpy
-for _ll3m_obj in list(bpy.context.scene.objects):
-    _ll3m_obj.select_set(True)
+for _verianim_obj in list(bpy.context.scene.objects):
+    _verianim_obj.select_set(True)
 bpy.ops.object.delete()
-for _ll3m_collection in list(bpy.data.collections):
-    if not _ll3m_collection.users:
-        bpy.data.collections.remove(_ll3m_collection)
-for _ll3m_mesh in list(bpy.data.meshes):
-    if not _ll3m_mesh.users:
-        bpy.data.meshes.remove(_ll3m_mesh)
-for _ll3m_material in list(bpy.data.materials):
-    if not _ll3m_material.users:
-        bpy.data.materials.remove(_ll3m_material)
+for _verianim_collection in list(bpy.data.collections):
+    if not _verianim_collection.users:
+        bpy.data.collections.remove(_verianim_collection)
+for _verianim_mesh in list(bpy.data.meshes):
+    if not _verianim_mesh.users:
+        bpy.data.meshes.remove(_verianim_mesh)
+for _verianim_material in list(bpy.data.materials):
+    if not _verianim_material.users:
+        bpy.data.materials.remove(_verianim_material)
 """.strip()
 
 
@@ -694,13 +694,13 @@ bpy.context.view_layer.update()
 def issue(code, message, severity="major", target_id=None, relation_id=None, evidence=None):
     issues.append({{"code": code, "message": message, "severity": severity, "target_id": target_id, "relation_id": relation_id, "evidence": evidence or {{}}}})
 
-def find_obj(ll3m_id):
+def find_obj(verianim_id):
     matches = []
-    exact = bpy.data.objects.get(str(ll3m_id))
+    exact = bpy.data.objects.get(str(verianim_id))
     if exact:
         matches.append(exact)
     for obj in bpy.data.objects:
-        if obj not in matches and (obj.get("ll3m_id") == ll3m_id or obj.name.startswith(str(ll3m_id))):
+        if obj not in matches and (obj.get("verianim_id") == verianim_id or obj.name.startswith(str(verianim_id))):
             matches.append(obj)
     for obj in matches:
         if obj.animation_data and obj.animation_data.action:
@@ -733,14 +733,14 @@ def expected_path(action):
         return "scale"
     return None
 
-def find_objects(ll3m_id):
-    marker = str(ll3m_id)
+def find_objects(verianim_id):
+    marker = str(verianim_id)
     matches = []
     exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
     for obj in bpy.data.objects:
-        obj_id = str(obj.get("ll3m_id", ""))
+        obj_id = str(obj.get("verianim_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             matches.append(obj)
     for obj in bpy.data.objects:
@@ -772,9 +772,9 @@ def bbox_minmax(obj):
     )
 
 def is_physical_bbox_object(obj):
-    text = f"{{obj.name}} {{obj.get('ll3m_part', '')}} {{obj.get('ll3m_role', '')}}".lower()
+    text = f"{{obj.name}} {{obj.get('verianim_part', '')}} {{obj.get('verianim_role', '')}}".lower()
     visual_tokens = ("grain", "detail", "decal", "label", "marking", "stripe", "line", "arrow", "text", "annotation")
-    if not obj.get("ll3m_id") and any(token in text for token in visual_tokens):
+    if not obj.get("verianim_id") and any(token in text for token in visual_tokens):
         return False
     return True
 
@@ -866,7 +866,7 @@ def find_material(material_id):
     if mat:
         return mat
     for candidate in bpy.data.materials:
-        if candidate.get("ll3m_id") == material_id:
+        if candidate.get("verianim_id") == material_id:
             return candidate
     return None
 
@@ -1069,8 +1069,8 @@ trace = {{}}
 def issue(code, message, severity="major", target_id=None, frame=None, evidence=None):
     issues.append({{"code": code, "message": message, "severity": severity, "target_id": target_id, "frame": frame, "evidence": evidence or {{}}}})
 
-def find_obj(ll3m_id):
-    matches = find_objects(ll3m_id)
+def find_obj(verianim_id):
+    matches = find_objects(verianim_id)
     return matches[0] if matches else None
 
 def descendants(obj):
@@ -1082,15 +1082,15 @@ def descendants(obj):
         stack.extend(list(getattr(child, "children", [])))
     return found
 
-def find_objects(ll3m_id):
-    marker = str(ll3m_id)
+def find_objects(verianim_id):
+    marker = str(verianim_id)
     matches = []
     exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
         matches.extend(descendants(exact))
     for obj in bpy.data.objects:
-        obj_id = str(obj.get("ll3m_id", ""))
+        obj_id = str(obj.get("verianim_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_") or obj.name.startswith(marker)):
             matches.append(obj)
             matches.extend([child for child in descendants(obj) if child not in matches])
@@ -1244,9 +1244,9 @@ def build_deformation_statistics(samples_by_target):
     }}
 
 def is_physical_bbox_object(obj):
-    text = f"{{obj.name}} {{obj.get('ll3m_part', '')}} {{obj.get('ll3m_role', '')}}".lower()
+    text = f"{{obj.name}} {{obj.get('verianim_part', '')}} {{obj.get('verianim_role', '')}}".lower()
     visual_tokens = ("grain", "detail", "decal", "label", "marking", "stripe", "line", "arrow", "text", "annotation")
-    if not obj.get("ll3m_id") and any(token in text for token in visual_tokens):
+    if not obj.get("verianim_id") and any(token in text for token in visual_tokens):
         return False
     return True
 
@@ -1357,7 +1357,7 @@ def gripper_subset(objs):
     grippers = [
         obj for obj in objs
         if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}
-        and ("gripper" in str(obj.get("ll3m_part", "")).lower() or "gripper" in obj.name.lower())
+        and ("gripper" in str(obj.get("verianim_part", "")).lower() or "gripper" in obj.name.lower())
     ]
     return grippers or [obj for obj in objs if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
 
@@ -1922,7 +1922,7 @@ if {str(PROJECT_ROOT)!r} not in sys.path:
     sys.path.insert(0, {str(PROJECT_ROOT)!r})
 import bpy
 from mathutils import Vector
-from blender.ll3m_utils import configure_render
+from blender.verianim_utils import configure_render
 
 SAMPLE_FRAMES = json.loads({json.dumps(sample_frames)!r})
 GIF_FRAMES = json.loads({json.dumps(gif_frames)!r})
@@ -1934,14 +1934,14 @@ HEIGHT = {int(height)}
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(GIF_DIR, exist_ok=True)
 
-def find_objects(ll3m_id):
-    marker = str(ll3m_id)
+def find_objects(verianim_id):
+    marker = str(verianim_id)
     matches = []
     exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
     for obj in bpy.data.objects:
-        obj_id = str(obj.get("ll3m_id", ""))
+        obj_id = str(obj.get("verianim_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             matches.append(obj)
     for obj in bpy.data.objects:
@@ -1954,11 +1954,11 @@ def target_objects():
     for item in TARGET_IDS:
         objs.extend(find_objects(item))
     objs = [obj for obj in dict.fromkeys(objs) if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
-    foreground = [obj for obj in objs if obj.get("ll3m_role") != "background"]
+    foreground = [obj for obj in objs if obj.get("verianim_role") != "background"]
     if foreground:
         objs = foreground
     if not objs:
-        objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and not obj.name.startswith("ll3m_render_camera")]
+        objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and not obj.name.startswith("verianim_render_camera")]
     return objs
 
 def bbox_points(objs):
@@ -2183,8 +2183,8 @@ mx = Vector((max(p.x for p in all_points), max(p.y for p in all_points), max(p.z
 center = (mn + mx) * 0.5
 radius = max((mx - mn).length * 1.35, 2.0)
 
-cam_data = bpy.data.cameras.new("ll3m_animation_sample_camera_data")
-cam = bpy.data.objects.new("ll3m_animation_sample_camera", cam_data)
+cam_data = bpy.data.cameras.new("verianim_animation_sample_camera_data")
+cam = bpy.data.objects.new("verianim_animation_sample_camera", cam_data)
 bpy.context.scene.collection.objects.link(cam)
 cam.location = center + Vector((radius * 0.85, -radius * 0.85, radius * 0.55))
 look_at(cam, center)
@@ -2282,7 +2282,7 @@ if {str(PROJECT_ROOT)!r} not in sys.path:
     sys.path.insert(0, {str(PROJECT_ROOT)!r})
 import bpy
 from mathutils import Vector
-from blender.ll3m_utils import configure_render
+from blender.verianim_utils import configure_render
 
 VIEWS = json.loads({json.dumps(view_dicts, ensure_ascii=False)!r})
 OUT_DIR = {str(output_dir).replace(chr(92), "/")!r}
@@ -2291,9 +2291,9 @@ HEIGHT = {int(height)}
 FRAME_DEFAULT = {repr(frame_default)}
 os.makedirs(OUT_DIR, exist_ok=True)
 
-def find_obj(ll3m_id):
+def find_obj(verianim_id):
     for obj in bpy.data.objects:
-        if obj.get("ll3m_id") == ll3m_id or obj.name == ll3m_id or obj.name.startswith(ll3m_id):
+        if obj.get("verianim_id") == verianim_id or obj.name == verianim_id or obj.name.startswith(verianim_id):
             return obj
     return None
 
@@ -2306,15 +2306,15 @@ def descendants(obj):
         stack.extend(list(getattr(child, "children", [])))
     return found
 
-def find_objects(ll3m_id):
-    marker = str(ll3m_id)
+def find_objects(verianim_id):
+    marker = str(verianim_id)
     matches = []
     exact = bpy.data.objects.get(marker)
     if exact:
         matches.append(exact)
         matches.extend(descendants(exact))
     for obj in bpy.data.objects:
-        obj_id = str(obj.get("ll3m_id", ""))
+        obj_id = str(obj.get("verianim_id", ""))
         if obj not in matches and (obj_id == marker or obj_id.startswith(marker + "_")):
             matches.append(obj)
             matches.extend([child for child in descendants(obj) if child not in matches])
@@ -2466,11 +2466,11 @@ def apply_inspection_render_settings():
     # Ensure at least one adequate light exists for EEVEE/Cycles fallback.
     # Workbench ignores scene lights, so normal verification should not depend
     # on generated light intensity.
-    has_light = any(obj.type == "LIGHT" for obj in bpy.data.objects if not obj.name.startswith("ll3m_"))
+    has_light = any(obj.type == "LIGHT" for obj in bpy.data.objects if not obj.name.startswith("verianim_"))
     if not has_light:
-        light_data = bpy.data.lights.new("ll3m_inspection_light", type="SUN")
+        light_data = bpy.data.lights.new("verianim_inspection_light", type="SUN")
         light_data.energy = 3.0
-        light_obj = bpy.data.objects.new("ll3m_inspection_light", light_data)
+        light_obj = bpy.data.objects.new("verianim_inspection_light", light_data)
         light_obj.location = (0, 0, 10)
         light_obj.rotation_euler = (0.5, 0.2, -0.3)
         bpy.context.scene.collection.objects.link(light_obj)
@@ -2478,7 +2478,7 @@ def apply_inspection_render_settings():
     for obj in bpy.data.objects:
         if obj.type != "LIGHT" or not hasattr(obj.data, "energy"):
             continue
-        if obj.name.startswith("ll3m_"):
+        if obj.name.startswith("verianim_"):
             continue
         if obj.data.type == "SUN":
             obj.data.energy = max(min(float(obj.data.energy), 2.0), 0.2)
@@ -2633,13 +2633,13 @@ def restore_render_settings():
         if bg:
             bg.inputs[1].default_value = original_world_strength
     # Remove inspection light if we added one
-    inspection_light = bpy.data.objects.get("ll3m_inspection_light")
+    inspection_light = bpy.data.objects.get("verianim_inspection_light")
     if inspection_light:
         bpy.data.objects.remove(inspection_light, do_unlink=True)
 
 apply_inspection_render_settings()
 
-all_objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and not obj.name.startswith("ll3m_render_camera")]
+all_objs = [obj for obj in bpy.data.objects if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}} and not obj.name.startswith("verianim_render_camera")]
 paths = []
 
 try:
@@ -2653,7 +2653,7 @@ try:
         for item in view.get("target_object_ids", []):
             targets.extend(find_objects(item))
         targets = [obj for obj in dict.fromkeys(targets) if obj.type in {{"MESH", "CURVE", "SURFACE", "FONT", "META"}}]
-        foreground_targets = [obj for obj in targets if obj.get("ll3m_role") != "background"]
+        foreground_targets = [obj for obj in targets if obj.get("verianim_role") != "background"]
         if foreground_targets:
             targets = foreground_targets
         if not targets:
@@ -2661,8 +2661,8 @@ try:
         mn, mx = bbox_for_objects(targets)
         center = (mn + mx) * 0.5
         radius = max((mx - mn).length * 1.25, 1.15)
-        cam_data = bpy.data.cameras.new("ll3m_render_camera_" + view["id"] + "_data")
-        cam = bpy.data.objects.new("ll3m_render_camera_" + view["id"], cam_data)
+        cam_data = bpy.data.cameras.new("verianim_render_camera_" + view["id"] + "_data")
+        cam = bpy.data.objects.new("verianim_render_camera_" + view["id"], cam_data)
         bpy.context.scene.collection.objects.link(cam)
         view_type = view.get("view_type", "three_quarter")
         cam.location = center + camera_offset(view_type, radius)

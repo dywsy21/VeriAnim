@@ -1,4 +1,4 @@
-# Blender LL3M Addon
+# Blender VeriAnim Addon
 # Socket server for code execution, scene inspection, validation, and renders.
 import bpy
 import math
@@ -18,22 +18,22 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from blender.ll3m_utils import configure_render
+from blender.verianim_utils import configure_render
 
 bl_info = {
-    "name": "LL3M Blender",
+    "name": "VeriAnim Blender",
     "author": "Sining Lu",
     "version": (3, 0),
     "blender": (4, 5, 0),
-    "location": "View3D > Sidebar > LL3M",
-    "description": "Socket server for LL3M code execution, scene inspection, validation, and rendering",
+    "location": "View3D > Sidebar > VeriAnim",
+    "description": "Socket server for VeriAnim code execution, scene inspection, validation, and rendering",
     "category": "Interface",
 }
 
 HOST = 'localhost'
 PORT = 8888
 
-class LL3MAgentServer:
+class VeriAnimAgentServer:
     def __init__(self, host=HOST, port=PORT):
         self.host = host
         self.port = port
@@ -55,7 +55,7 @@ class LL3MAgentServer:
             self.server_thread = threading.Thread(target=self._server_loop)
             self.server_thread.daemon = True
             self.server_thread.start()
-            print(f"LL3MAgentServer started on {self.host}:{self.port}")
+            print(f"VeriAnimAgentServer started on {self.host}:{self.port}")
             return True
         except Exception as e:
             print(f"Failed to start server: {e}")
@@ -77,7 +77,7 @@ class LL3MAgentServer:
             except:
                 pass
             self.server_thread = None
-        print("LL3MAgentServer stopped")
+        print("VeriAnimAgentServer stopped")
 
     def _server_loop(self):
         print("Server thread started")
@@ -225,7 +225,7 @@ class LL3MAgentServer:
         if obj:
             return obj
         for obj in bpy.data.objects:
-            if obj.get("ll3m_id") == name_or_id:
+            if obj.get("verianim_id") == name_or_id:
                 return obj
         for obj in bpy.data.objects:
             if obj.name.startswith(str(name_or_id)):
@@ -240,7 +240,7 @@ class LL3MAgentServer:
         if exact:
             matches.append(exact)
         for obj in bpy.data.objects:
-            if obj not in matches and obj.get("ll3m_id") == name_or_id:
+            if obj not in matches and obj.get("verianim_id") == name_or_id:
                 matches.append(obj)
         for obj in bpy.data.objects:
             if obj not in matches and obj.name.startswith(str(name_or_id)):
@@ -250,9 +250,9 @@ class LL3MAgentServer:
     def _object_identity(self, obj):
         return {
             "name": obj.name,
-            "ll3m_id": obj.get("ll3m_id"),
-            "ll3m_role": obj.get("ll3m_role"),
-            "ll3m_part": obj.get("ll3m_part"),
+            "verianim_id": obj.get("verianim_id"),
+            "verianim_role": obj.get("verianim_role"),
+            "verianim_part": obj.get("verianim_part"),
             "type": obj.type,
         }
 
@@ -662,7 +662,7 @@ class LL3MAgentServer:
         self._ensure_render_settings(width, height)
         scene = bpy.context.scene
         original_frame = scene.frame_current
-        all_objects = [obj for obj in scene.objects if obj.type in {"MESH", "CURVE", "EMPTY"} and not obj.name.startswith("ll3m_render_camera")]
+        all_objects = [obj for obj in scene.objects if obj.type in {"MESH", "CURVE", "EMPTY"} and not obj.name.startswith("verianim_render_camera")]
         paths = []
         try:
             for view in views:
@@ -675,8 +675,8 @@ class LL3MAgentServer:
                 center = (min_v + max_v) * 0.5
                 radius = max((max_v - min_v).length * 1.4, 3.0)
                 view_id = str(view.get("id") or f"view_{len(paths) + 1}")
-                cam_data = bpy.data.cameras.new(f"ll3m_render_camera_{view_id}_data")
-                cam = bpy.data.objects.new(f"ll3m_render_camera_{view_id}", cam_data)
+                cam_data = bpy.data.cameras.new(f"verianim_render_camera_{view_id}_data")
+                cam = bpy.data.objects.new(f"verianim_render_camera_{view_id}", cam_data)
                 scene.collection.objects.link(cam)
                 cam.location = center + self._camera_offset(view.get("view_type", "three_quarter"), radius)
                 self._look_at(cam, center)
@@ -768,7 +768,7 @@ class LL3MAgentServer:
             try:
                 bpy.ops.file.pack_all()
             except Exception as e:
-                print(f"[LL3M Addon] pack_all failed: {e}")
+                print(f"[VeriAnim Addon] pack_all failed: {e}")
         # Save as copy so current file path is not changed
         try:
             bpy.ops.wm.save_as_mainfile(filepath=filepath, copy=True)
@@ -779,8 +779,8 @@ class LL3MAgentServer:
 # --- Blender UI Panel and Operators ---``
 class BLENDERCUSTOMAGENT_OT_StartServer(bpy.types.Operator):
     bl_idname = "blendercustomagent.start_server"
-    bl_label = "Start LL3M Server"
-    bl_description = "Start the Blender LL3M socket server"
+    bl_label = "Start VeriAnim Server"
+    bl_description = "Start the Blender VeriAnim socket server"
 
     def execute(self, context):
         scene = context.scene
@@ -790,19 +790,19 @@ class BLENDERCUSTOMAGENT_OT_StartServer(bpy.types.Operator):
             del bpy.types.blendercustomagent_server
             existing = None
         if not existing:
-            bpy.types.blendercustomagent_server = LL3MAgentServer(port=scene.blendercustomagent_port)
+            bpy.types.blendercustomagent_server = VeriAnimAgentServer(port=scene.blendercustomagent_port)
         if bpy.types.blendercustomagent_server.start():
             scene.blendercustomagent_server_running = True
-            self.report({'INFO'}, f"LL3M Server started on port {scene.blendercustomagent_port}")
+            self.report({'INFO'}, f"VeriAnim Server started on port {scene.blendercustomagent_port}")
             return {'FINISHED'}
         scene.blendercustomagent_server_running = False
-        self.report({'ERROR'}, f"LL3M Server failed to start on port {scene.blendercustomagent_port}; check Blender console")
+        self.report({'ERROR'}, f"VeriAnim Server failed to start on port {scene.blendercustomagent_port}; check Blender console")
         return {'CANCELLED'}
 
 class BLENDERCUSTOMAGENT_OT_StopServer(bpy.types.Operator):
     bl_idname = "blendercustomagent.stop_server"
-    bl_label = "Stop LL3M Server"
-    bl_description = "Stop the Blender LL3M socket server"
+    bl_label = "Stop VeriAnim Server"
+    bl_description = "Stop the Blender VeriAnim socket server"
 
     def execute(self, context):
         scene = context.scene
@@ -810,24 +810,24 @@ class BLENDERCUSTOMAGENT_OT_StopServer(bpy.types.Operator):
             bpy.types.blendercustomagent_server.stop()
             del bpy.types.blendercustomagent_server
         scene.blendercustomagent_server_running = False
-        self.report({'INFO'}, "LL3M Server stopped!")
+        self.report({'INFO'}, "VeriAnim Server stopped!")
         return {'FINISHED'}
 
 class BLENDERCUSTOMAGENT_PT_Panel(bpy.types.Panel):
-    bl_label = "Blender LL3M"
-    bl_idname = "BLENDERLL3MAGENT_PT_Panel"
+    bl_label = "Blender VeriAnim"
+    bl_idname = "BLENDERVERIANIMAGENT_PT_Panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'LL3M'
+    bl_category = 'VeriAnim'
 
     def draw(self, context):
         layout = self.layout
         scene = context.scene
         layout.prop(scene, "blendercustomagent_port")
         if not scene.blendercustomagent_server_running:
-            layout.operator("blendercustomagent.start_server", text="Start LL3M Server")
+            layout.operator("blendercustomagent.start_server", text="Start VeriAnim Server")
         else:
-            layout.operator("blendercustomagent.stop_server", text="Stop LL3M Server")
+            layout.operator("blendercustomagent.stop_server", text="Stop VeriAnim Server")
             layout.label(text=f"Running on port {scene.blendercustomagent_port}")
 
 # --- Registration ---
@@ -840,7 +840,7 @@ classes = [
 def register():
     bpy.types.Scene.blendercustomagent_port = IntProperty(
         name="Port",
-        description="Port for the LL3M server",
+        description="Port for the VeriAnim server",
         default=8888,
         min=1024,
         max=65535
@@ -851,7 +851,7 @@ def register():
     )
     for cls in classes:
         bpy.utils.register_class(cls)
-    print("Blender LL3M addon registered")
+    print("Blender VeriAnim addon registered")
 
 def unregister():
     if hasattr(bpy.types, "blendercustomagent_server") and bpy.types.blendercustomagent_server:
@@ -861,7 +861,7 @@ def unregister():
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.blendercustomagent_port
     del bpy.types.Scene.blendercustomagent_server_running
-    print("Blender LL3M addon unregistered")
+    print("Blender VeriAnim addon unregistered")
 
 if __name__ == "__main__":
     register() 

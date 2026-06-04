@@ -10,7 +10,7 @@
 8. 材质完善检索
 9. 代码整理成可复用的库
 10. 项目打包优化。eg. uv tool install / curl什么玩意来安装，像codex一样输入codex可以直接启动cli；起个名字
-11. 与ll3m解绑
+11. 与verianim解绑
 12. 其他3D软件的适配。eg. unity, unreal, maya
 13. 其他类型动画的适配。eg. 人体动作捕捉， cloth simulation, fluid simulation。分层extension？
   - RigidAnimationSpec：现在这套，继续强化。

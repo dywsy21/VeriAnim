@@ -5,29 +5,29 @@ deterministic validator will reject them. These are not suggestions.
 
 ## 1. Object Identification (CRITICAL)
 
-Every object created for the scene MUST have an `ll3m_id` custom property
+Every object created for the scene MUST have an `verianim_id` custom property
 matching the IR object id. The deterministic validator finds objects by this
 property. Without it, the object is invisible to validation and will be
 reported as MISSING_OBJECT.
 
 ```python
-obj["ll3m_id"] = "cup"        # REQUIRED - must match IR object id exactly
-obj["ll3m_role"] = "primary"   # recommended
-obj["ll3m_part"] = "handle"    # for sub-parts of multi-part objects
+obj["verianim_id"] = "cup"        # REQUIRED - must match IR object id exactly
+obj["verianim_role"] = "primary"   # recommended
+obj["verianim_part"] = "handle"    # for sub-parts of multi-part objects
 ```
 
-Set `ll3m_id` on the ROOT object (the one with the mesh or the parent Empty
+Set `verianim_id` on the ROOT object (the one with the mesh or the parent Empty
 that owns the logical object). Do not set it only on child parts.
 
-For multi-part objects, set `ll3m_id` on the parent/root AND set `ll3m_part`
+For multi-part objects, set `verianim_id` on the parent/root AND set `verianim_part`
 on each child mesh to identify sub-components.
 
-## 2. LL3M_METADATA Variable (REQUIRED)
+## 2. VERIANIM_METADATA Variable (REQUIRED)
 
 Every script must define a module-level variable at the end:
 
 ```python
-LL3M_METADATA = {
+VERIANIM_METADATA = {
     "objects": {
         "cup": "Cup",           # ir_id: blender_object_name
         "table": "Table",
@@ -47,14 +47,14 @@ import bmesh
 from mathutils import Vector
 import math
 
-from blender import ll3m_utils as ll3m
+from blender import verianim_utils as verianim
 
 # 1. Clear scene
-ll3m.clear_scene()
+verianim.clear_scene()
 scene = bpy.context.scene
 
 # 2. Create collections
-root_col = bpy.data.collections.new("ll3m_scene")
+root_col = bpy.data.collections.new("verianim_scene")
 scene.collection.children.link(root_col)
 objects_col = bpy.data.collections.new("objects")
 env_col = bpy.data.collections.new("environment")
@@ -64,7 +64,7 @@ root_col.children.link(env_col)
 # 3. Create materials (before objects that use them)
 # ... material creation functions ...
 
-# 4. Create objects with ll3m_id
+# 4. Create objects with verianim_id
 # ... object factory functions ...
 
 # 5. Create environment (floor, lights, world)
@@ -80,8 +80,8 @@ scene.camera = camera_obj  # MUST set active camera
 
 # 8. Animation keyframes (if animation requested)
 
-# 9. LL3M_METADATA at the end
-LL3M_METADATA = { ... }
+# 9. VERIANIM_METADATA at the end
+VERIANIM_METADATA = { ... }
 ```
 
 ## 4. Render Engine Selection (CRITICAL)
@@ -99,9 +99,9 @@ WRONG values that will crash:
 Safe pattern:
 
 ```python
-from blender import ll3m_utils as ll3m
+from blender import verianim_utils as verianim
 
-ll3m.configure_render(scene, engine="workbench")
+verianim.configure_render(scene, engine="workbench")
 ```
 
 Use Workbench by default for validation/inspection renders. It avoids strong
@@ -215,7 +215,7 @@ scene.frame_start = 1
 scene.frame_end = duration_frames
 scene.render.fps = fps
 
-# Insert keyframes on the object that has ll3m_id
+# Insert keyframes on the object that has verianim_id
 obj.location = start_location
 obj.keyframe_insert(data_path="location", frame=start_frame)
 obj.location = end_location
@@ -228,16 +228,16 @@ if obj.animation_data and obj.animation_data.action:
             kp.interpolation = 'LINEAR'  # or 'BEZIER'
 ```
 
-Animate the ROOT object (the one with `ll3m_id`), not child parts.
+Animate the ROOT object (the one with `verianim_id`), not child parts.
 
 ## 9. Common Validation Failures and Fixes
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| MISSING_OBJECT | No `ll3m_id` property | Add `obj["ll3m_id"] = "ir_id"` |
+| MISSING_OBJECT | No `verianim_id` property | Add `obj["verianim_id"] = "ir_id"` |
 | MISSING_ACTIVE_CAMERA | `scene.camera` not set | `scene.camera = cam_obj` |
 | MISSING_MATERIAL_SPEC | Material not created | Create material and append to mesh |
 | FRAME_END_TOO_SHORT | `scene.frame_end` < duration | Set `scene.frame_end = duration` |
-| MISSING_ANIMATED_OBJECT | Keyframes on wrong object | Animate the `ll3m_id` root object |
+| MISSING_ANIMATED_OBJECT | Keyframes on wrong object | Animate the `verianim_id` root object |
 | gtao_factor error | Using removed EEVEE props | Remove all `scene.eevee.*` calls |
-| enum not found | Wrong engine name | Use `ll3m.configure_render(scene, engine="workbench")` |
+| enum not found | Wrong engine name | Use `verianim.configure_render(scene, engine="workbench")` |

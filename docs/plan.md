@@ -1,14 +1,14 @@
-# LL3M Animation Extension Plan
+# VeriAnim Animation Extension Plan
 
 ## Current Repository Shape
 
-This repository currently exposes the local LL3M client and Blender execution layer, not the full cloud-side multi-agent harness described in the paper.
+This repository currently exposes the local VeriAnim client and Blender execution layer, not the full cloud-side multi-agent harness described in the paper.
 
 - `main.py` polls a remote server for run events, executes returned Blender Python code, uploads rendered images, and reports execution results.
 - `blender/addon.py` starts a local Blender socket server that can execute code, inspect simple scene/object metadata, and save `.blend` snapshots.
 - `blender/client.py` is the Python client for talking to the Blender addon.
 - `blender/headless.py` supports background Blender execution for render-heavy code.
-- `config/config.yaml` still points to the discontinued LL3M cloud server.
+- `config/config.yaml` still points to the discontinued VeriAnim cloud server.
 
 The extension should therefore add a local or self-hosted agent harness while reusing the existing Blender execution path.
 
@@ -394,14 +394,14 @@ The local harness now implements the main architecture described above:
 - `PlannerAgent` receives the full IR definition and emits structured JSON.
 - `CoderAgent` and `RefinerAgent` use a compact code-generation IR to keep long
   LLM calls stable while preserving the full validation IR.
-- Generated Blender scripts prefer `blender.ll3m_utils` for shared setup such
+- Generated Blender scripts prefer `blender.verianim_utils` for shared setup such
   as Workbench rendering, scene clearing, materials, cameras, lights, and
   primitive mesh objects.
 - `LLMClient` retries failed non-streaming calls with streaming, which is
   necessary for long Blender scripts on some OpenAI-compatible gateways.
 - `BlenderRuntime` injects current validation/render scripts into Blender, so
   harness fixes take effect without depending on an already-loaded addon copy.
-- Deterministic scene validation expands `ll3m_id` prefixes such as
+- Deterministic scene validation expands `verianim_id` prefixes such as
   `table_top` and `table_leg_1` when computing whole-object bounding boxes.
 - Screenshot verification treats `close_up` and `relation_close_up` as true
   tight inspection views.

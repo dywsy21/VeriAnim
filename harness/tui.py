@@ -1,4 +1,4 @@
-"""Interactive Textual TUI for the local LL3M harness."""
+"""Interactive Textual TUI for the local VeriAnim harness."""
 
 from __future__ import annotations
 
@@ -121,7 +121,7 @@ def main() -> None:
             yield Header(show_clock=True)
             with Horizontal(id="root"):
                 with Vertical(id="left"):
-                    yield Static("LL3M Animation Harness", id="title")
+                    yield Static("VeriAnim Animation Harness", id="title")
                     yield RichLog(id="events", wrap=True, markup=True, highlight=True)
                 with Vertical(id="right"):
                     yield Static(id="status")
@@ -132,7 +132,7 @@ def main() -> None:
 
         def on_mount(self) -> None:
             self._refresh_status()
-            self._log("[bold #8fb3ff]Ready.[/] Start with a scene prompt. Blender should have the LL3M addon server running.")
+            self._log("[bold #8fb3ff]Ready.[/] Start with a scene prompt. Blender should have the VeriAnim addon server running.")
 
         def action_clear_log(self) -> None:
             self.query_one("#events", RichLog).clear()
