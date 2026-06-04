@@ -751,6 +751,23 @@ class GenerationIR:
         """
 
         projected = copy.deepcopy(self)
+        animation = projected.animation
+        removed_relation_ids: set[str] = set()
+        if animation:
+            kept_relations = []
+            for relation in projected.scene.relations:
+                if _is_animation_end_state_relation(relation, animation.duration_frames):
+                    removed_relation_ids.add(relation.id)
+                    continue
+                kept_relations.append(relation)
+            projected.scene.relations = kept_relations
+            if removed_relation_ids:
+                for view in projected.scene.verifier.screenshot_plan.views:
+                    view.relation_ids = [
+                        relation_id
+                        for relation_id in view.relation_ids
+                        if relation_id not in removed_relation_ids
+                    ]
         projected.animation = None
         projected.prompt = SourcePrompt(
             text=_static_scene_prompt(projected.scene),
@@ -758,7 +775,8 @@ class GenerationIR:
             image_paths=list(self.prompt.image_paths),
             user_constraints=[
                 "Static scene baseline only; do not create keyframes, drivers, animated materials, frame ranges, or animated visibility.",
-                "Represent objects in a neutral pose that makes required contacts and spatial relations visible.",
+                "Represent objects in a neutral pose that makes static contacts and spatial relations visible.",
+                "Do not force animation end-state relations such as a moving object's final near/on/inside placement into the initial static pose.",
             ],
         )
         projected.stages = [
@@ -1665,6 +1683,38 @@ def _static_scene_prompt(scene: SceneSpec) -> str:
         sections.extend(["Environment:", scene.environment.description])
     sections.append("All objects should be placed in a neutral representative pose suitable for later animation.")
     return "\n".join(sections)
+
+
+def _is_animation_end_state_relation(relation: SpatialRelationSpec, duration_frames: int) -> bool:
+    if relation.frame is not None:
+        return int(relation.frame) >= max(1, int(duration_frames))
+    text = " ".join(
+        part
+        for part in (
+            relation.id,
+            relation.description or "",
+        )
+        if part
+    ).lower()
+    normalized = text.replace("_", " ").replace("-", " ")
+    tokens = set(normalized.split())
+    return bool(
+        tokens.intersection(
+            {
+                "final",
+                "end",
+                "ending",
+                "ended",
+                "last",
+                "stop",
+                "stopped",
+                "stops",
+                "finish",
+                "finished",
+                "finishes",
+            }
+        )
+    )
 
 
 def _validate_motion_path(event: AnimationEventSpec, issues: list[ValidationIssue]) -> None:

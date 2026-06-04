@@ -227,10 +227,7 @@ class BlenderRuntime:
             return [], None
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
-        frames = ir.animation.verifier.sampled_frames
-        if not frames:
-            duration = ir.animation.duration_frames
-            frames = sorted(set([1, max(1, duration // 2), duration]))
+        frames = _animation_sample_frames(ir)
         gif_frames = list(range(1, max(1, int(ir.animation.duration_frames)) + 1)) if render_gif else []
         script = _animation_render_script(
             ir,
@@ -440,6 +437,34 @@ def _write_animation_mp4(frame_paths: list[Path], output_path: Path, *, fps: int
     except Exception:
         return None
     return output_path if output_path.exists() else None
+
+
+def _animation_sample_frames(ir: GenerationIR) -> list[int]:
+    if not ir.animation:
+        return []
+    duration = max(1, int(ir.animation.duration_frames))
+    frames = {
+        max(1, min(duration, int(frame)))
+        for frame in ir.animation.verifier.sampled_frames
+    }
+    if not frames:
+        frames.update({1, max(1, duration // 2), duration})
+    for event in [*ir.animation.events, *ir.animation.camera_events]:
+        start = max(1, min(duration, int(event.start_frame)))
+        end = max(1, min(duration, int(event.end_frame)))
+        if end < start:
+            start, end = end, start
+        span = max(0, end - start)
+        frames.update(
+            {
+                start,
+                end,
+                start + int(round(span * 0.25)),
+                start + int(round(span * 0.5)),
+                start + int(round(span * 0.75)),
+            }
+        )
+    return sorted(frame for frame in frames if 1 <= frame <= duration)
 
 
 def _normalize_verification_renders(paths: list[Path]) -> None:
@@ -1944,17 +1969,21 @@ def _animation_render_script(
     height: int,
 ) -> str:
     target_ids: list[str] = []
+    animated_camera_ids: list[str] = []
     if ir.animation:
         for event in [*ir.animation.events, *ir.animation.camera_events]:
             target_ids.extend(event.subject_ids)
             target_ids.extend(event.target_ids)
             for constraint in event.contact_constraints:
                 target_ids.extend([constraint.subject_id, constraint.object_id])
+        for event in ir.animation.camera_events:
+            animated_camera_ids.extend(event.subject_ids)
         for constraint in ir.animation.contact_constraints:
             target_ids.extend([constraint.subject_id, constraint.object_id])
     if not target_ids:
         target_ids = [obj.id for obj in ir.scene.objects]
     target_ids = list(dict.fromkeys(target_ids))
+    animated_camera_ids = list(dict.fromkeys(animated_camera_ids))
     return f"""
 import json, math, os, sys
 if {str(PROJECT_ROOT)!r} not in sys.path:
@@ -1966,6 +1995,7 @@ from blender.verianim_utils import configure_render
 SAMPLE_FRAMES = json.loads({json.dumps(sample_frames)!r})
 GIF_FRAMES = json.loads({json.dumps(gif_frames)!r})
 TARGET_IDS = json.loads({json.dumps(target_ids)!r})
+ANIMATED_CAMERA_IDS = json.loads({json.dumps(animated_camera_ids)!r})
 OUT_DIR = {str(output_dir).replace(chr(92), "/")!r}
 GIF_DIR = os.path.join(OUT_DIR, "gif_frames").replace("\\\\", "/")
 WIDTH = {int(width)}
@@ -2013,6 +2043,7 @@ def look_at(camera, target):
 
 scene = bpy.context.scene
 original_engine = scene.render.engine
+original_scene_camera = scene.camera
 configure_render(scene, width=WIDTH, height=HEIGHT, engine="workbench")
 
 original_view_settings = {{
@@ -2222,13 +2253,31 @@ mx = Vector((max(p.x for p in all_points), max(p.y for p in all_points), max(p.z
 center = (mn + mx) * 0.5
 radius = max((mx - mn).length * 1.35, 2.0)
 
-cam_data = bpy.data.cameras.new("verianim_animation_sample_camera_data")
-cam = bpy.data.objects.new("verianim_animation_sample_camera", cam_data)
-bpy.context.scene.collection.objects.link(cam)
-cam.location = center + Vector((radius * 0.85, -radius * 0.85, radius * 0.55))
-look_at(cam, center)
-cam_data.lens = 35
-scene.camera = cam
+def has_animation_data(obj):
+    return bool(obj and obj.animation_data and obj.animation_data.action)
+
+def animated_render_camera():
+    candidates = []
+    for camera_id in ANIMATED_CAMERA_IDS:
+        candidates.extend([obj for obj in find_objects(camera_id) if obj.type == "CAMERA"])
+    if scene.camera and scene.camera.type == "CAMERA":
+        candidates.append(scene.camera)
+    for obj in dict.fromkeys(candidates):
+        if has_animation_data(obj):
+            return obj
+    return candidates[0] if candidates else None
+
+render_camera = animated_render_camera() if ANIMATED_CAMERA_IDS else None
+if render_camera:
+    scene.camera = render_camera
+else:
+    cam_data = bpy.data.cameras.new("verianim_animation_sample_camera_data")
+    cam = bpy.data.objects.new("verianim_animation_sample_camera", cam_data)
+    bpy.context.scene.collection.objects.link(cam)
+    cam.location = center + Vector((radius * 0.85, -radius * 0.85, radius * 0.55))
+    look_at(cam, center)
+    cam_data.lens = 35
+    scene.camera = cam
 
 paths = []
 gif_paths = []
@@ -2248,6 +2297,10 @@ try:
 finally:
     try:
         scene.render.engine = original_engine
+    except Exception:
+        pass
+    try:
+        scene.camera = original_scene_camera
     except Exception:
         pass
     for attr, value in original_view_settings.items():

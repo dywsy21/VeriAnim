@@ -11,7 +11,7 @@ import subprocess
 import tokenize
 from typing import Any, Callable
 
-from .config import HarnessConfig
+from .config import AgentModelConfig, HarnessConfig
 from .ir import (
     AnimationAction,
     GenerationIR,
@@ -142,8 +142,55 @@ Cameras, lights, and rendering:
 """.strip()
 
 
+PRESENTATION_QUALITY_CONTRACT = """
+Presentation-quality visual contract:
+- Treat deterministic/vision/video pass as necessary but not sufficient: the
+  generated result must also be readable as a presentation GIF from the active
+  camera and required screenshot views.
+- Plan and preserve camera coverage so required subjects, contact points,
+  motion path, and final state stay fully in frame. Use `allow_subject_crop=false`
+  by default, set practical `min_subject_pixel_fraction` values, and avoid
+  telephoto or close-up framing that hides start/middle/end poses.
+- For animation, choose or repair a main camera that can see the whole relevant
+  action. If the motion range is too large for one static view, add an explicit
+  camera_move/camera_orbit event or a wider focal length rather than letting the
+  object leave frame.
+- Make motion legible with non-collision visual markers when geometry is
+  symmetric or subtle: stripes on rolling balls, a colored tip on rotating
+  blades, edge/ripple stripes on deforming cloth, path lines, or small guide
+  markers. Mark these as decorative/visual-only when appropriate so they do not
+  create collision obligations. Integrate markers into the original object
+  surface or blade tip; do not add detached spheres, floating dots, placeholder
+  blobs, or other standalone marker artifacts that change the required geometry.
+- For windmills, fans, wheels, and propellers, build the static rotor as
+  separate visible blades attached to a clear hub/axle. Do not model a
+  four-blade rotor as two long crossing bars through the hub. Offset each blade
+  center outward from the hub by roughly hub radius plus half blade length so
+  the inner blade end touches the hub and the four tips remain distinct.
+  A reliable Blender layout is: create a rotor empty at the hub; create four
+  short rectangular blade meshes/cubes; for the +Z blade use local location
+  `(0, 0, hub_radius + blade_length / 2)` and scale
+  `(blade_width, blade_thickness, blade_length / 2)`; mirror it for -Z; use
+  local location `(hub_radius + blade_length / 2, 0, 0)` and scale
+  `(blade_length / 2, blade_thickness, blade_width)` for +X; mirror it for -X.
+  Parent all four blades and the hub to the rotor empty. Rotate the rotor empty
+  for animation, not each blade around its own center.
+- Use contrasting materials, a neutral floor/background, and enough area/key
+  light to separate the subject from supports and targets. Avoid default-gray
+  scenes, same-color object pairs, and tiny low-contrast props that a viewer
+  cannot inspect.
+- Refiner fixes for visual failures should repair the script's composition,
+  camera lens/location/look-at target, markers, materials, and lighting locally
+  before changing the IR semantics or core object identities.
+""".strip()
+
+
 def _with_verianim_utils_api(system: str) -> str:
     return f"{system}\n\nverianim_utils API contract:\n{VERIANIM_UTILS_API_GUIDE}"
+
+
+def _with_presentation_quality_contract(system: str) -> str:
+    return f"{system}\n\n{PRESENTATION_QUALITY_CONTRACT}"
 
 
 class PlannerAgent:
@@ -193,6 +240,7 @@ class PlannerAgent:
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
+        system = _with_presentation_quality_contract(system)
         user = f"""
 User prompt:
 {prompt}
@@ -231,6 +279,7 @@ Use Blender's Z-up coordinate system and meters.
             "Do not invent fields outside the schema. If you create a relation, it must include id, relation_type, subject_id, and object_id. "
             "Relations, cameras, screenshot targets, and object animation subjects must reference ObjectSpec ids, not ObjectPartSpec ids. Camera event subjects must reference CameraSpec ids."
         )
+        system = _with_presentation_quality_contract(system)
         user = f"""
 Current GenerationIR:
 {ir.to_json()}
@@ -544,12 +593,13 @@ class CoderAgent:
             "Place bridge supports outside the drivable lane: if the car path is y=0, supports should be at side/corner y positions outside the car half-width plus margin, not directly on y=0. If supports are decorative or intentionally intersect the deck, set their verianim_id/collision role so they are not collision-enabled active blockers for the car path. "
             "If an AnimationSpec location is fixed, make the generated mesh dimensions, local offsets, and support height compatible with that root location instead of moving the root away from the requested start/end/path transform. "
             "For slanted ramps, define a clear ramp coordinate system and keyframed path along the visible top surface. Place the sliding object's center on the surface plus the surface normal times its half extent, and keep sampled start/middle/end frames free of penetration. "
-            "For windmills, fans, wheels, and propellers, create a rotor root/empty at the visible hub or axle, parent the visible blade meshes to it with local offsets outside the nacelle/head/body, and prefer `verianim.create_rotor_root` plus `verianim.animate_rotor`; do not rotate a blade mesh whose bbox remains embedded in the support object. "
+            "For windmills, fans, wheels, and propellers, create a rotor root/empty at the visible hub or axle, parent the visible blade meshes to it with local offsets outside the nacelle/head/body, and prefer `verianim.create_rotor_root` plus `verianim.animate_rotor`; do not rotate a blade mesh whose bbox remains embedded in the support object. For a four-blade rotor, create four separate short rectangular blades whose inner ends touch the hub and whose centers are offset outward by hub radius plus half blade length; never use two long crossing bars through the hub as a substitute. "
             "For final-state relations in animation, apply 'near', 'on', or 'inside' by setting the final keyframe/end_transform and corresponding sampled frame, not by moving the static initial pose unless the IR explicitly requires that relation at frame 1. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to leave default interpolation instead of editing fcurves. "
             "Keep the script concise. Do not write long reasoning comments, abandoned design notes, or step-by-step analysis inside the code. "
             "Do not use unavailable third-party Blender add-ons. Return only Python code."
         )
+        system = _with_presentation_quality_contract(system)
         system = _with_verianim_utils_api(system)
         if static_only:
             system += (
@@ -657,6 +707,7 @@ class RefinerAgent:
             "For Blender interpolation errors, replace IR aliases such as EASE_IN_OUT with valid Blender interpolation enum values like BEZIER or LINEAR, or remove custom interpolation edits entirely. "
             "For pick-and-place failures, do not animate the package independently while the gripper stays elsewhere. Animate the gripper/end-effector and package together during grasp/lift/carry frames with explicit keyframes or listed verianim pick-place primitives so screenshots show continuous contact. Do not use Blender CHILD_OF constraints for rigid package carry; inverse mistakes commonly leave the package behind and fail deterministic contact checks. If a cart/vehicle carries the package after placement, its attached-carry or ride keyframes must start after the pick-place release frame, not during the gripper carry window. "
             "For rotor/propeller failures, preserve a separate hub or axle as the only attached connector. Move blade mesh children outward in local coordinates and animate the rotor root/empty instead of embedding the blade bbox in the nacelle/head/body. "
+            "For windmill/fan visual failures such as MISSING_HUB, MISSING_REQUIRED_FEATURE, or 'four visible blades', rebuild the rotor locally as one visible hub/axle plus four independent blade meshes arranged at 90 degree angles. Do not use two long crossing bars centered through the hub; delete or replace crossing-bar geometry if present. A practical fix is four short boxes parented to the rotor root: +Z and -Z blades have length along local Z with centers at +/- (hub_radius + blade_length / 2), and +X and -X blades have length along local X with centers at +/- (hub_radius + blade_length / 2). "
             "Keep the gripper attached to the robotic arm at every sampled frame; moving the gripper as a detached block is a failure. "
             "For status-light activation failures, hide the light before activation using hide_viewport/hide_render or near-zero scale, then reveal it at the specified frame; emission-only changes are visually insufficient. "
             "Do not iterate action.fcurves directly; Blender 5 layered actions store fcurves under action.layers[*].strips[*].channelbags[*].fcurves. It is acceptable to remove custom interpolation edits and keep default interpolation. "
@@ -666,6 +717,7 @@ class RefinerAgent:
             "Keep the script concise and complete. Remove long comments, scratch reasoning, and abandoned implementation notes. Never drop VERIANIM_METADATA, required imports, cameras, lights, or unaffected scene objects while repairing a local relation/contact issue. "
             "Return only the full corrected Python script."
         )
+        system = _with_presentation_quality_contract(system)
         system = _with_verianim_utils_api(system)
         user = f"""
 Compact GenerationIR:
@@ -715,6 +767,7 @@ Use them to fix actual visual layout, contact, motion direction, timing, and vis
             "Use only the verianim_utils helper functions listed in the API contract below; do not invent helper names. "
             "Return only the full corrected Python script."
         )
+        system = _with_presentation_quality_contract(system)
         system = _with_verianim_utils_api(system)
         user = f"""
 Compact revised GenerationIR:
@@ -754,6 +807,7 @@ Current script:
             "Keep the script concise and complete; no long reasoning comments. "
             "Return only the full corrected Python script."
         )
+        system = _with_presentation_quality_contract(system)
         system = _with_verianim_utils_api(system)
         user = f"""
 Validated static scene script:
@@ -814,6 +868,7 @@ class VisionVerifierAgent:
             "Return only JSON with keys: passed, summary, issues. "
             "Each issue must include code, message, severity, optional target_id, relation_id, frame, suggested_fix, evidence."
         )
+        system = _with_presentation_quality_contract(system)
         screenshot_manifest = [
             {"index": index + 1, "path": str(path), "name": path.name}
             for index, path in enumerate(screenshot_paths)
@@ -893,7 +948,8 @@ class VideoVerifierAgent:
                 VerificationMode.VIDEO,
                 [ValidationIssue(code="NO_SAMPLED_FRAMES", message="No sampled animation frames were produced.")],
             )
-        if not preview_video_path or not preview_video_path.exists():
+        frame_only = _video_verifier_uses_frame_sequence(self.llm.config)
+        if (not preview_video_path or not preview_video_path.exists()) and not frame_only:
             return ValidationReport.failed(
                 VerificationMode.VIDEO,
                 [
@@ -905,9 +961,10 @@ class VideoVerifierAgent:
                 ],
                 "Video verifier requires a GIF/video preview.",
             )
-        probe_report = self._probe_video_input(preview_video_path)
-        if probe_report is not None:
-            return probe_report
+        if preview_video_path and preview_video_path.exists() and not frame_only:
+            probe_report = self._probe_video_input(preview_video_path)
+            if probe_report is not None:
+                return probe_report
 
         system = (
             "You are a temporal verifier for Blender animations. "
@@ -920,10 +977,17 @@ class VideoVerifierAgent:
             "Do not infer success from transform traces alone when the video/GIF or sampled frames do not visibly show the final state. "
             "Transform trace locations are object origins or centers, not bottom contact points; never compute floating or penetration from center z values alone. Use visible geometry and the deterministic report for contact judgments."
         )
+        system = _with_presentation_quality_contract(system)
         frame_manifest = [
             {"index": index + 1, "path": str(path), "name": path.name}
             for index, path in enumerate(sampled_frame_paths)
         ]
+        evidence_note = (
+            "The attached images are the primary temporal evidence. They are ordered sampled frames from the animation; "
+            "judge motion, visibility, contact, and final state from that sequence. Do not require a separate video_url attachment."
+            if frame_only
+            else "The attached video/GIF is the primary evidence. The attached images are ordered sampled frames for reference."
+        )
         user = f"""
 Original prompt:
 {ir.prompt.text}
@@ -954,14 +1018,19 @@ Transform trace:
 Deterministic animation report:
 {report_to_json(deterministic_report)}
 
-The attached video/GIF is the primary evidence. The attached images are ordered sampled frames for reference.
+{evidence_note}
 Verify whether the requested animation is visually and temporally correct.
 Fail if a required moving subject, contact point, or final placement is hidden, cropped out, or occluded in the relevant sampled frame or GIF segment.
 Fail on visible floating, sinking, object penetration, unsupported motion across gaps, or broken bridge/ramp/platform contact even if the transform trace reaches the expected coordinates.
 If deterministic transform trace and images disagree, explain the mismatch and fail unless the animation is still visually unambiguous.
+For every issue, include a concrete suggested_fix that a Blender script refiner can apply.
 """
         try:
-            data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
+            if frame_only:
+                data = self.llm.json_multimodal(system, user, sampled_frame_paths)
+            else:
+                assert preview_video_path is not None
+                data = self.llm.json_video(system, user, preview_video_path, sampled_frame_paths)
         except Exception as exc:
             unsupported_media = _is_multimodal_input_unsupported(exc)
             return ValidationReport.failed(
@@ -1079,6 +1148,12 @@ Do not decide whether the animation is correct; only report whether the attachme
             return self.llm.json_video(system, user, preview_video_path, image_paths=[])
         except Exception as exc:
             return {"can_see_video": False, "attachment_readable": False, "summary": f"Retry probe failed: {exc}"}
+
+
+def _video_verifier_uses_frame_sequence(config: AgentModelConfig) -> bool:
+    model = config.model.lower()
+    provider = (config.custom_llm_provider or "").lower()
+    return provider == "dashscope" or model.startswith("dashscope/")
 
 
 def _preview_video_frame_count(preview_video_path: Path) -> int | None:
@@ -3110,6 +3185,7 @@ def _sanitize_generated_blender_code(code: str) -> str:
     for bad, good in replacements.items():
         code = code.replace(bad, good)
     code = _patch_verianim_utils_import_aliases(code)
+    code = _patch_verianim_custom_property_assignments(code)
     code = _patch_verianim_helper_keyword_compatibility(code)
     code = _patch_verianim_look_at_object_targets(code)
     code = _patch_cone_diameter_keywords(code)
@@ -3122,6 +3198,16 @@ def _sanitize_generated_blender_code(code: str) -> str:
     code = _patch_direct_action_fcurve_loops(code)
     code = _patch_common_ir_id_drift(code)
     code = _append_active_camera_fallback(code)
+    return code
+
+
+def _patch_verianim_custom_property_assignments(code: str) -> str:
+    for attr in ("verianim_id", "verianim_part", "verianim_role"):
+        code = _regex_sub_unprotected(
+            rf"\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.{attr}\s*=",
+            rf'\1[{attr!r}] =',
+            code,
+        )
     return code
 
 

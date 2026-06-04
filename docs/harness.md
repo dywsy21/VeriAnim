@@ -223,7 +223,10 @@ passes. The loop has safety caps to avoid infinite runs:
   video input.
 
 The IR can also set `scene.verifier.visual.max_rounds` and
-`animation.verifier.max_rounds`; the harness uses the largest applicable cap.
+`animation.verifier.max_rounds`; environment caps are hard upper bounds for the
+corresponding visual/video refinement loops. If a refiner LLM call fails after
+bounded provider retries, the harness writes a `REFINER_LLM_FAILED` report and
+stops that verifier loop instead of blocking the run indefinitely.
 
 ## Scene-Aware Screenshot Verification
 
@@ -278,6 +281,34 @@ multimodal context in addition to the JSON reports. This is important for
 layout repair: text reports often describe a symptom, while the image tells the
 coder which direction to move an object, whether a contact point is visibly
 wrong, and whether a verifier complaint is caused by camera occlusion.
+
+## Presentation Quality Contract
+
+Verifier pass/fail and presentation quality are related but not identical. A
+Qwen or other video verifier pass means the requested temporal semantics were
+visible enough to judge; it does not guarantee that the resulting GIF is a good
+demonstration. The harness therefore gives planner, coder, verifier, and
+refiner agents a shared presentation-quality contract:
+
+- Required subjects, contact points, motion path, and final state should remain
+  fully in frame unless the IR explicitly allows crop.
+- Cameras and screenshot views should use practical subject coverage, including
+  `min_subject_pixel_fraction` and `allow_subject_crop=false` where appropriate.
+- Large motions should use a wider main camera or explicit camera motion instead
+  of letting the object leave the frame.
+- Symmetric or subtle motions should include non-collision visual markers such
+  as ball stripes, colored blade tips, cloth edge/ripple stripes, path lines, or
+  small guide markers. Markers should be integrated into the object surface or
+  blade tip, not added as detached spheres, floating dots, placeholder blobs, or
+  other standalone artifacts.
+- Windmill, fan, wheel, and propeller rotors should have a visible hub/axle and
+  distinct blades offset outward from that hub, not two long crossing bars that
+  only look like a four-blade rotor from one angle.
+- Materials, floor/background, and lighting should separate the animated subject
+  from supports and targets instead of leaving a default-gray low-contrast view.
+- Visual refiner rounds should first repair composition, camera lens/location,
+  look-at target, markers, materials, and lighting before changing IR semantics
+  or object identities.
 
 The planner also normalizes ambiguous spatial language. For example, if the
 user says an object is "beside" or "next to" another object, the harness does

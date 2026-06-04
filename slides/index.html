@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VeriAnim Class Report</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+  <style>
+
+:root {
+  --ink: #182230;
+  --muted: #5d6b82;
+  --line: #d8dee8;
+  --blue: #2457a7;
+  --green: #2f855a;
+  --orange: #b55b18;
+  --red: #b42318;
+  --panel: #f7f8fb;
+}
+
+.reveal {
+  color: var(--ink);
+  font-family: "Aptos", "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-size: 32px;
+}
+
+.reveal .slides {
+  text-align: left;
+}
+
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+  color: var(--ink);
+  font-weight: 780;
+  letter-spacing: 0;
+  line-height: 1.08;
+  margin: 0 0 0.45em;
+}
+
+.reveal h1 {
+  font-size: 1.55em;
+}
+
+.reveal h2 {
+  font-size: 1.25em;
+}
+
+.reveal h3 {
+  font-size: 0.9em;
+  color: var(--blue);
+}
+
+.reveal p,
+.reveal li {
+  font-size: 0.66em;
+  line-height: 1.32;
+}
+
+.reveal ul,
+.reveal ol {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.reveal li + li {
+  margin-top: 0.22em;
+}
+
+.reveal code {
+  color: #0f4c81;
+  background: #eef4fb;
+  border-radius: 5px;
+  padding: 0.06em 0.22em;
+}
+
+.reveal pre code {
+  display: block;
+  max-height: 460px;
+  padding: 1em;
+}
+
+.title-slide {
+  text-align: left;
+}
+
+.title-slide h1 {
+  max-width: 880px;
+  font-size: 1.75em;
+}
+
+.subtitle {
+  margin-top: 1.1em;
+  color: var(--muted);
+  font-size: 0.72em;
+}
+
+.kicker {
+  color: var(--blue);
+  font-size: 0.58em;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.columns {
+  align-items: stretch;
+  display: grid;
+  gap: 0.65em;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin-top: 0.65em;
+}
+
+.column {
+  min-width: 0;
+}
+
+.column > .card,
+.column > .callout,
+.column > .warning,
+.column > .metric,
+.column > .media-placeholder {
+  box-sizing: border-box;
+  height: 100%;
+}
+
+.card,
+.callout,
+.warning,
+.metric,
+.media-placeholder {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.68em;
+}
+
+.card {
+  background: var(--panel);
+}
+
+.callout {
+  background: #eef6ff;
+  border-color: #b8d6ff;
+}
+
+.warning {
+  background: #fff4ed;
+  border-color: #ffd2bd;
+}
+
+.metric {
+  background: #eefaf4;
+  border-color: #bfe8d0;
+}
+
+.card strong,
+.callout strong,
+.warning strong,
+.metric strong,
+.media-placeholder strong {
+  display: block;
+  font-size: 0.95em;
+  font-weight: 820;
+  margin-bottom: 0.35em;
+}
+
+.warning strong,
+.metric strong,
+.callout strong {
+  color: var(--ink);
+}
+
+.columns + .callout,
+.columns + .warning,
+.columns + .metric,
+.columns + .card {
+  margin-top: 0.72em;
+}
+
+.card ul,
+.card ol,
+.callout ul,
+.callout ol,
+.warning ul,
+.warning ol,
+.metric ul,
+.metric ol {
+  list-style-position: inside;
+}
+
+.media-placeholder {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(36, 87, 167, 0.08), rgba(47, 133, 90, 0.08)),
+    repeating-linear-gradient(45deg, #f4f6fa 0, #f4f6fa 12px, #eef1f6 12px, #eef1f6 24px);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 220px;
+  text-align: center;
+}
+
+.pipeline {
+  display: grid;
+  gap: 0.42em;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 0.75em;
+}
+
+.pipeline .card {
+  min-height: 120px;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+  margin: 0.75em 0;
+}
+
+.tag-row code {
+  background: #edf4ee;
+  color: #1f6845;
+  font-size: 0.58em;
+  font-weight: 700;
+}
+
+.split-emphasis {
+  border-left: 6px solid var(--blue);
+  padding-left: 0.75em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.danger {
+  color: var(--red);
+}
+
+.small p,
+.small li {
+  font-size: 0.68em;
+}
+
+.center {
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .pipeline {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+<section class="title-slide">
+<div class="kicker">
+<p>Group 1 / Wang Siyu, Du Yuheng, Yang Tingyi, Tong Mingyang</p>
+</div>
+<h1>VeriAnim: Animation Extension Contracts for Verifiable Blender Programs</h1>
+<div class="subtitle">
+<p>从自然语言到自我迭代的 Blender 动画生成 Agent</p>
+</div>
+<aside class="notes"><ul>
+<li>这页只讲一句话：我们不是直接让模型写关键帧，而是让动画先变成可检查、可修复的合同。</li>
+</ul></aside>
+</section>
+<section>
+<h1>需要解决的问题</h1>
+<div class="split-emphasis">
+<p>静态 3D 生成只需要“场景像不像”；动画还要回答“谁（物体、光源、甚至摄像机）在什么时候动、是否符合物理规律、镜头是否真的看见了”。</p>
+</div>
+<ul>
+<li>直接生成 Blender keyframes 很容易只满足起点和终点的正确性。</li>
+<li>中间帧可能穿模、漏掉夹爪、把相机转到看不见动作的位置。</li>
+<li>这些问题的原因在于：约束往往并不能显示地被用户需求所表达，它是进一步分析用户需求后得出的。</li>
+</ul>
+</section>
+<section>
+<h1>我们的目标</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>输入</strong></p>
+<ul>
+<li>一段自然语言 prompt</li>
+<li>目标是可执行、可编辑的 Blender 程序</li>
+<li>支持静态场景 + 动画</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>输出</strong></p>
+<ul>
+<li>Blender 可运行的 Python script</li>
+<li>scene graph / transform traces</li>
+<li>截图 / 预览视频</li>
+<li>自动验证报告 / 修正记录</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="callout">
+<p>显然不是“生成一个视频”，而是生成一个能被检查、定位问题、局部修复的动画描述程序。</p>
+</div>
+</section>
+<section>
+<h1>核心想法：两层 IR</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>1. SceneSpec IR</strong></p>
+<ul>
+<li>静态场景作为基础</li>
+<li>各个对象的 ID / 有自由度的独立部位 / 材质</li>
+<li>对象之间关系 / 摄像机 / 碰撞 proxy</li>
+<li>计划怎样验证？应该满足怎样的约束？</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>2. Animation Extension Contract</strong></p>
+<ul>
+<li>在静态基线上添加时间</li>
+<li>event windows / animation families</li>
+<li>verifier probes / capability profiles</li>
+<li>media artifacts / repair scope</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="tag-row">
+<p><code>stable ids</code> <code>event windows</code> <code>probes</code> <code>audit trail</code></p>
+</div>
+</section>
+<section>
+<h1>系统流程</h1>
+<div class="pipeline">
+<div class="card">
+<p><strong>1. Plan</strong> prompt -&gt; SceneSpec IR + animation extension</p>
+</div>
+<div class="card">
+<p><strong>2. Build static scene</strong> 生成对象、材质、灯光、相机，并先验证静态场景</p>
+</div>
+<div class="card">
+<p><strong>3. Add animation</strong> 引用 object ids，写 keyframes / helpers / media sampling</p>
+</div>
+<div class="card">
+<p><strong>4. Verify + repair</strong> 几何检查 + 视觉/视频检查 + bounded local repair</p>
+</div>
+</div>
+<div class="callout">
+<p>先构建静态场景，验证通过后，动画阶段引用静态场景中的物体加关键帧；这样在修复动画问题时确保避免改动物体模型本身。</p>
+</div>
+</section>
+<section>
+<h1>SceneSpec IR 做什么</h1>
+<ul>
+<li>把 prompt 中的对象、部件、材质、空间关系、相机和证据计划显式化。</li>
+<li>每个对象有稳定 <code>verianim_id</code>，后续代码、采样、验证和修复都用同一套 id。</li>
+<li>空间关系不仅说“杯子在桌上”，还要说用什么方式检查 support / containment / attachment。</li>
+<li>碰撞 proxy 让几何验证可以在 Blender 执行后测量，而不是只相信模型描述。</li>
+</ul>
+<div class="metric">
+<p><strong>直接收益</strong> 动画生成从“重写完整场景”变成“在已验证场景上添加可审计的时间事件”。</p>
+</div>
+</section>
+<section>
+<h1>Animation Extension 做什么</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>Families</strong></p>
+<ul>
+<li>rigid motion</li>
+<li>camera motion</li>
+<li>visibility/state change</li>
+<li>deformable events</li>
+<li>mixed scenes</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>Evidence</strong></p>
+<ul>
+<li>bbox / BVH / contact probes</li>
+<li>camera coverage reports</li>
+<li>screenshots and video</li>
+<li>deformation statistics</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>Runtime honesty</strong></p>
+<ul>
+<li>supported</li>
+<li>degraded</li>
+<li>unsupported scope</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="callout">
+<p>原则：每一种动画能力都必须说明它靠什么证据被验证。</p>
+</div>
+</section>
+<section>
+<h1>目前最成熟：刚体 primitive</h1>
+<ul>
+<li><strong>support motion</strong>：滑动、落到支撑面、沿支撑物移动。</li>
+<li><strong>paired interaction</strong>：推、携带、保持 driver-payload offset。</li>
+<li><strong>pick-place</strong>：approach, grasp, lift, transfer, lower, release。</li>
+<li><strong>articulation</strong>：门轴、转子、绕有意义的 pivot 转动。</li>
+<li><strong>composition</strong>：每个 frame window 只有一个 transform owner，避免互相抢控制权。</li>
+</ul>
+<div class="warning">
+<p>这些 primitive 不是为了写“更漂亮”的 keyframes，而是为了让每段动作都有可验证的不变量。</p>
+</div>
+</section>
+<section>
+<h1>验证与修复</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>Deterministic checks</strong></p>
+<ul>
+<li>support gap and overlap</li>
+<li>non-penetration</li>
+<li>containment</li>
+<li>transform ownership</li>
+<li>dense frame audit</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>Media checks</strong></p>
+<ul>
+<li>subject visibility</li>
+<li>camera framing</li>
+<li>temporal order</li>
+<li>apparent final state</li>
+<li>video verifier feedback</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="metric">
+<p><strong>修复策略</strong> 用测量证据改局部 motion path：例如重新计算物体底部和支撑面顶部的高度，而不是要求模型整段重写。</p>
+</div>
+</section>
+<section>
+<h1>我们已经实现了什么</h1>
+<ul>
+<li>Blender addon socket server：执行脚本、检查场景、渲染截图和 preview video。</li>
+<li>Python harness：planner / coder / refiner / visual verifier / video verifier。</li>
+<li>IR parser and serializer：静态 SceneSpec + animation extension。</li>
+<li>Deterministic validator：几何关系、transform traces、frame-window auditing。</li>
+<li>Texture resolver：允许 Agent 联网搜索 texture。</li>
+<li>Harness KV Cache Optimization：多轮 refine 情况下的 KV Cache 命中优化</li>
+<li>VeriAnim-AnimBench：300 条 prompt，easy / medium / hard 各 100。</li>
+</ul>
+</section>
+<section>
+<h1>遇到的问题</h1>
+<div class="columns">
+<div class="column">
+<div class="warning">
+<p><strong>穿模仍然最常见</strong></p>
+<ul>
+<li>运动过程中间物体穿过另一物体</li>
+<li>使用 bbox 判定对凹形物体不够精确</li>
+<li>sparse samples 容易漏掉短暂接触错误</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="warning">
+<p><strong>模型能力差导致难以自我更正</strong></p>
+<ul>
+<li>反复 refinement 仍然改不到失败原因</li>
+<li>破坏那些好的、已有的东西</li>
+<li>会“解释”错误，而不是修复</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="callout">
+<p>这也是我们强调 bounded repair 和 deterministic evidence 的原因：不能只把失败报告丢回给模型。</p>
+</div>
+</section>
+<section>
+<h1>Showcase 占位</h1>
+<div class="columns">
+<div class="column">
+<div class="media-placeholder"><strong>GIF 1</strong><p>Prompt: TBD</p></div>
+</div>
+<div class="column">
+<div class="media-placeholder"><strong>GIF 2</strong><p>Prompt: TBD</p></div>
+</div>
+</div>
+<div class="muted">
+<p>之后这里会放若干成功/失败 showcase：GIF + 对应 prompt + verifier 或 repair 简短结果。</p>
+</div>
+</section>
+<section>
+<h1>Benchmark：refine 轮数作为大模型评测指标</h1>
+<div class="metric">
+<p><strong>观察</strong></p>
+<p>我们发现不同模型的能力差异体现在动画制作上的效果是显著的。可以通过 Refine 轮数去对不同模型的能力进行评测。</p>
+</div>
+<ul>
+<li><code>0 rounds</code>：一次生成就满足几何和媒体证据。</li>
+<li><code>1-2 rounds</code>：局部修复有效，说明合同和证据足够定位问题。</li>
+<li><code>many rounds / stop</code>：通常对应弱模型、欠约束 primitive、或 verifier 无法给出可操作证据。</li>
+<li>我们正在把 refine rounds 纳入 AnimBench 评测。</li>
+</ul>
+</section>
+<section>
+<h1>仍存在的问题与下一步</h1>
+<ul>
+<li>更精细的 mesh/BVH 检查，减少 bbox 对穿模的误判和漏判。</li>
+<li>让 camera / visibility / deformable family 的 primitive 和验证更完整。</li>
+<li>把“弱模型无法更正”的失败类型系统化，区分模型能力、证据质量和合同缺失。</li>
+<li>用 refine rounds 作为 benchmark 指标，衡量模型能力。</li>
+</ul>
+</section>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      slideNumber: "c/t",
+      transition: "fade",
+      backgroundTransition: "fade",
+      controlsTutorial: false,
+      plugins: [ RevealNotes ]
+    });
+  </script>
+</body>
+</html>
