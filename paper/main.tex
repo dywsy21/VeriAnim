@@ -21,7 +21,7 @@
 
 \newcommand{\code}[1]{\texttt{#1}}
 
-\title{VeriAnim: Animation Extension Contracts for Verifiable Blender Programs}
+\title{VeriAnim: Verifiable LLM 3D Animation Generation with Blender Programs}
 
 \author{Anonymous Authors\\
 Anonymous Institution\\
@@ -34,25 +34,25 @@ Anonymous Institution\\
 \maketitle
 
 \begin{abstract}
-Executable 3D generation needs static and temporal contracts. Blender programs give language models an inspectable medium for 3D modeling. Animation adds obligations that static generation does not expose: object identities must persist, events must own frame windows, contacts must hold across interpolation, cameras must reveal the motion, and unsupported dynamics must fail with clear scope. We present VeriAnim, a static SceneSpec IR, an animation-extension layer, and VeriAnim-AnimBench for verifiable Blender programs. SceneSpec represents object identity, parts, materials, relations, cameras, collision proxies, and evidence plans before code generation. The animation layer extends that verified baseline with rigid motion, camera motion, visibility changes, and deformable events. The harness executes generated Blender programs, records scene graphs and media artifacts, checks deterministic geometry predicates, queries visual and video verifiers, and applies bounded repair when measured evidence identifies a local violation. VeriAnim-AnimBench contributes 300 natural-language prompts across easy, medium, and hard animation tiers.
+LLM 3D animation generation needs static and temporal contracts. Blender programs give language models an inspectable medium for constructing and animating 3D scenes. Animation adds obligations that static generation does not expose: object identities must persist, events must own frame windows, contacts must hold across interpolation, cameras must reveal the motion, and unsupported dynamics must fail with clear scope. We present VeriAnim, a static SceneSpec IR, an animation-extension layer, and VeriAnim-AnimBench for verifiable LLM-generated Blender animations. SceneSpec represents object identity, parts, materials, relations, cameras, collision proxies, and evidence plans before code generation. The harness first verifies and repairs the static scene with deterministic checks, screenshots, and visual verification. The animation layer then extends that verified baseline with rigid motion, camera motion, visibility changes, and deformable events. The harness records scene graphs and media artifacts, queries visual and video verifiers, and applies bounded repair when measured evidence identifies a local violation. VeriAnim-AnimBench contributes 300 natural-language prompts across easy, medium, and hard animation tiers.
 \end{abstract}
 
 \section{Introduction}
 
-Blender has become a programmable medium for communicating dynamic 3D ideas: demonstrations, robotics mockups, educational animations, game prototypes, and synthetic data scenes all rely on motion as much as shape. A useful language interface should therefore produce an executable animation, not just a static arrangement of objects. A prompt such as ``a gripper moves a box from a conveyor to a cart while the camera follows'' requires object construction, event sequencing, contact maintenance, camera coverage, and temporal verification.
+Blender has become a programmable medium for communicating dynamic 3D ideas: demonstrations, robotics mockups, educational animations, game prototypes, and synthetic data scenes all rely on motion as much as shape. A useful LLM 3D animation interface should therefore produce an executable animation, not just a static arrangement of objects. A prompt such as ``a gripper moves a box from a conveyor to a cart while the camera follows'' requires object construction, event sequencing, contact maintenance, camera coverage, and temporal verification.
 
-Blender Python gives this interface a practical target language for large language 3D modeling~\citep{lu2025verianim}. Static scene generation already benefits from code: object creation, materials, lights, cameras, and layout constraints become inspectable program structure. We add a static SceneSpec IR that makes those obligations explicit before code generation. Animation exposes the next structural gap. A static scene contract says what exists and where it starts. An animation contract must say which object moves, who controls each frame window, which relation persists, which evidence verifies the motion, and which runtime executes the behavior.
+Blender Python gives this interface a practical target language for large language 3D modeling~\citep{lu2025verianim}. Static scene generation already benefits from code: object creation, materials, lights, cameras, and layout constraints become inspectable program structure. Static scenes still need their own verifier-repair loop because animation should start from measured object identities, relations, camera coverage, and material evidence. We add a static SceneSpec IR that makes those obligations explicit before code generation. Animation exposes the next structural gap. A static scene contract says what exists, what relation evidence supports it, and what repairs preserve it. An animation contract must say which object moves, who controls each frame window, which relation persists, which evidence verifies the motion, and which runtime executes the behavior.
 
 Direct keyframe generation collapses these obligations into unstructured code. The generated script may satisfy the final frame while interpolating through a support surface, move a payload while leaving the gripper behind, or render a video in which the important contact point is hidden. These outcomes do not mean Blender code is the wrong medium. They show that animation needs a contract layer between language planning, code generation, execution, verification, and repair.
 
 We introduce a two-level IR for verifiable Blender generation. \code{SceneSpec} captures the static scene as a typed contract over objects, parts, materials, relations, cameras, proxies, and evidence. The \emph{Animation Extension Contract} then keeps that scene as a frozen baseline and adds animation families, event windows, target capability profiles, simulation-cache metadata, and verifier probes. Rigid-body motion uses deterministic geometry probes. Camera and visibility events use coverage and media probes. Deformable events use deformation statistics plus video evidence. Capability profiles record runtime support and unsupported scope.
 
-The design follows a simple rule: every generated animation feature must name the evidence that can validate it. A planner emits a scene-and-animation IR. A coder generates Blender Python against a stable helper library. A Blender addon executes the script and returns scene graphs, transform traces, screenshots, and preview videos. Deterministic validators check support, penetration, containment, attachment, and transform ownership. Visual and video verifiers judge semantic layout, visibility, and temporal intent. Repair routines rewrite local motion paths when measured evidence identifies a bounded violation.
+The design follows a simple rule: every generated scene or animation feature must name the evidence that can validate it. A planner emits a scene-and-animation IR. A coder generates Blender Python against a stable helper library. A Blender addon executes the script and returns scene graphs, transform traces, screenshots, and preview videos. Deterministic validators check support, penetration, containment, attachment, baseline preservation, and transform ownership. Visual and video verifiers judge semantic layout, visibility, and temporal intent. Repair routines rewrite local scene placements or motion paths when measured evidence identifies a bounded violation.
 
 This paper makes four contributions:
 \begin{itemize}
     \item \textbf{Static and temporal IR contracts.} We define \code{SceneSpec} for static Blender scenes and an animation extension that organizes families, probes, capability profiles, event windows, and artifact ownership.
-    \item \textbf{Verifier-facing Blender harness.} We use Blender code as a 3D medium and add staged static-to-animation generation, deterministic checks, visual/video verification, media diagnostics, and bounded repair.
+    \item \textbf{Verifier-facing Blender harness.} We use Blender code as a 3D medium and add staged static-to-animation generation, static and temporal repair, visual/video verification, and media diagnostics.
     \item \textbf{Rigid primitive methodology.} We instantiate the contract with geometry-aware rigid primitives for support motion, paired interaction, pick-place manipulation, articulation, and temporal composition.
     \item \textbf{VeriAnim-AnimBench.} We release a 300-prompt benchmark with easy, medium, and hard tiers for measuring scene complexity, temporal composition, verifier coverage, and repair cost.
 \end{itemize}
@@ -71,39 +71,42 @@ The implementation supports static scene generation, camera and rigid animation 
     repair/.style={-Latex, thick, dashed, llred}
 ]
 \node[stage, fill=llblue!12] (s1) at (0,0) {1. Plan};
-\node[stage, fill=llorange!14] (s2) at (4.4,0) {2. Build static scene};
+\node[stage, fill=llorange!14] (s2) at (4.4,0) {2. Generate static scene};
 \node[stage, fill=llpurple!14] (s3) at (8.8,0) {3. Add animation};
-\node[stage, fill=llgreen!14] (s4) at (13.2,0) {4. Verify + repair};
+\node[stage, fill=llgreen!14] (s4) at (13.2,0) {4. Verify animation};
 
 \node[card] (prompt) at (0,-1.25) {Natural-language\\prompt};
 \node[card, fill=llblue!5] (planner) at (0,-2.65) {Planner\\SceneSpec + extension};
-\node[card, fill=llorange!6] (scene) at (4.4,-1.25) {Scene coder\\objects, materials, cameras};
-\node[artifact] (staticart) at (4.4,-2.65) {Static script\\views + scene graph};
+\node[card, fill=llorange!6] (scene) at (4.4,-1.25) {Static coder\\objects, materials, cameras};
+\node[artifact] (staticart) at (4.4,-2.65) {Scene graph\\screenshots + reports};
+\node[card, fill=llorange!10, minimum width=38mm] (staticfix) at (4.4,-4.05) {Static repair\\or LLM refinement};
 \node[card, fill=llpurple!6] (anim) at (8.8,-1.25) {Animation coder\\events, probes, media};
 \node[artifact] (animart) at (8.8,-2.65) {Preview video\\frames + transforms};
 \node[card, fill=llgreen!6] (verify) at (13.2,-1.25) {Geometry, vision,\\and video probes};
-\node[card, fill=llgreen!10] (fix) at (13.2,-2.65) {Local repair\\or LLM refinement};
+\node[card, fill=llgreen!10] (fix) at (13.2,-2.65) {Animation repair\\or LLM refinement};
 \node[artifact, fill=llgreen!18, minimum width=41mm] (out) at (13.2,-4.05) {Verified Blender script and audit trail};
 
 \draw[arrow] (prompt) -- (planner);
 \draw[arrow] (planner.east) -- (scene.west);
 \draw[arrow] (scene) -- (staticart);
-\draw[arrow] (staticart.east) -- (anim.west);
+\draw[arrow] (staticart) -- (staticfix);
+\draw[arrow] (staticfix.east) -- ++(0.8,0) -- ++(0,2.8) -- (anim.west);
 \draw[arrow] (anim) -- (animart);
 \draw[arrow] (animart.east) -- (verify.west);
 \draw[arrow] (verify) -- (fix);
 \draw[arrow] (fix) -- (out);
+\draw[repair] (staticfix.west) -- ++(-0.7,0) -- ++(0,2.8) -- (scene.west);
 \draw[repair] (fix.west) -- ++(-0.9,0) -- ++(0,-1.0) -- (6.55,-3.65) -- (6.55,-1.25) -- (anim.west);
 
 \begin{scope}[on background layer]
 \node[draw=llblue!30, rounded corners=8pt, fill=llblue!4, fit=(s1)(prompt)(planner), inner sep=5pt] {};
-\node[draw=llorange!35, rounded corners=8pt, fill=llorange!5, fit=(s2)(scene)(staticart), inner sep=5pt] {};
+\node[draw=llorange!35, rounded corners=8pt, fill=llorange!5, fit=(s2)(scene)(staticart)(staticfix), inner sep=5pt] {};
 \node[draw=llpurple!35, rounded corners=8pt, fill=llpurple!5, fit=(s3)(anim)(animart), inner sep=5pt] {};
 \node[draw=llgreen!35, rounded corners=8pt, fill=llgreen!5, fit=(s4)(verify)(fix)(out), inner sep=5pt] {};
 \end{scope}
 \end{tikzpicture}
 }
-\caption{The harness turns a prompt into a verified Blender animation through two IR contracts. \code{SceneSpec} establishes a static baseline, and the animation extension adds temporal events, probes, media evidence, and bounded repair.}
+\caption{The harness turns a prompt into a verified Blender animation through two verifier-repair loops. \code{SceneSpec} establishes a measured static baseline through deterministic and visual checks, and the animation extension adds temporal events, probes, media evidence, and bounded repair.}
 \label{fig:architecture}
 \end{figure}
 
@@ -134,7 +137,7 @@ Vision and video-language models judge semantic layout and temporal intent in ge
 
 \subsection{Static Scene Contracts Anchor Animation}
 
-The harness generates and verifies a static scene before it adds animation. This staging makes the static scene a contract that later motion must preserve. We introduce \code{SceneSpec} as the static-scene IR for this contract. The static stage owns the object inventory, stable ids, part structure, materials, cameras, lights, environment, spatial relations, collision proxies, screenshot plan, and texture policy. The animation stage then references these ids instead of rebuilding the scene.
+The harness generates, verifies, repairs, and freezes a static scene before it adds animation. This staging makes the static scene a measured contract that later motion must preserve. We introduce \code{SceneSpec} as the static-scene IR for this contract. The static stage owns the object inventory, stable ids, part structure, materials, cameras, lights, environment, spatial relations, collision proxies, screenshot plan, and texture policy. The animation stage then references these ids instead of rebuilding the scene.
 
 \code{SceneSpec} separates semantic intent from executable Blender code. \code{ObjectSpec} records controllable entities, roles, dimensions, parts, materials, and collision proxies. \code{SpatialRelationSpec} records relations such as support, attachment, containment, distance, and facing, together with a verification method. \code{CameraSpec} and \code{ScreenshotPlan} record the evidence that visual verifiers need. \code{MaterialSpec} records texture policy before code generation, so appearance retrieval remains auditable.
 
@@ -158,7 +161,7 @@ LLM scene commands & Language-guided static environments or structured reconstru
 }
 \end{table}
 
-This design keeps repair local. A support failure should move the object or its keyed path, not regenerate the table, camera, or material. A video verifier complaint about poor visibility should adjust camera evidence, not change object identity. The static-scene-first boundary gives every verifier and repair routine a shared baseline.
+This design keeps repair local. A static support failure should move the misplaced object, not regenerate the table, camera, or material. A temporal support failure should move only the keyed path. A video verifier complaint about poor visibility should adjust camera evidence, not change object identity. The static-scene-first boundary gives every verifier and repair routine a shared baseline.
 
 \subsection{Animation Extension Contracts Make Time Explicit}
 
@@ -175,25 +178,22 @@ The Animation Extension Contract is the paper's core abstraction. It extends a v
     arrow/.style={-Latex, thick}
 ]
 \node[core] (contract) at (0,1.75) {Animation Extension Contract};
-\node[header, fill=llblue!10] (event) at (-6.2,0.35) {Event Layer};
-\node[header, fill=llgreen!12] (evidence) at (-2.05,0.35) {Evidence Layer};
-\node[header, fill=llorange!13] (runtime) at (2.10,0.35) {Runtime Layer};
-\node[header, fill=llpurple!12] (artifact) at (6.25,0.35) {Artifact Layer};
-\node[panel] (p1) at (-6.2,-1.05) {\textbf{Families}\\rigid, camera, visibility\\deformable, mixed};
-\node[panel] (p2) at (-2.05,-1.05) {\textbf{Verifier probes}\\bbox and BVH\\vision and video\\joint, deformation, particle stats};
-\node[panel] (p3) at (2.10,-1.05) {\textbf{Target profiles}\\Blender supported\\Unity/Maya degraded\\unsupported scope reporting};
-\node[panel] (p4) at (6.25,-1.05) {\textbf{Artifacts and caches}\\scene graphs and traces\\frames and videos\\cache status and invalidation};
-\foreach \x in {event,evidence,runtime,artifact} \draw[arrow] (contract.south) -- (\x.north);
+\node[header, fill=llblue!10] (event) at (-4.4,0.35) {Event Layer};
+\node[header, fill=llgreen!12] (evidence) at (0,0.35) {Evidence Layer};
+\node[header, fill=llpurple!12] (artifact) at (4.4,0.35) {Artifact Layer};
+\node[panel] (p1) at (-4.4,-1.05) {\textbf{Families}\\rigid, camera, visibility\\deformable, mixed};
+\node[panel] (p2) at (0,-1.05) {\textbf{Verifier probes}\\bbox and BVH\\vision and video\\joint, deformation, particle stats};
+\node[panel] (p4) at (4.4,-1.05) {\textbf{Artifacts and caches}\\scene graphs and traces\\frames and videos\\cache status and invalidation};
+\foreach \x in {event,evidence,artifact} \draw[arrow] (contract.south) -- (\x.north);
 \draw[arrow] (event) -- (p1);
 \draw[arrow] (evidence) -- (p2);
-\draw[arrow] (runtime) -- (p3);
 \draw[arrow] (artifact) -- (p4);
 \begin{scope}[on background layer]
 \node[draw=llgray!25, rounded corners=8pt, fill=lllight, fit=(contract)(event)(artifact)(p1)(p4), inner sep=7pt] {};
 \end{scope}
 \end{tikzpicture}
 }
-\caption{The extension contract organizes animation into event, evidence, runtime, and artifact layers. Each layer names the information that generated Blender code must expose for verification and repair.}
+\caption{The extension contract organizes animation into event, evidence, and artifact layers. Each layer names the information that generated Blender code must expose for verification and repair.}
 \label{fig:extension-taxonomy}
 \end{figure}
 
@@ -208,7 +208,7 @@ The same prompt can target Blender, Unity, Maya, or other runtimes, but the harn
 
 \subsection{Staging Preserves the Static Scene Baseline}
 
-The harness generates a static scene before it generates animation. The static stage owns objects, materials, relations, cameras, lighting, texture policy, and screenshot plans. The animation stage references those stable ids and may add keyframes, media sampling, contact constraints, and camera events. This separation lets repair edit a motion path without rebuilding the scene to hide the original problem.
+The harness runs a complete static verifier-repair loop before it generates animation. The static stage executes the scene script, validates object ids and spatial relations, applies deterministic support repair when measured bboxes identify a bounded placement error, renders screenshots, and runs visual verification. The animation stage references the verified ids and may add keyframes, media sampling, contact constraints, and camera events. This separation lets repair edit a motion path without rebuilding the scene to hide the original problem.
 
 The Blender runtime acts as the shared measurement substrate. It executes generated code, records object summaries, aggregates descendants by \code{verianim\_id}, samples transforms at semantic frames and dense audit windows, renders screenshots, and renders preview videos when requested. Verifiers and repair routines consume these artifacts as structured evidence about the generated script.
 
@@ -275,7 +275,7 @@ Media verifiers answer questions that geometry cannot answer alone. Vision check
 
 \subsection{Repair Uses Measured Evidence}
 
-Repair routines edit local motion when the verifier reports bounded evidence. Support repair recalculates the subject's vertical coordinate from the support top. Path repair shifts keyed locations in the failing window. Bridge and platform repair create outside-lift-enter-cross-exit paths. Carry repair sends role-specific evidence to the refiner when a generated script violates gripper or payload ownership. The repair loop stays bounded: repeated identical failure signatures stop refinement instead of running indefinitely.
+Repair routines edit local scene placement or motion when the verifier reports bounded evidence. Static support repair recalculates object placement from the support top before animation begins. Temporal support repair recalculates the subject's vertical coordinate at keyed frames. Path repair shifts keyed locations in the failing window. Bridge and platform repair create outside-lift-enter-cross-exit paths. Carry repair sends role-specific evidence to the refiner when a generated script violates gripper or payload ownership. The repair loop stays bounded: repeated identical failure signatures stop refinement instead of running indefinitely.
 
 \section{System Components}
 
