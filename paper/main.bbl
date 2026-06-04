@@ -1,4 +1,4 @@
-\begin{thebibliography}{8}
+\begin{thebibliography}{26}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -22,6 +22,14 @@ Michael Ahn, Anthony Brohan, Noah Brown, Yevgen Chebotar, Omar Cortes, Byron
 \newblock Do as i can, not as i say: Grounding language in robotic affordances.
 \newblock In \emph{Conference on Robot Learning}, 2022.
 
+\bibitem[Armeni et~al.(2019)Armeni, He, Gwak, Zamir, Fischer, Malik, and
+  Savarese]{armeni2019scenegraph}
+Iro Armeni, Zhi-Yang He, JunYoung Gwak, Amir~R. Zamir, Martin Fischer, Jitendra
+  Malik, and Silvio Savarese.
+\newblock 3d scene graph: A structure for unified semantics, 3d space, and
+  camera.
+\newblock In \emph{International Conference on Computer Vision}, 2019.
+
 \bibitem[Austin et~al.(2021)Austin, Odena, Nye, Bosma, Michalewski, Dohan,
   Jiang, Cai, Terry, Le, and Sutton]{austin2021program}
 Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski,
@@ -29,6 +37,24 @@ Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski,
   Sutton.
 \newblock Program synthesis with large language models.
 \newblock In \emph{NeurIPS Workshop on MATH-AI}, 2021.
+
+\bibitem[Avetisyan et~al.(2024)Avetisyan, Dai, and
+  Nie{\ss}ner]{avetisyan2024scenescript}
+Armen Avetisyan, Angela Dai, and Matthias Nie{\ss}ner.
+\newblock Scenescript: Reconstructing scenes with an autoregressive structured
+  language model.
+\newblock In \emph{European Conference on Computer Vision}, 2024.
+
+\bibitem[Blattmann et~al.(2023)Blattmann, Dockhorn, Kulal, Mendelevitch,
+  Kilian, Lorenz, Levi, English, Voleti, Letts, Jampani, and
+  Rombach]{blattmann2023align}
+Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej
+  Kilian, Dominik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts,
+  Varun Jampani, and Robin Rombach.
+\newblock Align your latents: High-resolution video synthesis with latent
+  diffusion models.
+\newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
+  2023.
 
 \bibitem[Chen et~al.(2021)Chen, Tworek, Jun, Yuan, Pinto, Kaplan, Edwards,
   Burda, Joseph, Brockman, Ray, Puri, Krueger, Petrov, Khlaaf, Sastry, Mishkin,
@@ -53,6 +79,28 @@ Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de~Oliveira
 \newblock Evaluating large language models trained on code.
 \newblock \emph{arXiv preprint arXiv:2107.03374}, 2021.
 
+\bibitem[Coumans \& Bai(2016)Coumans and Bai]{coumans2016bullet}
+Erwin Coumans and Yunfei Bai.
+\newblock Pybullet, a python module for physics simulation for games, robotics
+  and machine learning.
+\newblock In \emph{Game Developers Conference}, 2016.
+
+\bibitem[Gao et~al.(2024)Gao, Liu, Chen, Geiger, Wang, and
+  Chen]{gao2024graphdreamer}
+Gege Gao, Weiyang Liu, Anpei Chen, Andreas Geiger, Bernhard Wang, and Mianzhi
+  Chen.
+\newblock Graphdreamer: Compositional 3d scene synthesis from scene graphs.
+\newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
+  2024.
+
+\bibitem[Ho et~al.(2022)Ho, Chan, Saharia, Whang, Gao, Gritsenko, Kingma,
+  Poole, Norouzi, Fleet, and Salimans]{ho2022imagenvideo}
+Jonathan Ho, William Chan, Chitwan Saharia, Jay Whang, Ruiqi Gao, Alexey
+  Gritsenko, Diederik~P. Kingma, Ben Poole, Mohammad Norouzi, David~J. Fleet,
+  and Tim Salimans.
+\newblock Imagen video: High definition video generation with diffusion models.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2022.
+
 \bibitem[Huang et~al.(2022)Huang, Xia, Xiao, Chan, Liang, Florence, Zeng,
   Tompson, Mordatch, Chebotar, Sermanet, Brown, Jackson, Luu, Levine, Hausman,
   and Ichter]{huang2022inner}
@@ -64,6 +112,33 @@ Wenlong Huang, Fei Xia, Ted Xiao, Harris Chan, Jacky Liang, Pete Florence, Andy
   models.
 \newblock \emph{arXiv preprint arXiv:2207.05608}, 2022.
 
+\bibitem[Jones et~al.(2020)Jones, Guerrero, and Mitra]{jones2020shapeassembly}
+R.~Kenny Jones, Paul Guerrero, and Niloy~J. Mitra.
+\newblock Shapeassembly: Learning to generate programs for 3d shape structure
+  synthesis.
+\newblock \emph{ACM Transactions on Graphics}, 39\penalty0 (6), 2020.
+
+\bibitem[{Khronos Group}(2025)]{khronos2025collada}
+{Khronos Group}.
+\newblock {COLLADA}: Digital asset and fx exchange schema, 2025.
+\newblock Open standard specification.
+
+\bibitem[Kovar et~al.(2002)Kovar, Gleicher, and Pighin]{kovar2002motiongraphs}
+Lucas Kovar, Michael Gleicher, and Fr{\'e}d{\'e}ric Pighin.
+\newblock Motion graphs.
+\newblock In \emph{Proceedings of ACM SIGGRAPH}, 2002.
+
+\bibitem[LaValle(2006)]{lavalle2006planning}
+Steven~M. LaValle.
+\newblock \emph{Planning Algorithms}.
+\newblock Cambridge University Press, 2006.
+
+\bibitem[Li et~al.(2023)Li, Li, Savarese, and Hoi]{li2023blip2}
+Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi.
+\newblock {BLIP-2}: Bootstrapping language-image pre-training with frozen image
+  encoders and large language models.
+\newblock In \emph{International Conference on Machine Learning}, 2023.
+
 \bibitem[Lin et~al.(2023)Lin, Gao, Tang, Takikawa, Zeng, Huang, Kreis, Fidler,
   Liu, and Lin]{lin2023magic3d}
 Chen-Hsuan Lin, Jun Gao, Luming Tang, Towaki Takikawa, Xiaohui Zeng, Xun Huang,
@@ -71,6 +146,35 @@ Chen-Hsuan Lin, Jun Gao, Luming Tang, Towaki Takikawa, Xiaohui Zeng, Xun Huang,
 \newblock Magic3d: High-resolution text-to-3d content creation.
 \newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
   2023.
+
+\bibitem[Lu et~al.(2025)Lu, Zhao, Liu, Chen, Zhang, Lin, and Wang]{lu2025ll3m}
+Sining Lu, Yicheng Zhao, Haowen Liu, Yixin Chen, Chi Zhang, Dahua Lin, and
+  He~Wang.
+\newblock {LL3M}: Large language 3d modelers.
+\newblock \emph{arXiv preprint arXiv:2508.08228}, 2025.
+
+\bibitem[Macklin et~al.(2014)Macklin, M{\"u}ller, Chentanez, and
+  Kim]{macklin2014unified}
+Miles Macklin, Matthias M{\"u}ller, Nuttapong Chentanez, and Tae-Yong Kim.
+\newblock Unified particle physics for real-time applications.
+\newblock \emph{ACM Transactions on Graphics}, 33\penalty0 (4), 2014.
+
+\bibitem[Mo et~al.(2019)Mo, Guerrero, Yi, Su, Wonka, Mitra, and
+  Guibas]{mo2019structurenet}
+Kaichun Mo, Paul Guerrero, Li~Yi, Hao Su, Peter Wonka, Niloy~J. Mitra, and
+  Leonidas~J. Guibas.
+\newblock Structurenet: Hierarchical graph networks for 3d shape generation.
+\newblock \emph{ACM Transactions on Graphics}, 38\penalty0 (6), 2019.
+
+\bibitem[{OpenAI}(2023)]{openai2023gpt4v}
+{OpenAI}.
+\newblock {GPT-4V}(ision) system card.
+\newblock \emph{Technical report}, 2023.
+
+\bibitem[{Pixar Animation Studios}(2016)]{pixar2016usd}
+{Pixar Animation Studios}.
+\newblock Universal scene description, 2016.
+\newblock Open-source scene description framework.
 
 \bibitem[Poole et~al.(2023)Poole, Jain, Barron, and
   Mildenhall]{poole2022dreamfusion}
@@ -84,6 +188,21 @@ Timo Schick, Jane Dwivedi-Yu, Roberto Dess{\`i}, Roberta Raileanu, Maria
   Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom.
 \newblock Toolformer: Language models can teach themselves to use tools.
 \newblock In \emph{Advances in Neural Information Processing Systems}, 2023.
+
+\bibitem[Witkin \& Kass(1988)Witkin and Kass]{witkin1988spacetime}
+Andrew Witkin and Michael Kass.
+\newblock Spacetime constraints.
+\newblock In \emph{Proceedings of the 15th Annual Conference on Computer
+  Graphics and Interactive Techniques}, 1988.
+
+\bibitem[Yang et~al.(2024)Yang, Sun, Weihs, VanderBilt, Herrasti, Han, Wu,
+  Haber, Krishna, Liu, Callison-Burch, Yatskar, and Kembhavi]{yang2024holodeck}
+Yue Yang, Fan-Yun Sun, Luca Weihs, Eli VanderBilt, Alvaro Herrasti, Winson Han,
+  Jiajun Wu, Nick Haber, Ranjay Krishna, Lingjie Liu, Chris Callison-Burch,
+  Mark Yatskar, and Aniruddha Kembhavi.
+\newblock Holodeck: Language guided generation of 3d embodied ai environments.
+\newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
+  2024.
 
 \bibitem[Yao et~al.(2023)Yao, Zhao, Yu, Du, Shafran, Narasimhan, and
   Cao]{yao2023react}

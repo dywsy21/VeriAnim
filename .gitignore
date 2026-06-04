@@ -15,6 +15,7 @@ runs-summary/
 qwen3-omni.md
 local-docs
 .*
+paper/project_context.md
 
 # latex build files
 *.aux
@@ -33,4 +34,4 @@ local-docs
 *.fdb_latexmk
 *.synctex.gz
 *.pdf
-
+paper/figures

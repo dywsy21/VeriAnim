@@ -4,11 +4,24 @@
 \input{math_commands.tex}
 
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{hyperref}
+\usepackage{tikz}
 \usepackage{url}
 \usepackage{xcolor}
+\usetikzlibrary{arrows.meta,backgrounds,calc,fit,matrix,positioning,shapes.geometric}
 
-\title{Primitive-Constrained Verification and Repair for LLM-Generated Rigid-Body Animations}
+\definecolor{llblue}{HTML}{4E79A7}
+\definecolor{llorange}{HTML}{F28E2B}
+\definecolor{llgreen}{HTML}{59A14F}
+\definecolor{llred}{HTML}{E15759}
+\definecolor{llpurple}{HTML}{B07AA1}
+\definecolor{llgray}{HTML}{6B7280}
+\definecolor{lllight}{HTML}{F4F6F8}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{Animation Extension Contracts for Verifiable LL3M-Generated Blender Programs}
 
 \author{Anonymous Authors\\
 Anonymous Institution\\
@@ -21,216 +34,300 @@ Anonymous Institution\\
 \maketitle
 
 \begin{abstract}
-Large language models can synthesize executable Blender programs from natural language, but direct keyframe generation often produces rigid-body animations that are visually plausible in isolated frames while violating basic contact constraints over time. Objects float above supports, penetrate tables or conveyors, detach from grippers, or satisfy a final language relation only by crossing through intervening geometry. We present a verification-oriented harness for LLM-generated rigid-body animation. The harness decomposes generation into a static scene stage and an animation extension stage, represents motion intent in an intermediate representation with stable object identities and contact constraints, executes Blender programs, verifies geometry with deterministic contact and penetration checks, and repairs common failures through measured scene-graph feedback. The current implementation further adds primitive-constrained animation helpers for support sliding, support sequences, pick-carry-place motion, pushing, dropping, and hinged rotation, together with auditable material texture resolution through online search, vision approval, and fallback. The animation helpers compute keyframes from evaluated world-space bounding boxes rather than prompt-level object centers, giving both generation and repair access to explicit contact geometry. Preliminary smoke tests verify the contact calculations used by these primitives on representative tabletop motions. We outline a controlled benchmark and ablation protocol for measuring validator-measured contact validity and refinement efficiency against unconstrained LLM keyframing.
+Executable 3D generation needs static and temporal contracts. LL3M shows that large language models can use Blender code as a medium for 3D modeling. Animation adds obligations that static generation does not expose: object identities must persist, events must own frame windows, contacts must hold across interpolation, cameras must reveal the motion, and unsupported dynamics must fail with clear scope. We present a static SceneSpec IR, an animation-extension layer, and LL3M-AnimBench for LL3M-style Blender programs. SceneSpec represents object identity, parts, materials, relations, cameras, collision proxies, and evidence plans before code generation. The animation layer extends that verified baseline with rigid motion, camera motion, visibility changes, and deformable events. The harness executes generated Blender programs, records scene graphs and media artifacts, checks deterministic geometry predicates, queries visual and video verifiers, and applies bounded repair when measured evidence identifies a local violation. LL3M-AnimBench contributes 300 natural-language prompts across easy, medium, and hard animation tiers.
 \end{abstract}
 
 \section{Introduction}
 
-Language-conditioned 3D animation is becoming a practical interface for procedural content creation, robotics visualization, and simulation prototyping. A user should be able to request a box sliding across a table, a gripper transferring a cube into a tray, or a vehicle crossing a bridge, and receive an executable animation rather than a static asset or a textual plan. Recent large language models already write nontrivial graphics and tool-use programs \citep{chen2021evaluating,austin2021program,yao2023react,schick2023toolformer}, making Blender Python a natural target for this setting. The target requirement, however, is stronger than syntactic execution: an animation should preserve rigid-body contact, avoid penetration, keep relevant objects visible, and end in the intended relation.
+Blender has become a programmable medium for communicating dynamic 3D ideas: demonstrations, robotics mockups, educational animations, game prototypes, and synthetic data scenes all rely on motion as much as shape. A useful language interface should therefore produce an executable animation, not just a static arrangement of objects. A prompt such as ``a gripper moves a box from a conveyor to a cart while the camera follows'' requires object construction, event sequencing, contact maintenance, camera coverage, and temporal verification.
 
-In our development runs, direct LLM keyframing often fails because rigid-body animation correctness is governed by continuous geometry that is only weakly represented in text. A generated program may put a cube at the center of a table rather than at the table top plus half the cube height, may keep a carried object on the intended path while the gripper remains detached, or may satisfy start and end frames while interpolating through an obstacle. These errors suggest a mismatch between language-model token prediction and geometric invariants such as support footprint overlap, vertical contact gap, pairwise nonpenetration, and contact consistency across a frame window.
+LL3M establishes a strong starting point for this interface by treating Blender Python as a target language for large language 3D modeling~\citep{lu2025ll3m}. Static scene generation already benefits from code: object creation, materials, lights, cameras, and layout constraints become inspectable program structure. We add a static SceneSpec IR that makes those obligations explicit before code generation. Animation exposes the next structural gap. A static scene contract says what exists and where it starts. An animation contract must say which object moves, who controls each frame window, which relation persists, which evidence verifies the motion, and which runtime executes the behavior.
 
-We address this mismatch by making LLM-generated animation verifier-facing before it is renderer-facing. Our system first asks a planner to produce a scene-and-motion intermediate representation (IR) with stable object ids, collision proxies, sampled frames, visibility requirements, and explicit contact constraints. A coder then emits a Blender script in two stages: a static scene is generated and verified first, and animation is added only after the scene baseline passes. Blender execution returns scene graphs, sampled transforms, screenshots, and animation previews. Deterministic validators check support, penetration, final placement, and carry-contact constraints over event boundaries and dense frame windows, while optional visual and video verifiers judge failures that geometry alone may miss.
+Direct keyframe generation collapses these obligations into unstructured code. The generated script may satisfy the final frame while interpolating through a support surface, move a payload while leaving the gripper behind, or render a video in which the important contact point is hidden. These outcomes do not mean Blender code is the wrong medium. They show that animation needs a contract layer between language planning, code generation, execution, verification, and repair.
 
-The key technical idea is to combine verifier-facing constraints with primitive-constrained generation. Instead of asking the LLM to invent every keyframe, we expose reusable rigid-motion primitives whose semantics are expressed in measured world-space geometry: support sliding aligns an aggregate object bottom to a support top; support sequences place objects on successive surfaces at specified windows; pick-carry-place derives lift, carry, and release heights from source and destination supports; gripper spacing moves finger meshes outside the carried object's bounding box. When a script still violates contact constraints, targeted repair rewrites only the relevant motion path from measured scene-graph evidence.
+We introduce a two-level IR for verifiable Blender generation. \code{SceneSpec} captures the static scene as a typed contract over objects, parts, materials, relations, cameras, proxies, and evidence. The \emph{Animation Extension Contract} then keeps that scene as a frozen baseline and adds animation families, event windows, target capability profiles, simulation-cache metadata, and verifier probes. Rigid-body motion uses deterministic geometry probes. Camera and visibility events use coverage and media probes. Deformable events use deformation statistics plus video evidence. Capability profiles record runtime support and unsupported scope.
 
-This paper contributes an implementation-centered formulation of verifier-facing LLM animation generation:
+The design follows a simple rule: every generated animation feature must name the evidence that can validate it. A planner emits a scene-and-animation IR. A coder generates Blender Python against a stable helper library. A Blender addon executes the script and returns scene graphs, transform traces, screenshots, and preview videos. Deterministic validators check support, penetration, containment, attachment, and transform ownership. Visual and video verifiers judge semantic layout, visibility, and temporal intent. Repair routines rewrite local motion paths when measured evidence identifies a bounded violation.
+
+This paper makes four contributions:
 \begin{itemize}
-    \item a progressive scene-to-animation IR that makes object identity, contact windows, material texture policy, and verifier evidence explicit;
-    \item a Blender execution harness that combines deterministic geometry checks, multi-view visual/video verification, and bounded refinement;
-    \item primitive-constrained animation helpers that compute support, carry, push, drop, and hinge motions from measured world-space geometry; and
-    \item local repair routines that rewrite support and carry failures using scene-graph measurements rather than unconstrained script regeneration.
+    \item \textbf{Static and temporal IR contracts.} We define \code{SceneSpec} for static Blender scenes and an animation extension that organizes families, probes, capability profiles, event windows, and artifact ownership.
+    \item \textbf{Verifier-facing Blender harness.} We build on LL3M's code-as-3D-medium and add staged static-to-animation generation, deterministic checks, visual/video verification, media diagnostics, and bounded repair.
+    \item \textbf{Rigid primitive methodology.} We instantiate the contract with geometry-aware rigid primitives for support motion, paired interaction, pick-place manipulation, articulation, and temporal composition.
+    \item \textbf{LL3M-AnimBench.} We release a 300-prompt benchmark with easy, medium, and hard tiers for measuring scene complexity, temporal composition, verifier coverage, and repair cost.
 \end{itemize}
-We also document supporting engineering components, including vision-approved texture search, safe material fallback, media diagnostics, run traceability, and cache-friendly repeated coding prompts. Figure~\ref{fig:teaser} and Figure~\ref{fig:pipeline} show the intended qualitative evidence and pipeline structure.
+The implementation supports static scene generation, camera and rigid animation events, texture resolution, visual/video verifier loops, deformable Blender events, capability-profile reporting, and benchmark generation.
 
 \begin{figure}[t]
 \centering
-\fbox{\begin{minipage}[c][1.35in][c]{0.92\linewidth}
-\centering
-\textbf{Placeholder: teaser comparison.}\\
-Left: direct LLM keyframes with floating, penetration, or detached carry contact.\\
-Right: primitive-constrained animation with measured support/contact alignment.
-\end{minipage}}
-\caption{Qualitative teaser placeholder. The final figure should show representative failure modes and the corrected primitive-constrained outputs.}
-\label{fig:teaser}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    font=\small,
+    stage/.style={draw, rounded corners=5pt, thick, align=center, minimum width=38mm, minimum height=8mm, inner sep=4pt},
+    card/.style={draw, rounded corners=3pt, align=center, minimum width=35mm, minimum height=10mm, inner sep=4pt, fill=white},
+    artifact/.style={draw, rounded corners=3pt, align=center, minimum width=34mm, minimum height=7mm, inner sep=3pt, fill=lllight},
+    arrow/.style={-Latex, thick},
+    faintarrow/.style={-Latex, thick, llgray},
+    repair/.style={-Latex, thick, dashed, llred}
+]
+\node[stage, fill=llblue!12] (s1) at (0,0) {1. Plan};
+\node[stage, fill=llorange!14] (s2) at (4.4,0) {2. Build static scene};
+\node[stage, fill=llpurple!14] (s3) at (8.8,0) {3. Add animation};
+\node[stage, fill=llgreen!14] (s4) at (13.2,0) {4. Verify + repair};
+
+\node[card] (prompt) at (0,-1.25) {Natural-language\\prompt};
+\node[card, fill=llblue!5] (planner) at (0,-2.65) {Planner\\SceneSpec + extension};
+\node[card, fill=llorange!6] (scene) at (4.4,-1.25) {Scene coder\\objects, materials, cameras};
+\node[artifact] (staticart) at (4.4,-2.65) {Static script\\views + scene graph};
+\node[card, fill=llpurple!6] (anim) at (8.8,-1.25) {Animation coder\\events, probes, media};
+\node[artifact] (animart) at (8.8,-2.65) {Preview video\\frames + transforms};
+\node[card, fill=llgreen!6] (verify) at (13.2,-1.25) {Geometry, vision,\\and video probes};
+\node[card, fill=llgreen!10] (fix) at (13.2,-2.65) {Local repair\\or LLM refinement};
+\node[artifact, fill=llgreen!18, minimum width=41mm] (out) at (13.2,-4.05) {Verified Blender script and audit trail};
+
+\draw[arrow] (prompt) -- (planner);
+\draw[arrow] (planner.east) -- (scene.west);
+\draw[arrow] (scene) -- (staticart);
+\draw[arrow] (staticart.east) -- (anim.west);
+\draw[arrow] (anim) -- (animart);
+\draw[arrow] (animart.east) -- (verify.west);
+\draw[arrow] (verify) -- (fix);
+\draw[arrow] (fix) -- (out);
+\draw[repair] (fix.west) -- ++(-0.9,0) -- ++(0,-1.0) -- (6.55,-3.65) -- (6.55,-1.25) -- (anim.west);
+
+\begin{scope}[on background layer]
+\node[draw=llblue!30, rounded corners=8pt, fill=llblue!4, fit=(s1)(prompt)(planner), inner sep=5pt] {};
+\node[draw=llorange!35, rounded corners=8pt, fill=llorange!5, fit=(s2)(scene)(staticart), inner sep=5pt] {};
+\node[draw=llpurple!35, rounded corners=8pt, fill=llpurple!5, fit=(s3)(anim)(animart), inner sep=5pt] {};
+\node[draw=llgreen!35, rounded corners=8pt, fill=llgreen!5, fit=(s4)(verify)(fix)(out), inner sep=5pt] {};
+\end{scope}
+\end{tikzpicture}
+}
+\caption{The harness turns a prompt into a verified Blender animation through two IR contracts. \code{SceneSpec} establishes a static baseline, and the animation extension adds temporal events, probes, media evidence, and bounded repair.}
+\label{fig:architecture}
 \end{figure}
 
 \section{Related Work}
 
-\paragraph{Language models as program generators.}
-Large language models have been studied as code generators and tool-using agents \citep{chen2021evaluating,austin2021program,yao2023react,schick2023toolformer}. Blender scripting is an appealing target because scenes, materials, cameras, and keyframes can all be represented as executable programs. Our setting differs from general program synthesis because success depends not only on running code, but also on spatial and temporal constraints that must be measured in the executed 3D environment.
+\paragraph{LLMs as program generators.}
+Large language models generate code and use tools across many domains~\citep{chen2021evaluating,austin2021program,yao2023react,schick2023toolformer}. Blender scripting fits this trend because scenes, materials, cameras, render settings, and keyframes all have executable APIs. Animation raises the bar from syntactic execution to temporal correctness. Our contract makes the generated program expose the objects, events, probes, and artifacts that validation needs.
 
-\paragraph{Text-to-3D and generative scene synthesis.}
-Text-conditioned 3D generation methods synthesize shapes, assets, or scenes from natural language \citep{poole2022dreamfusion,lin2023magic3d}. These methods typically emphasize object appearance, asset quality, and scene-level visual fidelity. We instead study executable rigid-body animation programs with explicit object identities, support relations, contact windows, and verifier-readable failure reports.
+\paragraph{LL3M and code-based 3D modeling.}
+LL3M frames large language models as 3D modelers that generate Blender programs as their primary output~\citep{lu2025ll3m}. We build directly on that premise. The difference is scope: LL3M targets code-driven 3D modeling, while this paper adds an animation-extension layer with event windows, family-specific probes, video evidence, and repair contracts.
 
-\paragraph{Language-conditioned planning and motion primitives.}
-Embodied and robotics systems often combine language models with structured plans, affordances, or motion primitives \citep{huang2022inner,ahn2022can}. We take inspiration from this decomposition, but our output is an offline graphics animation rather than a robot policy. The primitives in our system are kinematic and verification-oriented: they do not solve full dynamics, but they encode contact geometry that can be checked and repaired inside Blender.
+\paragraph{3D modeling IRs and scene representations.}
+Existing 3D representations optimize different contracts. USD and COLLADA encode rich production assets and interchange metadata~\citep{pixar2016usd,khronos2025collada}. ShapeAssembly and StructureNet represent object part structure through programs or hierarchical graphs~\citep{jones2020shapeassembly,mo2019structurenet}. 3D scene graphs and graph-conditioned generators encode objects as nodes and relations as edges~\citep{armeni2019scenegraph,gao2024graphdreamer}. Holodeck and SceneScript show that structured scene commands can support language-guided environment generation and reconstruction~\citep{yang2024holodeck,avetisyan2024scenescript}. These IRs provide assets, layouts, or relations. \code{SceneSpec} targets a different contract: LLM-generated Blender programs must expose stable ids, collision proxies, camera evidence, verifier probes, and repair scope before animation begins.
 
-\paragraph{Physical plausibility in animation.}
-Physics engines can simulate rigid bodies, collisions, and constraints, but LLM-generated Blender scripts frequently bypass simulation and insert keyframes directly. Our harness adds a verifier-and-repair layer around keyframed animation. This is complementary to physics simulation: deterministic geometry checks can reject visible failures even when no simulator is used, and future versions can replace selected bounding-box checks with richer collision proxies or simulation-based validation.
+\paragraph{Text-to-3D, text-to-motion, and video generation.}
+Text-to-3D methods synthesize assets or scenes from language and image priors~\citep{poole2022dreamfusion,lin2023magic3d}. Text-to-video and text-to-4D systems generate temporal media through learned priors~\citep{ho2022imagenvideo,blattmann2023align}. These systems produce compelling pixels without editable Blender object ids, contact windows, or repairable keyframes. Our harness targets executable animation programs whose intermediate state can be inspected.
 
-\section{Method}
+\paragraph{Motion primitives and task structure.}
+Robotics systems often decompose language-conditioned action into skills, affordances, or motion primitives~\citep{huang2022inner,ahn2022can}. Classical planning and animation also emphasize constraints, paths, and motion structure~\citep{lavalle2006planning,witkin1988spacetime}. Our primitive layer borrows that decomposition, but it uses Blender geometry and media artifacts as verifier evidence. The primitive is a contract over generated keyframes, not a robot controller.
 
-\subsection{Overview}
+\paragraph{Physics simulation and animation plausibility.}
+Physics engines provide collision response, constraints, particles, fluids, and soft bodies~\citep{coumans2016bullet,macklin2014unified}. Keyframed Blender scripts often bypass those engines because LLMs can write transforms more easily than simulation setups. We treat simulation as one possible family profile inside the extension contract. Rigid-body primitives, bounding-box probes, BVH checks, joint probes, particle statistics, and deformation probes attach to the same event structure.
 
-Our harness follows a generate--verify--repair loop around executable Blender programs. Given a language prompt, the planner emits a structured IR. The coder converts the IR into Blender Python. The runtime executes the script through a Blender addon server, records scene graphs and transforms, renders inspection views, and optionally renders GIF/MP4 previews. The verifier stack then combines static code checks, deterministic geometry checks, visual model feedback, and video model feedback. If any enabled verifier fails, the refiner receives structured reports and rendered evidence, updates the script, and the loop repeats under bounded refinement budgets.
+\paragraph{Multimodal verification for generated content.}
+Vision and video-language models judge semantic layout and temporal intent in generated media~\citep{openai2023gpt4v,li2023blip2}. Deterministic checks measure geometry and temporal predicates. The two forms of evidence answer different questions. A video model can see whether a camera orbit communicates the intended object; a deterministic probe can catch a one-frame support violation hidden by framing. The harness combines both and records their disagreement as an evaluation target.
+
+\section{Methodology}
+
+\subsection{Static Scene Contracts Anchor Animation}
+
+The harness generates and verifies a static scene before it adds animation. This staging makes the static scene a contract that later motion must preserve. We introduce \code{SceneSpec} as the static-scene IR for this contract. The static stage owns the object inventory, stable ids, part structure, materials, cameras, lights, environment, spatial relations, collision proxies, screenshot plan, and texture policy. The animation stage then references these ids instead of rebuilding the scene.
+
+\code{SceneSpec} separates semantic intent from executable Blender code. \code{ObjectSpec} records controllable entities, roles, dimensions, parts, materials, and collision proxies. \code{SpatialRelationSpec} records relations such as support, attachment, containment, distance, and facing, together with a verification method. \code{CameraSpec} and \code{ScreenshotPlan} record the evidence that visual verifiers need. \code{MaterialSpec} records texture policy before code generation, so appearance retrieval remains auditable.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{2.5pt}
+\caption{SceneSpec differs from prior 3D IRs because it is a verifier-facing contract for LLM-generated Blender programs.}
+\label{tab:ir-comparison}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{p{0.20\linewidth}p{0.26\linewidth}p{0.23\linewidth}p{0.21\linewidth}}
+\toprule
+Representation & Primary contract & Missing for our setting & SceneSpec contract \\
+\midrule
+USD / COLLADA & Asset exchange, composition, animation channels, metadata~\citep{pixar2016usd,khronos2025collada} & No LLM planning boundary or repair evidence & Typed generation intent plus artifact ownership \\
+ShapeAssembly / StructureNet & Part programs or hierarchical part graphs~\citep{jones2020shapeassembly,mo2019structurenet} & Object-level scenes, cameras, media, and verifier probes remain outside the IR & Objects, parts, roles, materials, proxies, and relations share ids \\
+3D scene graphs & Semantic nodes and spatial edges~\citep{armeni2019scenegraph,gao2024graphdreamer} & Edges describe relations but do not specify how generated Blender code gets checked & Each relation names a deterministic or media verifier \\
+LLM scene commands & Language-guided static environments or structured reconstruction~\citep{yang2024holodeck,avetisyan2024scenescript} & Execution traces, failure localization, and animation capability profiles are not first-class & SceneSpec freezes a repairable baseline before temporal events \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+This design keeps repair local. A support failure should move the object or its keyed path, not regenerate the table, camera, or material. A video verifier complaint about poor visibility should adjust camera evidence, not change object identity. The static-scene-first boundary gives every verifier and repair routine a shared baseline.
+
+\subsection{Animation Extension Contracts Make Time Explicit}
+
+The Animation Extension Contract is the paper's core abstraction. It extends a validated \code{SceneSpec} with four pieces of temporal structure: animation families, event windows, verifier probes, and runtime capability profiles. The same object ids appear in scene construction, generated Blender code, transform traces, deterministic reports, screenshots, preview videos, and repair prompts.
 
 \begin{figure}[t]
 \centering
-\fbox{\begin{minipage}[c][1.65in][c]{0.92\linewidth}
-\centering
-\textbf{Placeholder: pipeline figure.}\\
-Prompt $\rightarrow$ scene/animation IR $\rightarrow$ static scene generation $\rightarrow$ deterministic + visual verification\\
-$\rightarrow$ animation extension $\rightarrow$ contact/video verification $\rightarrow$ primitive repair/refinement.
-\end{minipage}}
-\caption{Pipeline placeholder. The final figure should emphasize that animation is added after a verified static scene baseline, and that deterministic evidence is shared by verification and repair.}
-\label{fig:pipeline}
+\resizebox{0.96\linewidth}{!}{%
+\begin{tikzpicture}[
+    font=\small,
+    panel/.style={draw, rounded corners=5pt, thick, fill=white, align=left, text width=36mm, inner sep=5pt},
+    header/.style={draw, rounded corners=4pt, thick, align=center, minimum width=42mm, minimum height=8mm, inner sep=4pt},
+    core/.style={draw, rounded corners=5pt, thick, fill=llblue!12, align=center, minimum width=48mm, minimum height=10mm},
+    arrow/.style={-Latex, thick}
+]
+\node[core] (contract) at (0,1.75) {Animation Extension Contract};
+\node[header, fill=llblue!10] (event) at (-6.2,0.35) {Event Layer};
+\node[header, fill=llgreen!12] (evidence) at (-2.05,0.35) {Evidence Layer};
+\node[header, fill=llorange!13] (runtime) at (2.10,0.35) {Runtime Layer};
+\node[header, fill=llpurple!12] (artifact) at (6.25,0.35) {Artifact Layer};
+\node[panel] (p1) at (-6.2,-1.05) {\textbf{Families}\\rigid, camera, visibility\\deformable, mixed};
+\node[panel] (p2) at (-2.05,-1.05) {\textbf{Verifier probes}\\bbox and BVH\\vision and video\\joint, deformation, particle stats};
+\node[panel] (p3) at (2.10,-1.05) {\textbf{Target profiles}\\Blender supported\\Unity/Maya degraded\\unsupported scope reporting};
+\node[panel] (p4) at (6.25,-1.05) {\textbf{Artifacts and caches}\\scene graphs and traces\\frames and videos\\cache status and invalidation};
+\foreach \x in {event,evidence,runtime,artifact} \draw[arrow] (contract.south) -- (\x.north);
+\draw[arrow] (event) -- (p1);
+\draw[arrow] (evidence) -- (p2);
+\draw[arrow] (runtime) -- (p3);
+\draw[arrow] (artifact) -- (p4);
+\begin{scope}[on background layer]
+\node[draw=llgray!25, rounded corners=8pt, fill=lllight, fit=(contract)(event)(artifact)(p1)(p4), inner sep=7pt] {};
+\end{scope}
+\end{tikzpicture}
+}
+\caption{The extension contract organizes animation into event, evidence, runtime, and artifact layers. Each layer names the information that generated Blender code must expose for verification and repair.}
+\label{fig:extension-taxonomy}
 \end{figure}
 
-\subsection{Verifier-Facing Intermediate Representation}
+\textbf{Families define behavior scope.}
+The current IR recognizes rigid, camera, visibility, deformable, and mixed families. Rigid motion and camera motion have executable Blender paths. Deformable behavior uses visible shape change and deformation statistics. Capability profiles record unsupported requests as scoped execution results.
 
-The IR is designed to make generation inspectable and locally repairable. A \texttt{SceneSpec} records required objects, object parts, materials, placement hints, cameras, screenshot plans, and spatial relations. Each required physical object can carry a collision proxy, so the harness can audit contacts and penetrations without relying on object names or natural-language descriptions alone. Materials are also explicit: \texttt{MaterialSpec} records whether image textures are required, forbidden, solid-only, or optional, and can store a resolved \texttt{texture\_source}. A \texttt{SpatialRelationSpec} separates relation semantics from checking method: horizontal support can use bounding-box contact, hinges and connectors can use attachment checks, and slanted or occluded contacts can be routed to visual verification.
+\textbf{Probes define acceptance evidence.}
+Each family names evidence that can validate it. Rigid events use bounding boxes, BVH checks, or convex proxies. Camera events use coverage and subject-visibility reports. Deformable events require deformation statistics and video evidence. Capability profiles report missing joint, particle, or volume probes as unsupported runtime scope.
 
-Animation is represented as an extension of a validated scene rather than as a replacement for it. An \texttt{AnimationSpec} contains event ids, subject ids, target ids, frame ranges, action types, sampled frames, expected visual outcomes, and event-scoped or global \texttt{ContactConstraintSpec} entries. Contact constraints cover nonpenetration, support, touching, attachment, carry contact, and inside relations. This structure lets deterministic checks report failures with object ids, frame indices, penetration depths, overlap vectors, and tolerances, which are more actionable than free-form visual critiques.
+\textbf{Capability profiles define honest execution.}
+The same prompt can target Blender, Unity, Maya, or other runtimes, but the harness does not pretend that every family is executable everywhere. A target profile marks each family as supported, degraded, or unsupported. The planner and verifier report unsupported scope instead of producing artifacts that look complete but lack runtime evidence.
 
-\subsection{Progressive Scene-to-Animation Generation}
+\subsection{Staging Preserves the Static Scene Baseline}
 
-The generation process is staged because static scene errors and animation errors require different evidence. In the first stage, the original prompt is projected into a static-only IR: the scene should contain the required objects and relations, but no keyframes. The static script must pass deterministic validation and, when enabled, multi-view visual verification. Only then does the second stage add animation while preserving the validated scene geometry. This guardrail prevents an animation refiner from accidentally rebuilding the scene to hide a motion failure, and it keeps verifier feedback localized.
+The harness generates a static scene before it generates animation. The static stage owns objects, materials, relations, cameras, lighting, texture policy, and screenshot plans. The animation stage references those stable ids and may add keyframes, media sampling, contact constraints, and camera events. This separation lets repair edit a motion path without rebuilding the scene to hide the original problem.
 
-The end-to-end loop is deliberately simple. The planner emits an IR; the material agent resolves any requested textures; the coder writes a complete Blender script; the runtime executes it and records scene graphs, transform traces, screenshots, and previews; deterministic validators run first; optional visual and video verifiers then produce structured reports; and either deterministic repair or LLM refinement is applied until all enabled gates pass or a configured refinement budget is exhausted. In the current harness, default caps are exposed separately for deterministic, visual, and video refinement loops, and repeated identical failure signatures stop the loop early.
+The Blender runtime acts as the shared measurement substrate. It executes generated code, records object summaries, aggregates descendants by \code{ll3m\_id}, samples transforms at semantic frames and dense audit windows, renders screenshots, and renders preview videos when requested. Verifiers and repair routines consume these artifacts as structured evidence about the generated script.
 
-\subsection{Texture Resolution and Prompt-Cache-Aware Coding}
+\subsection{Rigid Primitives Encode Motion Contracts}
 
-The harness resolves optional external textures before code generation when the IR says that a material benefits from image detail. A material agent uses planner-provided \texttt{texture\_policy}, \texttt{needs\_texture}, and \texttt{texture\_query} fields to search public FreeStockTextures pages, download a small candidate set, and ask the configured vision model whether any candidate is a suitable surface texture. Only approved local paths are written back as \texttt{texture\_source}; candidate counts, download counts, selected manifests, and \texttt{vision\_blocked} failures are recorded as run artifacts. If search, download, or vision approval fails, the material is marked as unavailable for image texturing and the coder falls back to base color and shader parameters. This makes texture retrieval an explicit, auditable preprocessing step rather than an implicit instruction embedded in generated Blender code.
+Rigid-body animation is the most mature implementation family. Its primitives are verifier-facing contracts: each helper has preconditions over roles, generated keyframes, geometric invariants, and observable predicates. The taxonomy in Figure~\ref{fig:rigid-taxonomy} organizes these contracts by the invariant they preserve, echoing earlier animation systems that expose motion structure as reusable graph or constraint elements~\citep{kovar2002motiongraphs,witkin1988spacetime}.
 
-The coding prompts were also reorganized to be compatible with provider-side prompt caching in iterative loops. The stable \texttt{ll3m\_utils} API contract is injected as a fixed system-prefix block shared by coder, refiner, user-edit, and animation-extension calls, while per-task IR and verifier evidence remain in the user payload. This engineering change does not alter the method semantics or constitute an experimental claim, but it matters operationally: repeated verifier-refiner calls reuse the same long helper contract while still receiving fresh scene and failure evidence.
-
-\subsection{Deterministic Geometry Verification}
-
-The deterministic validator checks both sparse semantic frames and dense temporal windows. It samples event boundaries, event midpoints, requested verifier frames, and, for short animations, all frames up to the configured audit limit. For every sampled frame, it aggregates mesh-like descendants by stable \texttt{ll3m\_id} into world-space bounding boxes. Explicit support constraints require footprint overlap and a small vertical contact gap; nonpenetration constraints measure overlap depth and axis; carry-contact constraints allow intended proximity while still detecting severe embedding. A global nonpenetration pass audits collision-enabled pairs not exempted by explicit contact relations.
-
-These checks intentionally favor explainability over complete physical realism. Bounding boxes are conservative for concave or articulated objects, but they catch the most common failures in generated rigid animations: floating, sinking, bridge/deck crossings, conveyor penetration, detached carried objects, and final placement errors. The resulting reports are compact enough to drive automatic repair and refinement.
+\begin{figure}[t]
+\centering
+\resizebox{0.95\linewidth}{!}{%
+\begin{tikzpicture}[
+    font=\small,
+    level/.style={draw, rounded corners=2pt, thick, align=center, fill=white, minimum height=8mm, text width=31mm},
+    root/.style={level, fill=llblue!12, text width=36mm},
+    support/.style={level, fill=llgreen!12},
+    interact/.style={level, fill=llorange!14},
+    comp/.style={level, fill=llpurple!14, text width=46mm},
+    arrow/.style={-Latex, thick}
+]
+\node[root] (geom) at (0,2.7) {Geometric grounding\\bbox, support top, spacing};
+\node[level, fill=lllight, text width=36mm] (atomic) at (0,1.35) {Atomic kinematics\\translate, path, rotate};
+\node[support] (support) at (-5.0,0) {Support motion\\slide, sequence, drop};
+\node[interact] (paired) at (0,0) {Paired interaction\\push, carry};
+\node[interact] (manip) at (5.0,0) {Manipulation\\pick, place, gripper};
+\node[support] (artic) at (-2.5,-1.55) {Articulation\\hinge, rotor};
+\node[comp] (compose) at (2.5,-1.55) {Composition rules\\one transform owner per window};
+\draw[arrow] (geom) -- (atomic);
+\foreach \x in {support,paired,manip} \draw[arrow] (atomic) -- (\x);
+\draw[arrow] (support) -- (artic);
+\draw[arrow] (paired) -- (compose);
+\draw[arrow] (manip) -- (compose);
+\end{tikzpicture}
+}
+\caption{Rigid primitives form a hierarchy of contracts. Geometry grounds object placement, atomic kinematics inserts transforms, higher-level primitives preserve support or interaction invariants, and composition rules assign one transform owner to each payload window.}
+\label{fig:rigid-taxonomy}
+\end{figure}
 
 \begin{table}[t]
 \centering
-\caption{Deterministic validator predicates used by the current implementation. Tolerances are configurable in the IR; common rigid-body defaults are a $0.02$m penetration tolerance and a $0.001$m support/contact margin.}
-\label{tab:validators}
-\begin{tabular}{p{0.24\linewidth}p{0.34\linewidth}p{0.30\linewidth}}
+\caption{Rigid primitive classes and their verifier-facing contracts.}
+\label{tab:primitive-taxonomy}
+\begin{tabular}{p{0.22\linewidth}p{0.26\linewidth}p{0.40\linewidth}}
 \toprule
-Constraint & Predicate & Reported evidence \\
+Class & Helpers & Contract \\
 \midrule
-support & positive footprint overlap and bottom near support top & frame, vertical gap, footprint overlap \\
-nonpenetration & bbox overlap depth below tolerance & worst frame, axis, depth, overlap vector \\
-carry contact & carried object near gripper without severe embedding & frame, pairwise gap or penetration \\
-inside/containment & subject center or bbox remains within container proxy & frame, escaped axes, tolerance \\
-global audit & collision-enabled object pairs avoid unlicensed overlap & object pair, failing frames, worst depth \\
+geometric grounding & bbox, bottom/top alignment, gripper spacing & Convert semantic roles into measured support heights, sizes, centers, and safe spacing. \\
+atomic kinematics & location, rotation, scale, path keyframes & Express low-level transforms with explicit frames and interpolation. \\
+support-preserving motion & support slide, support sequence, drop-to-support & Keep the subject bottom aligned to the active support top while it moves or lands. \\
+paired interaction & push, attached carry & Assign a driver and payload, then maintain offset or contact over a bounded frame window. \\
+manipulation lifecycle & pick-place, parallel gripper pick-place & Encode approach, grasp, lift, transfer, lower, release, and finger state from support geometry. \\
+articulation and periodicity & hinge, rotor root, rotor & Rotate around a meaningful pivot while preserving the mechanism body. \\
+composition rules & event windows, role tags, static checks & Prevent overlapping transform ownership and preserve the verified scene baseline. \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Primitive-Constrained Animation Helpers}
+The taxonomy is motivated by the structure of Blender animation, not by a catalog of bugs. Language prompts usually express intent through relations such as on, inside, holding, attached, following, and opening. Each relation maps to a different invariant. Support motion owns vertical placement; carry motion owns a driver-payload offset; gripper manipulation owns a phase sequence; hinged motion owns an origin and axis; composition owns time windows. Development traces helped calibrate tolerances and static checks, but the taxonomy follows these invariants.
 
-The primitive library exposes Blender helpers that generated scripts can call directly. Bounding-box utilities compute object tops, bottoms, centers, sizes, and bottom-to-top alignment from evaluated world-space transforms. Keyframe utilities insert location, rotation, and scale keyframes with controlled interpolation. Motion primitives then build common rigid actions from these measurements: \texttt{animate\_support\_slide}, \texttt{animate\_support\_sequence}, \texttt{animate\_pick\_place}, \texttt{animate\_attached\_carry}, \texttt{animate\_push}, \texttt{animate\_drop\_to\_support}, \texttt{animate\_rotate\_about\_axis}, and \texttt{animate\_hinge}. A dedicated gripper helper spaces two finger meshes outside the carried object's bounding box to reduce visible embedding.
+\subsection{Verification Combines Geometry and Media}
 
-The important design choice is that primitives compute contacts from executed geometry, not from the model's guessed object centers. For example, a cube on a support is positioned by aligning its aggregate bottom to the support's top plus a small margin. A pick-place motion derives source and destination rest heights from the actual support tops and the carried object's height. This makes a generated program shorter and gives the verifier less accidental geometry to repair.
+The deterministic verifier checks structured predicates over sampled frames. Support predicates require footprint overlap and a small vertical gap. Nonpenetration predicates measure overlap depth across collision-enabled pairs. Carry-contact predicates allow intended proximity while detecting embedding. Containment predicates check whether centers or bounding boxes remain inside a container proxy. Dense audit windows catch interpolation violations that sparse start/middle/end samples miss.
 
-\subsection{Contact-Aware Repair}
+Media verifiers answer questions that geometry cannot answer alone. Vision checks judge static layout, material intent, relation visibility, and camera framing. Video checks judge temporal order, apparent motion, final state, and subject visibility. The harness sends video artifacts, ordered sampled frames, transform traces, and deterministic reports together, so multimodal feedback can point at the same object ids and frame windows as deterministic evidence.
 
-When deterministic validation finds a support or contact failure, the session can apply narrow local repairs before asking the LLM to rewrite the whole program. For horizontal bridge, deck, or platform crossings, the repair planner measures subject and support bounding boxes, narrows the support-contact window to frames where footprints overlap, and builds an outside-lift-enter-cross-exit path. For multi-support motion, sequence repair orders support windows monotonically and places keyframes at measured support centers and heights. Repair scripts rewrite only the animated subject's location curves, include descendant meshes when measuring aggregate bounds, update Blender's dependency graph before bounding-box reads, and preserve unrelated scene geometry.
+\subsection{Repair Uses Measured Evidence}
 
-\begin{table}[t]
-\centering
-\caption{Current deterministic repair scope. Unsupported failures are passed to the LLM refiner with deterministic and visual/video evidence.}
-\label{tab:repair}
-\begin{tabular}{p{0.24\linewidth}p{0.30\linewidth}p{0.34\linewidth}}
-\toprule
-Failure type & Diagnostic signal & Repair action \\
-\midrule
-horizontal support crossing & support/nonpenetration failures around bridge or deck windows & insert outside-lift-enter-cross-exit keyframes \\
-multi-support transfer & ordered support constraints over road/ramp/platform-like supports & create monotonic support sequence keyframes \\
-single support z error & support gap or penetration on one support ride & recalibrate z from current support top \\
-conveyor ride & support object is a conveyor/belt-like ride surface & skip crossing repair and preserve ride motion \\
-carry embedding & carry-contact pair shows severe penetration & report targeted evidence for primitive or LLM correction \\
-\bottomrule
-\end{tabular}
-\end{table}
+Repair routines edit local motion when the verifier reports bounded evidence. Support repair recalculates the subject's vertical coordinate from the support top. Path repair shifts keyed locations in the failing window. Bridge and platform repair create outside-lift-enter-cross-exit paths. Carry repair sends role-specific evidence to the refiner when a generated script violates gripper or payload ownership. The repair loop stays bounded: repeated identical failure signatures stop refinement instead of running indefinitely.
 
 \section{System Components}
 
-The implemented system has several components beyond the core animation method. The local Blender addon exposes execution, scene inspection, deterministic validation, screenshot rendering, animation sampling, and scene-copy commands. The Python harness records IR snapshots, generated and refined scripts, verifier reports, transform traces, selected texture assets, agent model choices, and preview summaries for each run. The LLM interface includes provider-compatibility fallbacks for JSON mode, streaming, unsupported parameters, malformed verifier JSON, and media-input capability checks. These components are not the main scientific claim, but they are necessary for making verifier-gated generation reproducible and auditable.
+The implemented harness includes a Blender addon server, Python runner, typed IR parser, texture resolver, visual verifier, video verifier, deterministic validator, and refinement loop. The addon exposes commands for code execution, scene inspection, material inspection, camera coverage reports, screenshot rendering, animation sampling, and preview video rendering. Each run stores IR snapshots, generated scripts, refined scripts, verifier reports, media paths, selected textures, transform traces, and model configuration.
 
-Material grounding is handled as an explicit preprocessing component. The planner decides whether a material should use an image texture, the material agent searches and downloads public CC0 candidates, a vision model selects only suitable surface textures, and the coder loads approved local paths into Blender materials. If any step fails, the run records the failure and falls back to non-image shader parameters. The texture pipeline is therefore isolated from the animation claims while still supporting more detailed scene appearance and preserving user constraints such as solid-only or no-image-texture prompts.
+Texture resolution is an explicit preprocessing step. The planner marks materials with \code{texture\_policy}, \code{needs\_texture}, and \code{texture\_query}. A material agent searches public texture pages, downloads candidates, asks a vision model to approve surface suitability, and writes approved local paths back into the IR. If search or vision approval fails, the coder falls back to procedural colors and shader parameters. This keeps appearance assets auditable without making texture retrieval part of the animation claim.
 
-\section{Preliminary Checks and Planned Evaluation}
+Prompt caching supports iterative refinement. The stable \code{ll3m\_utils} API contract appears in a fixed prompt prefix shared by coder, refiner, user-edit, and animation-extension calls. Per-run IR, verifier reports, and media evidence remain in the user payload. This organization reduces repeated prompt cost while preserving fresh failure evidence.
 
-\subsection{Primitive Smoke Tests}
+\section{Benchmark and Evaluation}
 
-We ran local Blender smoke tests for several primitive families. These tests are implementation checks rather than a final benchmark, but they verify that the primitive code produces contact geometry consistent with the deterministic validator.
+LL3M-AnimBench tests both the contract and the current primitive library. Figure~\ref{fig:evaluation-plan} organizes the evaluation matrix. Prompt families span rigid support motion, paired interaction, manipulation, articulation, camera motion, visibility/state changes, deformable events, and mixed scenes. System variants remove one layer at a time: direct keyframes, IR without extension profiles, extension without primitives, primitives without repair, and the full verifier-facing harness.
 
-\begin{table}[t]
-\centering
-\caption{Preliminary primitive smoke tests. Gaps are object bottom minus support top at checked frames; values near $0.001$ correspond to the intended clearance margin.}
-\label{tab:smoke}
-\begin{tabular}{p{0.20\linewidth}p{0.24\linewidth}p{0.29\linewidth}p{0.15\linewidth}}
-\toprule
-Primitive & Scenario & Checked property & Result \\
-\midrule
-support slide & cube slides on table & support gap at frames 1/48/96 & 0.001 / 0.001 / 0.001 \\
-pick-place & gripper transfers cube to tray & source and destination support gap & 0.001 / 0.001 \\
-finger spacing & two fingers around cube & x-axis finger/cube overlap & negative overlap \\
-push & pusher moves box on table & support gap at frames 1/56 & 0.001 / 0.001 \\
-drop-to-support & box drops to table & final support gap at frame 96 & 0.001 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The smoke tests also exposed a subtle Blender dependency-graph issue. The first bounding-box helper could read stale transforms immediately after object creation or reparenting, causing support placements to inherit unintended offsets. Updating the view layer inside the world-bounding-box helper fixed this failure and motivated using executed geometry as the primitive API boundary.
-
-\subsection{Benchmark Protocol}
-
-The planned benchmark will compare system variants under a fixed model configuration rather than sweeping many LLM providers. Prompt categories will include support slides, conveyor rides, table-to-tray transfers, bridge and ramp crossings, pick-carry-place interactions, pushing and pulling, dropping onto supports, hinged doors or lids, and placing objects into shallow containers. Each prompt will specify required objects, final relations, contact windows, sampled frames, and visibility requirements. Every variant will use the same prompt set, model allocation, maximum refinement budget, and static-scene verification policy unless that component is explicitly ablated.
-
-\begin{table}[t]
-\centering
-\caption{Planned ablations and primary measurements.}
-\label{tab:ablations}
-\begin{tabular}{p{0.34\linewidth}p{0.54\linewidth}}
-\toprule
-Variant & Purpose \\
-\midrule
-direct LLM keyframes & baseline without primitive-constrained generation \\
-IR without primitives & structured planning and verification, but raw keyframes \\
-primitives without repair & measure first-pass benefit of geometric helper calls \\
-repair without primitives & isolate deterministic correction after invalid keyframes \\
-primitives plus repair & full rigid-body animation system \\
-no dense-frame audit & test whether sparse sampled frames miss interpolation failures \\
-no carry-contact check & test whether gripper/object errors hide behind allowed contact \\
-no video verifier & measure failures not captured by deterministic geometry \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The main metrics will be deterministic pass rate, support violation rate, penetration rate, final relation success, carry-contact consistency, number of refinement rounds, and visual/video verifier failure labels. Because the primitive generator and deterministic validator both use bounding boxes, the final evaluation should include an independent audit: human ratings for visual plausibility and contact quality, and mesh-level or simulator-based collision checks on a subset where such checks are feasible. The benchmark should report disagreement between bounding-box validation and independent judgments.
+We define \emph{LL3M-AnimBench}, a 300-prompt benchmark stored in \code{benchmark/}. The benchmark contains 100 easy, 100 medium, and 100 hard natural-language prompts. Easy prompts isolate one object or one relation, medium prompts combine two coordinated events or camera requirements, and hard prompts require multi-object composition, concurrent motion, or family mixtures. Each record stores the prompt, animation families, required motions, verifier focus, and expected difficulty rationale.
 
 \begin{figure}[t]
 \centering
-\fbox{\begin{minipage}[c][1.25in][c]{0.92\linewidth}
-\centering
-\textbf{Placeholder: failure taxonomy and metrics figure.}\\
-Rows: support, penetration, carry contact, final relation, visibility.\\
-Columns: direct keyframes, primitives, repair, full system.
-\end{minipage}}
-\caption{Evaluation placeholder. The final figure should visualize which failure modes are caught by deterministic checks, video verification, and repair.}
-\label{fig:taxonomy}
+\small
+\setlength{\tabcolsep}{2.5pt}
+\resizebox{0.96\linewidth}{!}{%
+\begin{tabular}{p{0.19\linewidth}p{0.13\linewidth}p{0.12\linewidth}p{0.14\linewidth}p{0.15\linewidth}p{0.14\linewidth}}
+\toprule
+Family / variant & Direct keys & IR only & Contract & + primitives & + repair \\
+\midrule
+support + carry & weak & ids & probes & contacts & local fix \\
+pick-place & weak & events & probes & lifecycle & ownership \\
+hinge / rotor & axis & events & pivot & helpers & checks \\
+camera orbit & path & target & coverage & helper & media \\
+deformable & shape & event & stats & deformation & media \\
+\bottomrule
+\end{tabular}
+}
+\caption{The evaluation matrix tests animation families against staged system variants. The main comparison asks whether contracts, primitives, and repair each improve measurable validity and media-verified temporal intent.}
+\label{fig:evaluation-plan}
 \end{figure}
+
+\textbf{Metrics.}
+The primary metrics are deterministic pass rate, support violation rate, penetration rate, final relation success, transform-ownership violations, subject visibility, video verifier pass rate, number of refinement rounds, and wall-clock execution cost. Deformable events add deformation-statistic pass rate. Capability-profile cases report missing joint, particle, or volume probes as unsupported scope.
+
+\textbf{Ablations.}
+The evaluation isolates the contribution of each layer. Removing the extension contract tests whether a flat animation spec provides enough structure. Removing primitives tests whether LLM-authored keyframes satisfy the same event contracts. Removing dense-frame audits tests whether sparse samples miss interpolation errors. Removing video verification tests whether deterministic geometry alone captures temporal intent and camera coverage.
+
+\textbf{Independent audits.}
+Bounding boxes share assumptions with several rigid primitives, so the benchmark includes independent audit hooks. Human ratings judge visual plausibility and semantic success. Mesh-level BVH checks audit rigid scenes. Deformation statistics validate shape change beyond video impressions. Disagreement among deterministic, media, and human judgments becomes a reported result for verifier design.
 
 \section{Limitations}
 
-The current system is kinematic and verification-oriented, not a replacement for physical simulation. The primitives create validator-aligned rigid motions by construction, but they do not model forces, friction, mass, torque, or collision response. Bounding-box checks can be overly strict for concave objects and insufficient for fine-grained mesh intersections. Slanted ramps, articulated multi-link arms, deformable objects, fluids, and cloth require richer geometry or simulation support than the rigid primitive set currently provides. Finally, video-language verification is useful for semantic and temporal judgments, but it can miss short contact failures; it should supplement deterministic checks rather than replace them.
+The current system provides a contract layer and a runnable Blender harness, while full physics simulation remains outside its scope. Rigid primitives are kinematic and do not model forces, friction, mass, torque, or collision response. Bounding boxes over-approximate concave objects and under-specify fine mesh intersections. Deformable events use statistics and video evidence in place of a full cloth solver. Character, mocap, IK, fluid, smoke, and particle requests are reported through capability profiles when runtime probes are unavailable. Video verification helps judge temporal intent, but deterministic probes remain necessary for short contact violations and hidden geometry errors.
 
 \section{Conclusion}
 
-We presented a verification-oriented harness for LLM-generated rigid-body animation in Blender. The system represents scene and motion intent in a structured IR, generates animation only after validating a static scene baseline, checks contact and penetration constraints with deterministic geometry, and repairs common failures from measured scene-graph evidence. A new library of primitive-constrained animation helpers moves repeated support, carry, push, drop, and hinge motions out of unconstrained LLM keyframe text and into reusable geometry-aware operations. The next step is a controlled benchmark that quantifies how much primitive-constrained generation and deterministic repair improve validator-measured contact validity and refinement efficiency, with independent audits to test whether those gains correspond to visual and physical plausibility.
+Animation changes LL3M-style Blender generation from static modeling into temporal program synthesis. The Animation Extension Contract makes that shift explicit: it freezes a verified scene baseline, adds typed animation families, names verifier probes, records runtime capability, and routes repair through measured evidence. Rigid-body primitives demonstrate the contract's value today by turning support, carry, pick-place, articulation, and composition into geometry-aware Blender helpers. The broader methodology replaces direct keyframe writing with staged, auditable, and extensible animation contracts.
 
 \bibliography{references}
 \bibliographystyle{iclr2026_conference}
