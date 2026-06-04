@@ -1,0 +1,1 @@
+A yellow puck slides from the left side of a gray table, down a short ramp, onto a lower blue platform, stays supported by exactly one surface at each sampled frame, never clips through the table, ramp, or platform, and stops flat on the platform.

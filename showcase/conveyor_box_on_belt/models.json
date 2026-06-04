@@ -1,0 +1,7 @@
+{
+  "planner": "openai/claude-opus-4-8",
+  "coder": "openai/claude-opus-4-8",
+  "refiner": "openai/claude-opus-4-8",
+  "vision": "openai/qwen3-omni",
+  "video": "openai/qwen3-omni"
+}

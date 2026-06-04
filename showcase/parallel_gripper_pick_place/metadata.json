@@ -1,0 +1,31 @@
+{
+  "name": "parallel gripper pick place",
+  "kind": "animation",
+  "source_run": "manual showcase",
+  "source_code": "showcase/parallel_gripper_pick_place/reproduce.py",
+  "prompt": "做一个小型工厂动画：一只橙色盒子先在灰色传送带上向右移动，随后一个清楚可见的双指机械夹爪从上方下来夹住盒子，把它抬起来搬到右边的蓝色托盘上放下。盒子放好以后，旁边有一盏绿色指示灯亮起。画面要能清楚看到盒子、传送带、夹爪、托盘和指示灯。",
+  "models": {
+    "planner": "manual primitive showcase",
+    "coder": "manual primitive showcase",
+    "video": "manual bbox audit"
+  },
+  "selected_note": "Curated primitive replay with consistent code and sampled frames; useful for demonstrating the parallel gripper pick-place primitive.",
+  "artifacts": [
+    "README.md",
+    "animation.gif",
+    "frame_0001.png",
+    "frame_0030.png",
+    "frame_0045.png",
+    "frame_0065.png",
+    "frame_0095.png",
+    "frame_0115.png",
+    "frame_0130.png",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "reproduce.py",
+    "scene.blend",
+    "scene.jpg",
+    "source.py"
+  ]
+}

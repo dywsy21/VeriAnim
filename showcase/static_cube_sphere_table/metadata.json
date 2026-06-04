@@ -1,0 +1,33 @@
+{
+  "name": "static cube sphere table",
+  "kind": "static_scene",
+  "source_run": "runs\\run_20260514_212346",
+  "source_code": "runs/run_20260514_212346/code/final_scene.py",
+  "prompt": "a red cube resting on top of a blue rectangular table, with a green sphere next to the cube on the same table surface, all objects clearly visible under neutral studio lighting",
+  "models": {},
+  "selected_note": "Clean static spatial-relation example with cube and sphere on a table; deterministic and vision checks passed.",
+  "validation_reports": [
+    {
+      "file": "initial_round_0_scene_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "initial_round_0_scene_vision.json",
+      "passed": true,
+      "summary": "All required objects are visible with correct colors and shapes. The red cube and green sphere appear to rest on the blue tabletop, the sphere is adjacent to the cube without evident intersection, and the table appears stable with connected legs under neutral studio lighting. Camera views provide sufficient coverage of the required spatial relationships.",
+      "issues": []
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "scene.blend",
+    "scene.jpg",
+    "scene.png",
+    "source.py"
+  ]
+}

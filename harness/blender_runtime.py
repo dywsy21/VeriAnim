@@ -99,6 +99,45 @@ class BlenderRuntime:
         ok, message = _infer_ok(result, execution)
         return BlenderRunResult(ok=ok, message=message, stdout=stdout, stderr=stderr, traceback=traceback_text, raw=result)
 
+    def save_blend(self, output_path: Path, *, pack: bool = True) -> BlenderRunResult:
+        output_path = output_path.resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        result = BlenderClient.save_scene_copy(
+            str(output_path),
+            pack=pack,
+            host=self.config.blender_host,
+            port=self.config.blender_port,
+        )
+        if _command_ok(result):
+            payload = _command_result(result)
+            saved = bool(payload.get("saved")) and output_path.exists()
+            message = None if saved else str(payload.get("message") or "Blender did not save the .blend file.")
+            return BlenderRunResult(
+                ok=saved,
+                message=message,
+                stdout=json.dumps(payload, default=str),
+                raw=result,
+            )
+
+        fallback = self.execute_code(
+            "\n".join(
+                [
+                    "import bpy",
+                    f"bpy.ops.wm.save_as_mainfile(filepath={str(output_path)!r})",
+                ]
+            )
+        )
+        if fallback.ok and not output_path.exists():
+            return BlenderRunResult(
+                ok=False,
+                message="Blender reported success but the .blend file was not created.",
+                stdout=fallback.stdout,
+                stderr=fallback.stderr,
+                traceback=fallback.traceback,
+                raw=fallback.raw,
+            )
+        return fallback
+
     def get_scene_graph(self) -> dict[str, Any]:
         result = BlenderClient.get_scene_graph(
             include_hidden=True,

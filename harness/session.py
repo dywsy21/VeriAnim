@@ -468,7 +468,7 @@ class InteractiveHarnessSession:
             if reports:
                 if round_index >= max_rounds:
                     self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
-                    self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                    self._write_final_scene_artifacts(self._last_executed_code or self.code)
                     return False
                 refine_code = self._last_executed_code or self.code
                 if self._last_executed_code and self.code != self._last_executed_code:
@@ -512,18 +512,18 @@ class InteractiveHarnessSession:
 
             if all(report.passed for report in reports):
                 self._emit("pass", "All enabled validation stages passed")
-                self.store.write_text("code/final_scene.py", self.code)
+                self._write_final_scene_artifacts(self.code)
                 self._render_final_animation_gif()
                 return True
 
             if _has_unrecoverable_verifier_config_issue(reports):
                 self._emit("warn", "Verifier loop stopped because the configured verifier model cannot accept required media inputs")
-                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                self._write_final_scene_artifacts(self._last_executed_code or self.code)
                 return False
 
             if round_index >= max_rounds:
                 self._emit("warn", "Verifier loop stopped at safety cap before all stages passed")
-                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                self._write_final_scene_artifacts(self._last_executed_code or self.code)
                 return False
 
             signature = _failure_signature(reports, execution_error)
@@ -539,7 +539,7 @@ class InteractiveHarnessSession:
                     "Verifier loop stopped because the same failure repeated without progress",
                     stagnant_rounds=stagnant_rounds,
                 )
-                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                self._write_final_scene_artifacts(self._last_executed_code or self.code)
                 return False
             if failure_counts[signature] >= self.config.max_stagnant_refinement_rounds:
                 self._emit(
@@ -547,7 +547,7 @@ class InteractiveHarnessSession:
                     "Verifier loop stopped because the same failure recurred across refinement attempts",
                     repeated_failures=failure_counts[signature],
                 )
-                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                self._write_final_scene_artifacts(self._last_executed_code or self.code)
                 return False
 
             failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
@@ -563,6 +563,17 @@ class InteractiveHarnessSession:
             self.code = self._append_animation_repair(self.code)
             self.store.write_text(f"code/{label}_refined.py", self.code)
         return False
+
+    def _write_final_scene_artifacts(self, code: str) -> None:
+        assert self.store is not None
+        self.store.write_text("code/final_scene.py", code)
+        blend_path = self.store.root / "scene.blend"
+        result = self.blender.save_blend(blend_path)
+        self.store.write_text("logs/final_blend_export.txt", result.diagnostic_text())
+        if result.ok:
+            self._emit("export", f"Saved Blender scene file: {blend_path}", path=str(blend_path))
+        else:
+            self._emit("warn", f"Could not export Blender scene file: {result.message or result.stdout}")
 
     def _append_animation_repair(self, code: str) -> str:
         if not self._animation_repair_plan or not self._animation_repair_plan.applied:

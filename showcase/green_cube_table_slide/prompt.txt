@@ -1,0 +1,1 @@
+Create a simple animation of a green cube sliding from the left side of a gray table to the right side of the same table. The cube must remain resting on the tabletop with no floating or penetration for the whole motion. Use a side camera that clearly shows the contact.

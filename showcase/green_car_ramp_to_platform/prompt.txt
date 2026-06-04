@@ -1,0 +1,1 @@
+A small green toy car starts on a lower gray road, drives up a sloped ramp onto a raised blue platform, stays supported by the road, ramp, or platform at every sampled frame, never clips through any surface, and stops fully on top of the platform.

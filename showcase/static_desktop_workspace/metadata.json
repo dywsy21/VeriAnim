@@ -1,0 +1,31 @@
+{
+  "name": "static desktop workspace",
+  "kind": "static_scene",
+  "source_run": "runs\\showcase_desktop",
+  "source_code": "runs/showcase_desktop/code/showcase_scene.py",
+  "prompt": "A warm stylized desktop workspace with a wooden table, blue mug, potted plant, open notebook, and desk lamp under warm lighting.",
+  "models": {
+    "planner": "claude-haiku-4-5-20251001",
+    "coder": "claude-opus-4-7",
+    "vision": "claude-haiku-4-5-20251001"
+  },
+  "selected_note": "Best-looking static desktop scene from the milestone showcase.",
+  "validation_reports": [
+    {
+      "file": "showcase_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "scene.blend",
+    "scene.jpg",
+    "scene.png",
+    "source.py"
+  ]
+}

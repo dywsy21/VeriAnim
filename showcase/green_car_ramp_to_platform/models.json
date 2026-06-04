@@ -1,0 +1,7 @@
+{
+  "planner": "openai/deepseek-v4-pro",
+  "coder": "openai/deepseek-v4-pro",
+  "refiner": "openai/deepseek-v4-pro",
+  "vision": "openai/qwen3-omni",
+  "video": "openai/qwen3-omni"
+}
