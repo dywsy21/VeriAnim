@@ -7,6 +7,9 @@ import json
 import mimetypes
 from pathlib import Path
 import re
+import signal
+import socket
+import threading
 import time
 from typing import Any
 
@@ -228,14 +231,64 @@ def _completion_with_retries(completion: Any, kwargs: dict[str, Any]) -> Any:
 
 
 def _completion_with_parameter_fallback(completion: Any, kwargs: dict[str, Any]) -> Any:
+    attempts = _llm_attempt_count(kwargs)
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return _completion_once_with_parameter_fallback(completion, kwargs)
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= attempts - 1 or not _is_transient_api_error(exc):
+                raise
+            time.sleep(min(2 ** attempt, 8))
+    assert last_exc is not None
+    raise last_exc
+
+
+def _completion_once_with_parameter_fallback(completion: Any, kwargs: dict[str, Any]) -> Any:
     try:
-        return completion(**kwargs)
+        return _call_completion_with_hard_timeout(completion, kwargs)
     except Exception as exc:
         if _mentions_unsupported_parameter(exc, "temperature") and "temperature" in kwargs:
             retry_kwargs = dict(kwargs)
             retry_kwargs.pop("temperature", None)
-            return completion(**retry_kwargs)
+            return _call_completion_with_hard_timeout(completion, retry_kwargs)
         raise
+
+
+def _call_completion_with_hard_timeout(completion: Any, kwargs: dict[str, Any]) -> Any:
+    timeout = kwargs.get("timeout")
+    if not timeout:
+        return completion(**kwargs)
+    timeout_seconds = max(1.0, float(timeout))
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "SIGALRM"):
+        return completion(**kwargs)
+
+    def raise_timeout(signum: int, frame: Any) -> None:
+        raise TimeoutError(f"LLM completion exceeded local timeout of {timeout_seconds:g}s")
+
+    previous_socket_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(timeout_seconds + 5.0)
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.setitimer(signal.ITIMER_REAL, 0)
+    signal.signal(signal.SIGALRM, raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds + 5.0)
+    try:
+        return completion(**kwargs)
+    finally:
+        socket.setdefaulttimeout(previous_socket_timeout)
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer and previous_timer[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
+
+
+def _llm_attempt_count(kwargs: dict[str, Any]) -> int:
+    model = str(kwargs.get("model") or "").lower()
+    provider = str(kwargs.get("custom_llm_provider") or "").lower()
+    if model.startswith("dashscope/") or provider == "dashscope":
+        return 3
+    return 2
 
 
 def _is_transient_api_error(exc: Exception) -> bool:
@@ -248,6 +301,7 @@ def _is_transient_api_error(exc: Exception) -> bool:
             "actively refused",
             "connection reset",
             "remote protocol error",
+            "remoteprotocolerror",
             "server disconnected",
             "timeout",
             "timed out",
@@ -255,8 +309,12 @@ def _is_transient_api_error(exc: Exception) -> bool:
             "service unavailable",
             "internalservererror",
             "internal server error",
+            "internal server",
             "bad gateway",
             "gateway timeout",
+            "rate limit",
+            "ratelimit",
+            "429",
             "502",
             "503",
             "504",

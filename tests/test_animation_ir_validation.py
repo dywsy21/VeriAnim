@@ -8,6 +8,7 @@ import unittest
 from harness.ir import GenerationIR
 from harness.blender_runtime import (
     _animation_validation_script,
+    _animation_sample_frames,
     build_deformation_statistics,
     _relation_frame_overrides,
     _scene_validation_script,
@@ -435,6 +436,23 @@ class AnimationIRValidationTest(unittest.TestCase):
 
         self.assertEqual(overrides["car_on_road"], 1)
         self.assertEqual(overrides["car_on_platform"], ir.animation.duration_frames)
+
+    def test_static_scene_projection_omits_animation_end_state_relations(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "translate_ball_to_box.json")
+
+        projected = ir.static_scene_projection()
+
+        self.assertIsNone(projected.animation)
+        self.assertNotIn("ball_final_near_box", {relation.id for relation in projected.scene.relations})
+        for view in projected.scene.verifier.screenshot_plan.views:
+            self.assertNotIn("ball_final_near_box", view.relation_ids)
+
+    def test_animation_sample_frames_include_quarter_evidence(self) -> None:
+        ir = load_ir(EXAMPLE_DIR / "rotate_windmill_blades.json")
+
+        frames = _animation_sample_frames(ir)
+
+        self.assertEqual(frames, [1, 23, 45, 68, 90])
 
     def test_contact_constraint_unknown_object_and_bad_frames_are_invalid(self) -> None:
         data = json.loads((EXAMPLE_DIR / "translate_ball_to_box.json").read_text(encoding="utf-8"))

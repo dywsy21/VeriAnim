@@ -22,6 +22,21 @@ class GeneratedCodeSanitizerTest(unittest.TestCase):
         self.assertIn("verianim.make_material({'id': 'mat'", sanitized)
         self.assertNotIn("spec_dict=", sanitized)
 
+    def test_rewrites_verianim_custom_property_attribute_assignments(self) -> None:
+        code = """
+blade_root.verianim_id = "blade_assembly"
+blade_root.verianim_part = "rotor"
+blade_root.verianim_role = "primary"
+text = "blade_root.verianim_id = not code"
+"""
+
+        sanitized = _sanitize_generated_blender_code(code)
+
+        self.assertIn("blade_root['verianim_id'] = \"blade_assembly\"", sanitized)
+        self.assertIn("blade_root['verianim_part'] = \"rotor\"", sanitized)
+        self.assertIn("blade_root['verianim_role'] = \"primary\"", sanitized)
+        self.assertIn('text = "blade_root.verianim_id = not code"', sanitized)
+
     def test_wraps_helper_scale_and_rotation_keywords(self) -> None:
         code = """
 from blender import verianim_utils as verianim

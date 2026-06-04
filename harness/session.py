@@ -373,7 +373,12 @@ class InteractiveHarnessSession:
             self.store.write_json("ir_animation_stage_repaired.json", full_ir.to_dict())
             self._emit("stage", f"Applied deterministic animation path repair to {len(repair_plan.plans)} event(s)")
         base_code = self._last_executed_code or self.code or ""
-        self.code = self.refiner.add_animation(ir=full_ir, code=base_code, scene_graph=scene_graph)
+        try:
+            self.code = self.refiner.add_animation(ir=full_ir, code=base_code, scene_graph=scene_graph)
+        except Exception as exc:
+            self._write_refiner_failure_report("animation_stage_add_animation", exc)
+            self.store.write_text("code/final_scene.py", self._last_executed_code or self.code or "")
+            return
         self.code = self._append_static_support_repair(self.code)
         self.code = self._append_animation_repair(self.code)
         self.store.write_text("code/generated_animation_stage.py", self.code)
@@ -479,13 +484,16 @@ class InteractiveHarnessSession:
                     ).strip()
                 failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
                 self._emit("refiner", f"Refining script from failed verifier feedback: {failed_modes}")
-                self.code = self.refiner.refine(
-                    ir=self.ir,
+                refined = self._refine_or_record_failure(
+                    label=label,
                     code=refine_code,
                     reports=reports,
                     execution_error=execution_error,
-                    screenshot_paths=self._latest_screenshots,
                 )
+                if refined is None:
+                    self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                    return False
+                self.code = refined
                 self.code = self._append_static_support_repair(self.code)
                 self.code = self._append_animation_repair(self.code)
                 self.store.write_text(f"code/{label}_refined.py", self.code)
@@ -513,6 +521,14 @@ class InteractiveHarnessSession:
             if all(report.passed for report in reports):
                 self._emit("pass", "All enabled validation stages passed")
                 self.store.write_text("code/final_scene.py", self.code)
+                self._render_final_animation_gif()
+                return True
+            if self._animation_video_passed(reports):
+                self._emit(
+                    "pass",
+                    "Animation deterministic and video verification passed; rendering final animation preview",
+                )
+                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
                 self._render_final_animation_gif()
                 return True
 
@@ -552,17 +568,78 @@ class InteractiveHarnessSession:
 
             failed_modes = ", ".join(report.mode.value for report in reports if not report.passed) or "unknown"
             self._emit("refiner", f"Refining script from failed verifier feedback: {failed_modes}")
-            self.code = self.refiner.refine(
-                ir=self.ir,
+            refined = self._refine_or_record_failure(
+                label=label,
                 code=self.code,
                 reports=reports,
                 execution_error=execution_error,
-                screenshot_paths=self._latest_screenshots,
             )
+            if refined is None:
+                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                return False
+            self.code = refined
             self.code = self._append_static_support_repair(self.code)
             self.code = self._append_animation_repair(self.code)
             self.store.write_text(f"code/{label}_refined.py", self.code)
         return False
+
+    def _animation_video_passed(self, reports: list[ValidationReport]) -> bool:
+        if not self.ir or not self.ir.animation:
+            return False
+        deterministic_animation_passed = any(
+            report.mode == VerificationMode.DETERMINISTIC
+            and report.passed
+            and "Animation deterministic validation passed" in (report.summary or "")
+            for report in reports
+        )
+        video_passed = any(report.mode == VerificationMode.VIDEO and report.passed for report in reports)
+        blocking_non_video_failures = any(
+            report.mode != VerificationMode.VIDEO
+            and not report.passed
+            and any(issue.severity in {Severity.MAJOR, Severity.CRITICAL} for issue in report.issues)
+            for report in reports
+        )
+        return deterministic_animation_passed and video_passed and not blocking_non_video_failures
+
+    def _refine_or_record_failure(
+        self,
+        *,
+        label: str,
+        code: str,
+        reports: list[ValidationReport],
+        execution_error: str | None,
+    ) -> str | None:
+        assert self.ir is not None
+        try:
+            return self.refiner.refine(
+                ir=self.ir,
+                code=code,
+                reports=reports,
+                execution_error=execution_error,
+                screenshot_paths=self._latest_screenshots,
+            )
+        except Exception as exc:
+            self._write_refiner_failure_report(label, exc)
+            return None
+
+    def _write_refiner_failure_report(self, label: str, exc: Exception) -> ValidationReport:
+        report = ValidationReport.failed(
+            VerificationMode.DETERMINISTIC,
+            [
+                ValidationIssue(
+                    code="REFINER_LLM_FAILED",
+                    message=f"Refiner LLM call failed: {exc}",
+                    severity=Severity.CRITICAL,
+                    evidence={"exception_type": type(exc).__name__},
+                )
+            ],
+            "Refiner LLM call failed; verifier loop stopped instead of blocking the run.",
+        )
+        if self.store:
+            self.store.write_json(f"reports/{label}_refiner_failed.json", report_to_dict(report))
+        self._emit_report(report)
+        self._emit("warn", "Verifier loop stopped because the refiner LLM call failed", error=str(exc))
+        return report
 
     def _append_animation_repair(self, code: str) -> str:
         if not self._animation_repair_plan or not self._animation_repair_plan.applied:
@@ -755,9 +832,9 @@ class InteractiveHarnessSession:
         max_rounds = self.config.max_refinement_rounds
         visual = self.ir.scene.verifier.visual
         if not self.skip_vision and visual.enabled:
-            max_rounds = max(max_rounds, visual.max_rounds, self.config.max_visual_refinement_rounds)
+            max_rounds = max(max_rounds, min(visual.max_rounds, self.config.max_visual_refinement_rounds))
         if self.ir.animation and not self.skip_video and self.ir.animation.verifier.enabled:
-            max_rounds = max(max_rounds, self.ir.animation.verifier.max_rounds, self.config.max_video_refinement_rounds)
+            max_rounds = max(max_rounds, min(self.ir.animation.verifier.max_rounds, self.config.max_video_refinement_rounds))
         return max_rounds
 
     def _run_validation_pass(self, label: str) -> list[ValidationReport]:

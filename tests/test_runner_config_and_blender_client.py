@@ -16,6 +16,7 @@ from harness.animation_repair import repair_animation_ir
 from harness.blender_runtime import BlenderRunResult, BlenderRuntime, _relation_frame_overrides
 from harness.config import AgentModelConfig, HarnessConfig
 from harness.session import _count_effective_keyframe_calls
+from harness.agents import VideoVerifierAgent
 from harness.ir import (
     AnimationAction,
     AnimationEventSpec,
@@ -30,6 +31,7 @@ from harness.ir import (
     ObjectSpec,
     RelationType,
     SceneSpec,
+    Severity,
     SourcePrompt,
     RenderEngine,
     RenderSpec,
@@ -655,6 +657,206 @@ class HarnessSessionDiagnosticsTest(unittest.TestCase):
 
         self.assertIn("Traceback", log)
         self.assertEqual(report["issues"][0]["code"], "BLENDER_EXEC_FAILED")
+
+    def test_refiner_failure_writes_report_and_stops_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base_config = minimal_config(Path(tmp))
+            config = HarnessConfig(
+                planner=base_config.planner,
+                coder=base_config.coder,
+                refiner=base_config.refiner,
+                vision=base_config.vision,
+                video=base_config.video,
+                max_refinement_rounds=1,
+                max_visual_refinement_rounds=base_config.max_visual_refinement_rounds,
+                max_video_refinement_rounds=base_config.max_video_refinement_rounds,
+                max_stagnant_refinement_rounds=2,
+                planner_max_retries=base_config.planner_max_retries,
+                rag_docs=base_config.rag_docs,
+                runs_dir=base_config.runs_dir,
+                blender_host=base_config.blender_host,
+                blender_port=base_config.blender_port,
+                headless_rendering=base_config.headless_rendering,
+                render_width=base_config.render_width,
+                render_height=base_config.render_height,
+                render_gif_each_round=base_config.render_gif_each_round,
+                texture_search_enabled=base_config.texture_search_enabled,
+                texture_search_candidate_limit=base_config.texture_search_candidate_limit,
+                texture_search_timeout_seconds=base_config.texture_search_timeout_seconds,
+                tui_initial_animation=base_config.tui_initial_animation,
+                tui_skip_vision=base_config.tui_skip_vision,
+                tui_skip_video=base_config.tui_skip_video,
+            )
+            session = InteractiveHarnessSession(config, skip_vision=True, skip_video=True)
+            session.ir = minimal_ir()
+            session.store = ArtifactStore.create(Path(tmp))
+            session.code = "LL3M_METADATA = {}\n"
+            result = BlenderRunResult(ok=False, message="bad script", stdout="", stderr="", traceback="", raw={})
+            with mock.patch.object(session.blender, "execute_scene_code", return_value=result), mock.patch.object(
+                session.refiner,
+                "refine",
+                side_effect=RuntimeError("Connection error."),
+            ):
+                passed = session._execute_validate_refine(reason="initial")
+
+            report_path = session.store.root / "reports" / "initial_round_0_refiner_failed.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(passed)
+        self.assertEqual(report["issues"][0]["code"], "REFINER_LLM_FAILED")
+        self.assertIn("stopped instead of blocking", report["summary"])
+
+    def test_environment_round_caps_bound_ir_verifier_rounds(self) -> None:
+        config = minimal_config(Path("/tmp/ll3m-test"))
+        config = HarnessConfig(
+            planner=config.planner,
+            coder=config.coder,
+            refiner=config.refiner,
+            vision=config.vision,
+            video=config.video,
+            max_refinement_rounds=1,
+            max_visual_refinement_rounds=2,
+            max_video_refinement_rounds=2,
+            max_stagnant_refinement_rounds=config.max_stagnant_refinement_rounds,
+            planner_max_retries=config.planner_max_retries,
+            rag_docs=config.rag_docs,
+            runs_dir=config.runs_dir,
+            blender_host=config.blender_host,
+            blender_port=config.blender_port,
+            headless_rendering=config.headless_rendering,
+            render_width=config.render_width,
+            render_height=config.render_height,
+            render_gif_each_round=config.render_gif_each_round,
+            texture_search_enabled=config.texture_search_enabled,
+            texture_search_candidate_limit=config.texture_search_candidate_limit,
+            texture_search_timeout_seconds=config.texture_search_timeout_seconds,
+            tui_initial_animation=config.tui_initial_animation,
+            tui_skip_vision=config.tui_skip_vision,
+            tui_skip_video=config.tui_skip_video,
+        )
+        session = InteractiveHarnessSession(config, include_animation=True)
+        ir = minimal_ir(animation=True)
+        ir.scene.verifier.visual.max_rounds = 6
+        ir.animation.verifier.max_rounds = 6
+        session.ir = ir
+
+        self.assertEqual(session._max_refinement_rounds(), 2)
+
+    def test_dashscope_video_verifier_uses_ordered_frame_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            frame_path = tmp_path / "frame_0001.png"
+            frame_path.write_bytes(b"fake")
+            config = minimal_config(tmp_path)
+            config = HarnessConfig(
+                planner=config.planner,
+                coder=config.coder,
+                refiner=config.refiner,
+                vision=config.vision,
+                video=AgentModelConfig(
+                    name="video",
+                    model="dashscope/qwen3.6-plus",
+                    api_key="test-key",
+                    custom_llm_provider="dashscope",
+                ),
+                max_refinement_rounds=config.max_refinement_rounds,
+                max_visual_refinement_rounds=config.max_visual_refinement_rounds,
+                max_video_refinement_rounds=config.max_video_refinement_rounds,
+                max_stagnant_refinement_rounds=config.max_stagnant_refinement_rounds,
+                planner_max_retries=config.planner_max_retries,
+                rag_docs=config.rag_docs,
+                runs_dir=config.runs_dir,
+                blender_host=config.blender_host,
+                blender_port=config.blender_port,
+                headless_rendering=config.headless_rendering,
+                render_width=config.render_width,
+                render_height=config.render_height,
+                render_gif_each_round=config.render_gif_each_round,
+                texture_search_enabled=config.texture_search_enabled,
+                texture_search_candidate_limit=config.texture_search_candidate_limit,
+                texture_search_timeout_seconds=config.texture_search_timeout_seconds,
+                tui_initial_animation=config.tui_initial_animation,
+                tui_skip_vision=config.tui_skip_vision,
+                tui_skip_video=config.tui_skip_video,
+            )
+            ir = minimal_ir(animation=True)
+            with mock.patch(
+                "harness.agents.LLMClient.json_multimodal",
+                return_value={"passed": True, "summary": "frames passed", "issues": []},
+            ) as json_multimodal, mock.patch("harness.agents.LLMClient.json_video") as json_video:
+                report = VideoVerifierAgent(config).verify(
+                    ir,
+                    [frame_path],
+                    None,
+                    ValidationReport.ok(VerificationMode.DETERMINISTIC, "Animation deterministic validation passed."),
+                    {},
+                )
+
+        self.assertTrue(report.passed)
+        self.assertEqual(json_multimodal.call_count, 1)
+        self.assertEqual(json_video.call_count, 0)
+
+    def test_animation_video_pass_short_circuits_minor_visual_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True)
+            session.ir = minimal_ir(animation=True)
+            session.store = ArtifactStore.create(Path(tmp))
+            session.code = "LL3M_METADATA = {}\n"
+            execution = BlenderRunResult(ok=True, message=None, stdout="", raw={})
+            reports = [
+                ValidationReport.ok(VerificationMode.DETERMINISTIC, "Animation deterministic validation passed."),
+                ValidationReport.ok(VerificationMode.VIDEO, "Video passed."),
+                ValidationReport.failed(
+                    VerificationMode.VISION,
+                    [ValidationIssue(code="MODEL_REPORTED_ISSUE", message="visual nit", severity=Severity.MINOR)],
+                    "Scene vision failed.",
+                ),
+            ]
+            with mock.patch.object(session, "_static_code_report", return_value=ValidationReport.ok(VerificationMode.DETERMINISTIC, "ok")), mock.patch.object(
+                session.blender,
+                "execute_scene_code",
+                return_value=execution,
+            ), mock.patch.object(session, "_run_validation_pass", return_value=reports), mock.patch.object(
+                session,
+                "_render_final_animation_gif",
+            ) as render_final:
+                passed = session._execute_validate_refine(reason="animation_stage")
+
+        self.assertTrue(passed)
+        self.assertEqual(render_final.call_count, 1)
+
+    def test_animation_video_pass_does_not_mask_major_visual_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = InteractiveHarnessSession(minimal_config(Path(tmp)), include_animation=True)
+            session.ir = minimal_ir(animation=True)
+            session.store = ArtifactStore.create(Path(tmp))
+            session.code = "LL3M_METADATA = {}\n"
+            execution = BlenderRunResult(ok=True, message=None, stdout="", raw={})
+            reports = [
+                ValidationReport.ok(VerificationMode.DETERMINISTIC, "Animation deterministic validation passed."),
+                ValidationReport.ok(VerificationMode.VIDEO, "Video passed."),
+                ValidationReport.failed(
+                    VerificationMode.VISION,
+                    [ValidationIssue(code="INCORRECT_GEOMETRY", message="major visual failure", severity=Severity.MAJOR)],
+                    "Scene vision failed.",
+                ),
+            ]
+            with mock.patch.object(session, "_static_code_report", return_value=ValidationReport.ok(VerificationMode.DETERMINISTIC, "ok")), mock.patch.object(
+                session.blender,
+                "execute_scene_code",
+                return_value=execution,
+            ), mock.patch.object(session, "_run_validation_pass", return_value=reports), mock.patch.object(
+                session,
+                "_render_final_animation_gif",
+            ) as render_final, mock.patch.object(
+                session.refiner,
+                "refine",
+                return_value="LL3M_METADATA = {'fixed': True}\n",
+            ):
+                passed = session._execute_validate_refine(reason="animation_stage")
+
+        self.assertFalse(passed)
+        self.assertEqual(render_final.call_count, 0)
 
     def test_validation_pass_reports_missing_render_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

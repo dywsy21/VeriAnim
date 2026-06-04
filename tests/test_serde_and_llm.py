@@ -9,6 +9,7 @@ from unittest import mock
 
 from harness.agents import (
     MaterialAgent,
+    PRESENTATION_QUALITY_CONTRACT,
     _is_multimodal_input_unsupported,
     _report_from_model,
     _sanitize_generated_blender_code,
@@ -25,7 +26,7 @@ from harness.ir import (
     TexturePolicy,
     VerificationMode,
 )
-from harness.llm import LLMError, extract_json_object
+from harness.llm import LLMClient, LLMError, extract_json_object
 from harness.serde import (
     EXTENSION_IR,
     INVALID_IR,
@@ -228,6 +229,25 @@ class SerdeStrictDecodeTest(unittest.TestCase):
         ir = from_dict(GenerationIR, payload)
 
         self.assertEqual(ir.stages[0].verifier_modes, [VerificationMode.DETERMINISTIC, VerificationMode.VISION])
+
+    def test_presentation_quality_contract_names_core_display_requirements(self) -> None:
+        contract = PRESENTATION_QUALITY_CONTRACT
+
+        for required_text in (
+            "presentation GIF",
+            "allow_subject_crop=false",
+            "min_subject_pixel_fraction",
+            "camera_move/camera_orbit",
+            "colored tip",
+            "detached spheres",
+            "edge/ripple stripes",
+            "two long crossing bars",
+            "half blade length",
+            "Parent all four blades",
+            "neutral floor/background",
+            "camera lens/location/look-at target",
+        ):
+            self.assertIn(required_text, contract)
 
     def test_planner_sanitizer_converts_ramp_support_to_visual_attachment(self) -> None:
         payload = copy.deepcopy(self.data)
@@ -777,6 +797,26 @@ class ExtractJsonObjectTest(unittest.TestCase):
         exc = RuntimeError("unknown variant `image_url`, expected `text` at line 1 column 25")
 
         self.assertTrue(_is_multimodal_input_unsupported(exc))
+
+
+class LLMClientRetryTest(unittest.TestCase):
+    def test_retries_transient_completion_error(self) -> None:
+        response = mock.Mock()
+        response.choices = [mock.Mock(message=mock.Mock(content="ok"))]
+        calls = {"count": 0}
+
+        def flaky_completion(**kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("Connection error.")
+            return response
+
+        config = AgentModelConfig(name="test", model="dashscope/qwen3.6-plus", stream=False)
+        with mock.patch("litellm.completion", side_effect=flaky_completion), mock.patch("harness.llm.time.sleep"):
+            text = LLMClient(config).complete_text("system", "user")
+
+        self.assertEqual(text, "ok")
+        self.assertEqual(calls["count"], 2)
 
 
 if __name__ == "__main__":
