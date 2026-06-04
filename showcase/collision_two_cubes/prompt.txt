@@ -1,0 +1,1 @@
+A physical experiment: a moving square hits a stationary square. The same mass, no energy loss, no friction.

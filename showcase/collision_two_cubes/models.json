@@ -1,0 +1,7 @@
+{
+  "planner": "openai/glm-5.1",
+  "coder": "openai/glm-5.1",
+  "refiner": "openai/glm-5.1",
+  "vision": "openai/qwen3.6-plus",
+  "video": "openai/qwen3.6-plus"
+}

@@ -11,6 +11,7 @@ Presentation-ready artifacts selected from existing runs. Each directory contain
 - `green_car_ramp_to_platform`: toy car follows road, ramp, and platform support sequence.
 - `yellow_puck_down_ramp`: puck moves from table to ramp to lower platform.
 - `green_cube_table_slide`: simple clean baseline for supported table-top sliding.
+- `collision_two_cubes`: equal-mass elastic collision where the blue cube stops and the red cube departs.
 
 ## Static Scenes
 
