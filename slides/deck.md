@@ -1,13 +1,13 @@
 <!-- .slide: class="title-slide" -->
 
 :::{kicker}
-Class Report / 10 minutes
+Group 1 / Wang Siyu, Du Yuheng, Yang Tingyi, Tong Mingyang
 :::
 
 # VeriAnim: Animation Extension Contracts for Verifiable Blender Programs
 
 :::{subtitle}
-从自然语言到可验证的 Blender 动画：我们做了什么、怎么做、失败在哪里、接下来如何评测
+从自然语言到自我迭代的 Blender 动画生成 Agent
 :::
 
 ???
@@ -15,15 +15,15 @@ Class Report / 10 minutes
 
 ---
 
-# 一句话问题
+# 需要解决的问题
 
 :::{split-emphasis}
-静态 3D 生成只需要“场景像不像”；动画还要回答“谁在什么时候动、关系是否一直成立、镜头是否真的看见了”。
+静态 3D 生成只需要“场景像不像”；动画还要回答“谁（物体、光源、甚至摄像机）在什么时候动、是否符合物理规律、镜头是否真的看见了”。
 :::
 
-- 直接生成 Blender keyframes 很容易只满足起点和终点。
-- 中间帧可能穿过桌面、漏掉夹爪、把相机转到看不见动作的位置。
-- 这些失败不是 Blender 不适合，而是动画缺少结构化合同和证据。
+- 直接生成 Blender keyframes 很容易只满足起点和终点的正确性。
+- 中间帧可能穿模、漏掉夹爪、把相机转到看不见动作的位置。
+- 这些问题的原因在于：约束往往并不能显示地被用户需求所表达，它是进一步分析用户需求后得出的。
 
 ---
 
@@ -42,30 +42,30 @@ Class Report / 10 minutes
 [column]
 :::{card}
 **输出**
-- Blender Python script
+- Blender 可运行的 Python script
 - scene graph / transform traces
-- screenshots / preview video
-- verifier reports / repair history
+- 截图 / 预览视频
+- 自动验证报告 / 修正记录
 :::
 [/column]
 [/columns]
 
 :::{callout}
-核心不是“生成一个视频”，而是生成一个能被检查、定位问题、局部修复的动画程序。
+显然不是“生成一个视频”，而是生成一个能被检查、定位问题、局部修复的动画描述程序。
 :::
 
 ---
 
-# 核心想法：两层合同
+# 核心想法：两层 IR
 
 [columns]
 [column]
 :::{card}
-**1. SceneSpec**
-- 冻结静态场景基线
-- object ids / parts / materials
-- relations / cameras / collision proxies
-- screenshot and evidence plan
+**1. SceneSpec IR**
+- 静态场景作为基础
+- 各个对象的 ID / 有自由度的独立部位 / 材质
+- 对象之间关系 / 摄像机 / 碰撞 proxy
+- 计划怎样验证？应该满足怎样的约束？
 :::
 [/column]
 
@@ -91,7 +91,7 @@ Class Report / 10 minutes
 :::{pipeline}
 :::{card}
 **1. Plan**
-prompt -> SceneSpec + animation extension
+prompt -> SceneSpec IR + animation extension
 :::
 
 :::{card}
@@ -101,7 +101,7 @@ prompt -> SceneSpec + animation extension
 
 :::{card}
 **3. Add animation**
-引用稳定 object ids，写 keyframes / helpers / media sampling
+引用 object ids，写 keyframes / helpers / media sampling
 :::
 
 :::{card}
@@ -111,12 +111,12 @@ prompt -> SceneSpec + animation extension
 :::
 
 :::{callout}
-静态场景先通过，动画阶段只能引用它；这样修复穿模时不会顺手把桌子、相机或材质重生成。
+先构建静态场景，验证通过后，动画阶段引用静态场景中的物体加关键帧；这样在修复动画问题时确保避免改动物体模型本身。
 :::
 
 ---
 
-# SceneSpec 做什么
+# SceneSpec IR 做什么
 
 - 把 prompt 中的对象、部件、材质、空间关系、相机和证据计划显式化。
 - 每个对象有稳定 `verianim_id`，后续代码、采样、验证和修复都用同一套 id。
@@ -223,7 +223,8 @@ prompt -> SceneSpec + animation extension
 - Python harness：planner / coder / refiner / visual verifier / video verifier。
 - IR parser and serializer：静态 SceneSpec + animation extension。
 - Deterministic validator：几何关系、transform traces、frame-window auditing。
-- Texture resolver：把材质检索和视觉审批变成可追踪 preprocessing。
+- Texture resolver：允许 Agent 联网搜索 texture。
+- Harness KV Cache Optimization：多轮 refine 情况下的 KV Cache 命中优化
 - VeriAnim-AnimBench：300 条 prompt，easy / medium / hard 各 100。
 
 ---
@@ -234,18 +235,18 @@ prompt -> SceneSpec + animation extension
 [column]
 :::{warning}
 **穿模仍然最常见**
-- 中间帧穿过支撑面
-- bbox 对凹形物体不够精确
+- 运动过程中间物体穿过另一物体
+- 使用 bbox 判定对凹形物体不够精确
 - sparse samples 容易漏掉短暂接触错误
 :::
 [/column]
 
 [column]
 :::{warning}
-**弱模型很难自我更正**
+**模型能力差导致难以自我更正**
 - 反复 refinement 仍然改不到失败原因
-- 有时会破坏静态场景基线
-- 会“解释”错误，而不是修 motion path
+- 破坏那些好的、已有的东西
+- 会“解释”错误，而不是修复
 :::
 [/column]
 [/columns]
@@ -273,17 +274,18 @@ prompt -> SceneSpec + animation extension
 
 ---
 
-# Benchmark：refine 轮数作为指标
+# Benchmark：refine 轮数作为大模型评测指标
 
 :::{metric}
 **观察**
-动画 prompt 的难度不只体现在最终 pass/fail，也体现在系统需要多少轮 refinement 才能定位并修复局部失败。
+
+我们发现不同模型的能力差异体现在动画制作上的效果是显著的。可以通过 Refine 轮数去对不同模型的能力进行评测。
 :::
 
 - `0 rounds`：一次生成就满足几何和媒体证据。
 - `1-2 rounds`：局部修复有效，说明合同和证据足够定位问题。
 - `many rounds / stop`：通常对应弱模型、欠约束 primitive、或 verifier 无法给出可操作证据。
-- 我们正在把 refine rounds、失败签名重复次数和 wall-clock cost 纳入 AnimBench 评测。
+- 我们正在把 refine rounds 纳入 AnimBench 评测。
 
 ---
 
@@ -292,9 +294,4 @@ prompt -> SceneSpec + animation extension
 - 更精细的 mesh/BVH 检查，减少 bbox 对穿模的误判和漏判。
 - 让 camera / visibility / deformable family 的 primitive 和验证更完整。
 - 把“弱模型无法更正”的失败类型系统化，区分模型能力、证据质量和合同缺失。
-- 完成 showcase GIF 与 prompt 对照，展示成功、失败和 repair 的全过程。
-- 用 refine rounds 作为 benchmark 指标，衡量动画生成的可修复性而不仅是最终结果。
-
-:::{callout}
-结论：VeriAnim 把动画生成从一次性 keyframe 写作，变成带合同、证据和局部修复的程序合成流程。
-:::
+- 用 refine rounds 作为 benchmark 指标，衡量模型能力。
