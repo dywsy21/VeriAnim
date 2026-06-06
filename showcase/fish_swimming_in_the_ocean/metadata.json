@@ -1,0 +1,225 @@
+{
+  "name": "fish swimming in the ocean",
+  "kind": "animation",
+  "source_run": "runs/run_20260531_165731",
+  "source_code": "runs/run_20260531_165731/code/final_scene.py",
+  "prompt": "a fish swimming in the sea",
+  "models": {
+    "planner": "openai/deepseek-v4-pro",
+    "coder": "openai/deepseek-v4-pro",
+    "refiner": "openai/deepseek-v4-pro",
+    "vision": "openai/qwen3.5-omni-plus",
+    "video": "openai/qwen3.5-omni-plus"
+  },
+  "selected_note": "Promoted animation artifact from run_20260531_165731.",
+  "validation_reports": [
+    {
+      "file": "initial_round_2_animation_deterministic.json",
+      "passed": true,
+      "summary": "Animation deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "initial_round_2_animation_video.json",
+      "passed": false,
+      "summary": "The animation fails because the visual content does not match the requested prompt or the specified animation events. The video depicts a red fish-shaped object moving above a grey platform with static geometric shapes (cylinder, disk), whereas the prompt and specification require a fish swimming in the sea (water volume). The required 'sea_volume' and 'sea_floor' objects are absent, making it impossible to verify the 'inside water volume' and 'non-penetration of sea floor' constraints. Additionally, the environment is a generic grey void rather than a sea setting.",
+      "issues": [
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "Scene Mismatch: The video shows a fish on a dry platform with unrelated geometric props, not a fish swimming in the sea as requested.",
+          "severity": "major"
+        },
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "Missing Constraints: The 'sea_volume' and 'sea_floor' objects defined in the constraints are not present in the scene, preventing verification of containment and collision rules.",
+          "severity": "major"
+        },
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "Visual Discrepancy: The transform trace indicates movement through open space, but the visual context (platform) contradicts the 'swimming in sea' narrative.",
+          "severity": "major"
+        }
+      ]
+    },
+    {
+      "file": "initial_round_2_scene_deterministic.json",
+      "passed": false,
+      "summary": "Scene deterministic validation found issues.",
+      "issues": [
+        {
+          "code": "RELATION_ON_TOP_OF_FAILED",
+          "message": "'coral' is not clearly on top of 'sea_floor'.",
+          "severity": "major",
+          "target_id": "coral",
+          "relation_id": "rel_coral_on_floor"
+        }
+      ]
+    },
+    {
+      "file": "initial_round_2_scene_deterministic_after_support_repair.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "initial_round_2_scene_vision.json",
+      "passed": false,
+      "summary": "The scene fails to meet the visual requirements specified in the prompt and SceneSpec. The primary issue is that the scene depicts a fish resting on a flat gray floor rather than 'swimming in the sea' as requested. There is no visible water volume or underwater environment; the background is a solid gray void. Additionally, the objects present (a green cylinder and a purple bottle-like shape) do not match the required 'seaweed' and 'coral' descriptions.",
+      "issues": [
+        {
+          "code": "MISSING_REQUIRED_ENVIRONMENT",
+          "message": "The prompt requests 'a fish swimming in the sea', but the scene lacks any visible water volume or underwater atmosphere. The fish appears to be floating above or resting on a dry floor in a gray void.",
+          "severity": "critical",
+          "target_id": "sea_volume",
+          "frame": 1
+        },
+        {
+          "code": "SEMANTIC_MISMATCH",
+          "message": "The decorative objects do not match their intended identities. The green object is a simple cylinder lacking 'fronds' (Seaweed), and the pink object resembles a bottle rather than a 'branching structure' (Coral).",
+          "severity": "major",
+          "target_id": "seaweed",
+          "relation_id": "rel_seaweed_on_floor",
+          "frame": 1
+        },
+        {
+          "code": "PHYSICAL_IMPLAUSIBILITY",
+          "message": "The fish is positioned directly on top of the floor plane, contradicting the action of 'swimming'. Fish should be suspended in the water volume, not resting on the seabed like a static prop.",
+          "severity": "major",
+          "target_id": "fish",
+          "frame": 4
+        }
+      ]
+    },
+    {
+      "file": "initial_round_4_animation_deterministic.json",
+      "passed": true,
+      "summary": "Animation deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "initial_round_4_animation_video.json",
+      "passed": false,
+      "summary": "The animation fails because the fish object leaves the camera view before the final required frame (frame 100). While the transform trace indicates the fish should be at a specific end location, the visual evidence in the sampled frames shows the fish moving out of the frame entirely by the intermediate stage, making the final state impossible to verify visually.",
+      "issues": [
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "Visibility Failure: The fish is visible at frame 1 and moves towards the background/right, but by frame 50 (and continuing to frame 100), it has moved completely out of the camera's field of view. The requirement states 'Animated subjects must be visible at the event start, at an intermediate sampled frame, and at the event end.'",
+          "severity": "major"
+        },
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "Final State Verification: Because the fish is not visible in the later frames, its final position and state cannot be visually confirmed, violating the 'require_final_state_visibility' constraint.",
+          "severity": "major"
+        }
+      ]
+    },
+    {
+      "file": "initial_round_4_scene_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "initial_round_4_scene_vision.json",
+      "passed": false,
+      "summary": "The scene fails because the primary object, the fish, is visually represented as a generic purple blimp or balloon with a tail fin, rather than a 'tropical fish' as specified in the prompt and SceneSpec. It lacks essential biological features like scales, fins (other than a single tail), eyes, or a mouth. Additionally, the sea floor lacks the required 'sandy texture', appearing as a flat solid color.",
+      "issues": [
+        {
+          "code": "SEMANTIC_MISMATCH",
+          "message": "The object labeled as 'fish' visually resembles a purple balloon or blimp rather than a tropical fish. It lacks required features such as scales, distinct fins, and facial details.",
+          "severity": "critical",
+          "target_id": "fish",
+          "frame": 1
+        },
+        {
+          "code": "MISSING_FEATURE",
+          "message": "The sea floor object is missing the required 'sandy texture' feature, appearing as a uniform solid blue-grey plane instead.",
+          "severity": "major",
+          "target_id": "sea_floor",
+          "frame": 1
+        }
+      ]
+    },
+    {
+      "file": "initial_round_6_animation_deterministic.json",
+      "passed": true,
+      "summary": "Animation deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "initial_round_6_animation_video.json",
+      "passed": false,
+      "summary": "The animation fails because the fish is not visible in the final frame (frame 100), violating the visibility requirements for the end state. Additionally, the motion path appears reversed relative to the expected trajectory defined in the spec.",
+      "issues": [
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "Visibility Failure: The fish is clearly visible at frame 1 and frame 50, but is completely absent from the camera view in frame 100 (Picture 3). The specification requires the subject to be visible at the event end.",
+          "severity": "major"
+        },
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "Motion Path Error: The transform trace indicates the fish should move from Y=-2.0 to Y=2.0. Visually, the fish moves away from the camera and towards the background/right in the provided sequence, appearing to move in the opposite direction or off-screen before the clip ends, rather than completing the specified arc within the visible volume.",
+          "severity": "major"
+        }
+      ]
+    },
+    {
+      "file": "initial_round_6_scene_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "initial_round_6_scene_vision.json",
+      "passed": false,
+      "summary": "The scene fails verification due to significant semantic and visual mismatches between the prompt/specification and the generated images. The primary issue is that the 'fish' object is rendered as a pink mouse-like creature instead of a fish. Additionally, the environment represents an abstract blue void with a floating platform rather than a 'sea' or underwater setting, and the floor lacks the required sandy texture.",
+      "issues": [
+        {
+          "code": "SEMANTIC_MISMATCH",
+          "message": "The primary object 'fish' is visually represented as a pink mouse-like creature with ears and a tail, rather than a tropical fish with fins and scales as specified in the prompt and SceneSpec.",
+          "severity": "critical",
+          "target_id": "fish",
+          "frame": 1
+        },
+        {
+          "code": "MISSING_FEATURE",
+          "message": "The 'sea_floor' object lacks the required 'sandy texture'. It appears as a solid, flat, light-blue surface indistinguishable from the background water volume, failing to convey a seabed environment.",
+          "severity": "major",
+          "target_id": "sea_floor",
+          "frame": 1
+        },
+        {
+          "code": "CONTEXT_MISMATCH",
+          "message": "The scene composition depicts objects on a floating square platform in a solid blue void, which does not visually represent 'a fish swimming in the sea'. The lack of horizon, water surface interaction, or environmental depth makes the 'sea' context unconvincing.",
+          "severity": "major",
+          "target_id": "sea_volume",
+          "relation_id": "rel_volume_on_floor",
+          "frame": 1
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "animation.gif",
+    "animation.mp4",
+    "frame_0089.png",
+    "frame_0090.png",
+    "frame_0091.png",
+    "frame_0092.png",
+    "frame_0093.png",
+    "frame_0094.png",
+    "frame_0095.png",
+    "frame_0096.png",
+    "frame_0097.png",
+    "frame_0098.png",
+    "frame_0099.png",
+    "frame_0100.png",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "scene.jpg",
+    "scene.png",
+    "source.py"
+  ]
+}

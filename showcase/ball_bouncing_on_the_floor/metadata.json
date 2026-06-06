@@ -1,0 +1,106 @@
+{
+  "name": "ball bouncing on the floor",
+  "kind": "animation",
+  "source_run": "runs/run_20260607_005435",
+  "source_code": "runs/run_20260607_005435/code/final_scene.py",
+  "prompt": "A ball bounces on the ground and slowly comes to a stop",
+  "models": {
+    "planner": "openai/deepseek-v4-pro",
+    "coder": "openai/deepseek-v4-pro",
+    "refiner": "openai/deepseek-v4-pro",
+    "vision": "openai/qwen3.5-omni-plus",
+    "video": "openai/qwen3.5-omni-plus"
+  },
+  "selected_note": "Promoted animation artifact from run_20260607_005435.",
+  "validation_reports": [
+    {
+      "file": "animation_stage_round_1_animation_deterministic.json",
+      "passed": true,
+      "summary": "Animation deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "animation_stage_round_1_animation_video.json",
+      "passed": false,
+      "summary": "The animation fails to display the required motion. The visual evidence (video and sampled frames) shows a static red ball resting on the ground throughout the entire duration. There is no visible falling, bouncing, or vertical movement as specified in the AnimationSpec and Transform Trace. The object remains stationary at the final rest position from the very first frame.",
+      "issues": [
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "The ball does not fall or bounce. It remains static at the low resting height (z ≈ 0.2) for the entire clip, contradicting the start transform (z=2.0) and the event description.",
+          "severity": "major"
+        },
+        {
+          "code": "MODEL_REPORTED_ISSUE",
+          "message": "The Transform Trace indicates a start location of [0, 0, 2.0], but Frame 1 visually shows the ball already on the ground. This suggests the render engine is ignoring the animated transforms or rendering a static state.",
+          "severity": "major"
+        }
+      ]
+    },
+    {
+      "file": "animation_stage_round_1_scene_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "animation_stage_round_1_scene_preservation.json",
+      "passed": true,
+      "summary": "Animation stage preserved static scene baseline geometry.",
+      "issues": []
+    },
+    {
+      "file": "animation_stage_round_1_scene_vision.json",
+      "passed": true,
+      "summary": "The scene correctly depicts the required objects (ball and ground) in the specified initial state. The ball is clearly positioned above the ground plane without intersection, consistent with the 'floating' start of a bounce animation described in the prompt and visual check prompts. All three required views (three_quarter, side_support, closeup) are present and show the subjects fully within the frame. Lighting and materials are sufficient to distinguish the objects.",
+      "issues": []
+    },
+    {
+      "file": "animation_stage_round_2_code_static.json",
+      "passed": false,
+      "summary": "Generated code failed static completeness checks.",
+      "issues": [
+        {
+          "code": "CODE_MISSING_ANIMATION_KEYFRAMES",
+          "message": "Animation script has too few actual keyframe operations or verianim animation primitive calls for the planned events.",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "file": "animation_stage_round_3_code_static.json",
+      "passed": false,
+      "summary": "Generated code failed static completeness checks.",
+      "issues": [
+        {
+          "code": "CODE_UNDEFINED_MODULE",
+          "message": "Generated script uses 'bpy' but does not import or define it.",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "file": "scene_stage_round_2_scene_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "scene_stage_round_2_scene_vision.json",
+      "passed": true,
+      "summary": "The scene correctly depicts the required objects (red ball and gray ground plane) in the specified spatial relationship. The ball is clearly floating above the ground without intersection, consistent with the 'ball_above_ground_not_intersecting' relation and the deterministic report. All three required views are present and legible.",
+      "issues": []
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "animation.gif",
+    "animation.mp4",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "scene.blend",
+    "scene.jpg",
+    "scene.png",
+    "source.py"
+  ]
+}

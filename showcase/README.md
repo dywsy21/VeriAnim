@@ -12,12 +12,32 @@ Presentation-ready artifacts selected from existing runs. Each directory contain
 - `yellow_puck_down_ramp`: puck moves from table to ramp to lower platform.
 - `green_cube_table_slide`: simple clean baseline for supported table-top sliding.
 - `collision_two_cubes`: equal-mass elastic collision where the blue cube stops and the red cube departs.
+- `fish_swimming_in_the_ocean`: Promoted animation artifact from run_20260531_165731.
+- `bird_flying_around_a_tree`: Promoted animation artifact from run_20260606_231935.
+- `ball_bouncing_on_the_floor`: Promoted animation artifact from run_20260607_005435.
 
 ## Static Scenes
 
 - `static_desktop_workspace`: warm desktop workspace scene with table, mug, plant, notebook, and lamp.
 - `static_cube_sphere_table`: red cube and green sphere on a blue table.
 - `static_conveyor_box_gripper`: static rigid setup with belt, box, tray, and gripper components.
+
+## Promoting Runs
+
+Convert a successful `runs/run_*` directory into a showcase entry:
+
+```bash
+python scripts/promote_run_to_showcase.py runs/run_20260606_231203 wooden_chair_table --note "Clean static furniture scene." --update-index
+```
+
+For animation entries, add sampled frames when they are useful for inspection:
+
+```bash
+python scripts/promote_run_to_showcase.py runs/run_20260606_231935 bird_orbit --copy-frames --update-index
+```
+
+Animation entries automatically create `animation.mp4` from `animation.gif` with
+`ffmpeg` when the source run does not already include an MP4 preview.
 
 ## Re-exporting Blend Files
 
