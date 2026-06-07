@@ -16,6 +16,7 @@ few layout directives used by deck.md:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import html
 import re
 from dataclasses import dataclass, field
@@ -27,6 +28,9 @@ REVEAL_CSS = "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css"
 REVEAL_THEME = "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css"
 REVEAL_JS = "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"
 REVEAL_NOTES = "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"
+SLIDE_WIDTH = 1920
+SLIDE_HEIGHT = 1080
+CSS_PIXELS_PER_INCH = 96
 
 
 @dataclass
@@ -275,6 +279,8 @@ def build_html(markdown_text: str, title: str) -> str:
       transition: "fade",
       backgroundTransition: "fade",
       controlsTutorial: false,
+      width: {SLIDE_WIDTH},
+      height: {SLIDE_HEIGHT},
       plugins: [ RevealNotes ]
     }});
   </script>
@@ -298,7 +304,7 @@ CUSTOM_CSS = r"""
 .reveal {
   color: var(--ink);
   font-family: "Aptos", "Inter", "Helvetica Neue", Arial, sans-serif;
-  font-size: 32px;
+  font-size: 52px;
 }
 
 .reveal .slides {
@@ -337,7 +343,7 @@ CUSTOM_CSS = r"""
 .reveal ul,
 .reveal ol {
   margin-left: 0;
-  padding-left: 0;
+  padding-left: 0.9em;
 }
 
 .reveal li + li {
@@ -384,7 +390,7 @@ CUSTOM_CSS = r"""
   align-items: stretch;
   display: grid;
   gap: 0.65em;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   margin-top: 0.65em;
 }
 
@@ -481,7 +487,7 @@ CUSTOM_CSS = r"""
   border: 1px solid var(--line);
   border-radius: 6px;
   display: block;
-  height: 205px;
+  height: 330px;
   margin: 0 0 0.55em;
   object-fit: contain;
   width: 100%;
@@ -506,7 +512,7 @@ CUSTOM_CSS = r"""
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 220px;
+  min-height: 340px;
   text-align: center;
 }
 
@@ -518,7 +524,7 @@ CUSTOM_CSS = r"""
 }
 
 .pipeline .card {
-  min-height: 120px;
+  min-height: 170px;
 }
 
 .tag-row {
@@ -565,10 +571,42 @@ CUSTOM_CSS = r"""
 """
 
 
+async def export_pdf(html_path: Path, pdf_path: Path, width: int = SLIDE_WIDTH, height: int = SLIDE_HEIGHT) -> None:
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError as exc:
+        raise SystemExit(
+            "PDF export requires Playwright. Install it with `pip install playwright` "
+            "and install a browser with `playwright install chromium`."
+        ) from exc
+
+    page_width = width / CSS_PIXELS_PER_INCH
+    page_height = height / CSS_PIXELS_PER_INCH
+    url = html_path.resolve().as_uri() + "?print-pdf"
+
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch()
+        page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
+        await page.goto(url, wait_until="networkidle")
+        await page.wait_for_function("window.Reveal && Reveal.isReady && Reveal.isReady()", timeout=30_000)
+        await page.emulate_media(media="print")
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        await page.pdf(
+            path=str(pdf_path),
+            width=f"{page_width}in",
+            height=f"{page_height}in",
+            margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+            print_background=True,
+            prefer_css_page_size=False,
+        )
+        await browser.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build Reveal.js HTML from deck Markdown.")
     parser.add_argument("input", type=Path, help="Markdown deck path")
     parser.add_argument("-o", "--output", type=Path, default=Path("index.html"), help="HTML output path")
+    parser.add_argument("--pdf-output", type=Path, help="Optional PDF output path, exported at 1920x1080 slide aspect.")
     parser.add_argument("--title", default="VeriAnim Slides", help="HTML title")
     args = parser.parse_args()
 
@@ -577,6 +615,9 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html_text, encoding="utf-8")
     print(f"Built {args.output} from {args.input}")
+    if args.pdf_output:
+        asyncio.run(export_pdf(args.output, args.pdf_output))
+        print(f"Exported {args.pdf_output} at {SLIDE_WIDTH}x{SLIDE_HEIGHT}")
 
 
 if __name__ == "__main__":

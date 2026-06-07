@@ -283,7 +283,7 @@ prompt -> SceneSpec IR + animation extension
 [/columns]
 
 :::{muted}
-两个例子都保留了生成源码、`.blend`、GIF、prompt、模型 manifest 和 verifier 摘要，便于现场打开追溯。
+更多 showcase 请查看二维码。
 :::
 
 ---

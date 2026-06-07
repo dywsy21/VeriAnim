@@ -8,6 +8,16 @@ python slides/build_reveal.py slides/deck.md -o slides/index.html --title "VeriA
 
 Open `slides/index.html` in a browser. The generated deck uses Reveal.js from a CDN.
 
+Export the slides as a 1920x1080 PDF:
+
+```bash
+pip install -e ".[slides]"
+playwright install chromium
+python slides/build_reveal.py slides/deck.md -o slides/index.html --pdf-output slides/deck.pdf --title "VeriAnim Class Report"
+```
+
+PDF export uses Playwright/Chromium and maps 1920x1080 CSS pixels to a 20in x 11.25in PDF page.
+
 ## Markdown Dialect
 
 - `---` separates slides.
