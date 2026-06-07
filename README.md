@@ -147,6 +147,19 @@ Each run writes artifacts under `runs/`, including:
 - Screenshot and animation previews under `screenshots/` and `animation/`.
 - Selected texture assets under `textures/` when texture search is enabled.
 
+## Showcase Showroom
+
+Curated examples live under `showcase/`. Generate a scan-friendly static gallery
+for talks or demos with:
+
+```bash
+make showroom
+```
+
+This writes `showroom/index.html` and copies preview media into
+`showroom/assets/`. Deploy the whole `showroom/` directory with any static file
+host, or open the HTML file locally for a quick check.
+
 ## Validation And Tests
 
 Run the current unit tests with:

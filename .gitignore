@@ -16,6 +16,7 @@ qwen3-omni.md
 local-docs
 .*
 paper/project_context.md
+showroom/
 
 # latex build files
 *.aux

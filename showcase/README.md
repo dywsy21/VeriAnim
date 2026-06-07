@@ -39,6 +39,18 @@ python scripts/promote_run_to_showcase.py runs/run_20260606_231935 bird_orbit --
 Animation entries automatically create `animation.mp4` from `animation.gif` with
 `ffmpeg` when the source run does not already include an MP4 preview.
 
+## Generating The Showroom
+
+Build a mobile-friendly static website for live talks and QR-code sharing:
+
+```bash
+python scripts/generate_showroom.py
+```
+
+The generator reads every `showcase/<name>/metadata.json`, copies preview media,
+and writes `showroom/index.html` plus `showroom/assets/`. Re-run it after adding
+or updating showcase entries.
+
 ## Re-exporting Blend Files
 
 Run:

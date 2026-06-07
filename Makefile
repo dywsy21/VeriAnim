@@ -1,9 +1,12 @@
-.PHONY: check compile lint test
+.PHONY: check compile lint showroom test
 
 PYTHON ?= python
 
 test:
 	$(PYTHON) -m unittest discover -s tests
+
+showroom:
+	$(PYTHON) scripts/generate_showroom.py
 
 compile:
 	$(PYTHON) -m py_compile blender/addon.py blender/client.py blender/headless.py config/loader.py harness/*.py scripts/*.py tests/*.py
