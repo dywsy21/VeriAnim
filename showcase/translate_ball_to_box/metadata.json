@@ -1,0 +1,52 @@
+{
+  "name": "translate ball to box",
+  "kind": "animation",
+  "source_run": "runs/ir_qwen_key_until_pass_20260607_065033/manual_ball_qwen_pass_hist",
+  "source_code": "runs/ir_qwen_key_until_pass_20260607_065033/manual_ball_qwen_pass_hist/code/final_scene.py",
+  "prompt": "Create a small red ball that rolls from the left side of the floor to stop beside a blue box.",
+  "models": {
+    "planner": "openai/deepseek-v4-flash",
+    "coder": "openai/deepseek-v4-flash",
+    "refiner": "openai/deepseek-v4-flash",
+    "vision": "dashscope/qwen-vl-max",
+    "video": "dashscope/qwen3.6-plus"
+  },
+  "selected_note": "Red ball rolls across the floor and stops beside a blue box; deterministic, scene vision, and video checks passed.",
+  "validation_reports": [
+    {
+      "file": "manual_round_0_animation_deterministic.json",
+      "passed": true,
+      "summary": "Animation deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "manual_round_0_animation_video.json",
+      "passed": true,
+      "summary": "The animation successfully depicts a red ball rolling from the left side of the floor to stop beside a blue box. The ball is visible throughout the sequence, moving from left to right. The final frame shows the ball resting next to the box. The ball remains on the floor surface without floating or sinking. The rotation of the ball is visible, consistent with rolling motion.",
+      "issues": []
+    },
+    {
+      "file": "manual_round_0_scene_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "manual_round_0_scene_vision.json",
+      "passed": true,
+      "summary": "The scene correctly depicts a small red ball and a blue box with proper placement, materials, and spatial relationships. All required objects are present, visually correct, and positioned as specified. The ball is shown resting on the floor in all views, and it stops near the blue box as required. Camera angles provide sufficient coverage to verify the final state and path.",
+      "issues": []
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "animation.gif",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "scene.blend",
+    "scene.jpg",
+    "scene.png",
+    "source.py"
+  ]
+}

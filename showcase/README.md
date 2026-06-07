@@ -15,6 +15,9 @@ Presentation-ready artifacts selected from existing runs. Each directory contain
 - `fish_swimming_in_the_ocean`: Promoted animation artifact from run_20260531_165731.
 - `bird_flying_around_a_tree`: Promoted animation artifact from run_20260606_231935.
 - `ball_bouncing_on_the_floor`: Promoted animation artifact from run_20260607_005435.
+- `camera_orbit_showcase`: Bronze sculpture on a pedestal with a smooth camera orbit; deterministic, scene vision, and video checks passed.
+- `deformable_cloth_prototype`: Yellow cloth banner ripples between two posts while remaining anchored; deterministic, scene vision, and video checks passed.
+- `translate_ball_to_box`: Red ball rolls across the floor and stops beside a blue box; deterministic, scene vision, and video checks passed.
 
 ## Static Scenes
 
