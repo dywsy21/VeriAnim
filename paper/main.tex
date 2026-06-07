@@ -291,6 +291,39 @@ VeriAnim-AnimBench tests both the contract and the current primitive library. Fi
 
 We define \emph{VeriAnim-AnimBench}, a 300-prompt benchmark stored in \code{benchmark/}. The benchmark contains 100 easy, 100 medium, and 100 hard natural-language prompts. Easy prompts isolate one object or one relation, medium prompts combine two coordinated events or camera requirements, and hard prompts require multi-object composition, concurrent motion, or family mixtures. Each record stores the prompt, animation families, required motions, verifier focus, and expected difficulty rationale.
 
+\textbf{Showcase audit.}
+Before running the full benchmark, we use the curated \code{showcase/} set as a qualitative audit of implemented behavior. These examples are not a substitute for benchmark-scale statistics, but they exercise the same artifact trail used by the harness: source prompts, generated Blender code, scene images, animation previews, validation reports, and exported \code{.blend} files. The current showcase covers static relation checks, single-support motion, repaired multi-support motion, and composed rigid events. Representative entries include table-top sliding and conveyor motion with deterministic, vision, and video checks passing; road-ramp-platform and table-ramp-platform examples where contact repair changes an initial deterministic failure into a passing animation; and composed scenes such as garage-door opening followed by car motion, marble-to-cup transfer, and cube collision with all final validation reports passing.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Qualitative showcase audit used before full benchmark execution. The table reports representative curated artifacts, not aggregate benchmark results.}
+\label{tab:showcase-audit}
+\begin{tabular}{p{0.24\linewidth}p{0.32\linewidth}p{0.34\linewidth}}
+\toprule
+Audit target & Showcase entries & Observed evidence \\
+\midrule
+Static relation checks & cube/sphere table, desktop workspace & Scene deterministic checks pass; visual artifacts inspect object identity, support, and layout. \\
+Single-support motion & table slide, conveyor ride & Deterministic, vision, and video reports pass; subject remains visible and supported. \\
+Repaired support sequence & car ramp-to-platform, puck down-ramp & Initial contact violations are repaired; post-repair deterministic and video reports pass. \\
+Composed rigid events & garage exit, marble run, cube collision & Final reports pass across scene preservation, deterministic animation, and video intent. \\
+Manual primitive replay & parallel gripper pick-place & Sampled frames exercise the gripper lifecycle and payload transfer contract. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\small
+\begin{tabular}{p{0.16\linewidth}p{0.78\linewidth}}
+table slide & \includegraphics[width=0.78\linewidth]{figures/green_cube_sequence.jpg} \\
+puck ramp & \includegraphics[width=0.78\linewidth]{figures/yellow_puck_sequence.jpg} \\
+pick-place & \includegraphics[width=0.78\linewidth]{figures/gripper_sequence.jpg} \\
+\end{tabular}
+\caption{Frame sequences extracted from showcase GIF previews. The rows illustrate single-support sliding, repaired multi-support motion, and a gripper pick-place primitive replay.}
+\label{fig:showcase-frames}
+\end{figure}
+
 \begin{figure}[t]
 \centering
 \small

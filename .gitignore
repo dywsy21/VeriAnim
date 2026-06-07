@@ -35,4 +35,8 @@ showroom/
 *.fdb_latexmk
 *.synctex.gz
 *.pdf
-paper/figures
+paper/figures/*
+!paper/figures/
+!paper/figures/green_cube_sequence.jpg
+!paper/figures/yellow_puck_sequence.jpg
+!paper/figures/gripper_sequence.jpg

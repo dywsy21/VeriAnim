@@ -38,19 +38,20 @@ Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski,
 \newblock Program synthesis with large language models.
 \newblock In \emph{NeurIPS Workshop on MATH-AI}, 2021.
 
-\bibitem[Avetisyan et~al.(2024)Avetisyan, Dai, and
-  Nie{\ss}ner]{avetisyan2024scenescript}
-Armen Avetisyan, Angela Dai, and Matthias Nie{\ss}ner.
+\bibitem[Avetisyan et~al.(2024)Avetisyan, Xie, Howard-Jenkins, Yang, Aroudj,
+  Patra, Zhang, Frost, Holland, Orme, Engel, Miller, Newcombe, and
+  Balntas]{avetisyan2024scenescript}
+Armen Avetisyan, Christopher Xie, Henry Howard-Jenkins, Tsun-Yi Yang, Samir
+  Aroudj, Suvam Patra, Fuyang Zhang, Duncan Frost, Luke Holland, Campbell Orme,
+  Jakob Engel, Edward Miller, Richard Newcombe, and Vasileios Balntas.
 \newblock Scenescript: Reconstructing scenes with an autoregressive structured
   language model.
 \newblock In \emph{European Conference on Computer Vision}, 2024.
 
-\bibitem[Blattmann et~al.(2023)Blattmann, Dockhorn, Kulal, Mendelevitch,
-  Kilian, Lorenz, Levi, English, Voleti, Letts, Jampani, and
-  Rombach]{blattmann2023align}
-Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej
-  Kilian, Dominik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts,
-  Varun Jampani, and Robin Rombach.
+\bibitem[Blattmann et~al.(2023)Blattmann, Rombach, Ling, Dockhorn, Kim, Fidler,
+  and Kreis]{blattmann2023align}
+Andreas Blattmann, Robin Rombach, Huan Ling, Tim Dockhorn, Seung~Wook Kim,
+  Sanja Fidler, and Karsten Kreis.
 \newblock Align your latents: High-resolution video synthesis with latent
   diffusion models.
 \newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
@@ -85,10 +86,9 @@ Erwin Coumans and Yunfei Bai.
   and machine learning.
 \newblock In \emph{Game Developers Conference}, 2016.
 
-\bibitem[Gao et~al.(2024)Gao, Liu, Chen, Geiger, Wang, and
-  Chen]{gao2024graphdreamer}
-Gege Gao, Weiyang Liu, Anpei Chen, Andreas Geiger, Bernhard Wang, and Mianzhi
-  Chen.
+\bibitem[Gao et~al.(2024)Gao, Liu, Chen, Geiger, and
+  Sch{\"o}lkopf]{gao2024graphdreamer}
+Gege Gao, Weiyang Liu, Anpei Chen, Andreas Geiger, and Bernhard Sch{\"o}lkopf.
 \newblock Graphdreamer: Compositional 3d scene synthesis from scene graphs.
 \newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
   2024.
@@ -112,8 +112,10 @@ Wenlong Huang, Fei Xia, Ted Xiao, Harris Chan, Jacky Liang, Pete Florence, Andy
   models.
 \newblock \emph{arXiv preprint arXiv:2207.05608}, 2022.
 
-\bibitem[Jones et~al.(2020)Jones, Guerrero, and Mitra]{jones2020shapeassembly}
-R.~Kenny Jones, Paul Guerrero, and Niloy~J. Mitra.
+\bibitem[Jones et~al.(2020)Jones, Barton, Xu, Wang, Jiang, Guerrero, Mitra, and
+  Ritchie]{jones2020shapeassembly}
+R.~Kenny Jones, Theresa Barton, Xianghao Xu, Kai Wang, Ellen Jiang, Paul
+  Guerrero, Niloy~J. Mitra, and Daniel Ritchie.
 \newblock Shapeassembly: Learning to generate programs for 3d shape structure
   synthesis.
 \newblock \emph{ACM Transactions on Graphics}, 39\penalty0 (6), 2020.
@@ -147,11 +149,10 @@ Chen-Hsuan Lin, Jun Gao, Luming Tang, Towaki Takikawa, Xiaohui Zeng, Xun Huang,
 \newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
   2023.
 
-\bibitem[Lu et~al.(2025)Lu, Zhao, Liu, Chen, Zhang, Lin, and
-  Wang]{lu2025verianim}
-Sining Lu, Yicheng Zhao, Haowen Liu, Yixin Chen, Chi Zhang, Dahua Lin, and
-  He~Wang.
-\newblock Large language 3d modelers.
+\bibitem[Lu et~al.(2025)Lu, Chen, Dinh, Lang, Holtzman, and
+  Hanocka]{lu2025verianim}
+Sining Lu, Guan Chen, Nam~Anh Dinh, Itai Lang, Ari Holtzman, and Rana Hanocka.
+\newblock {LL3M}: Large language 3d modelers.
 \newblock \emph{arXiv preprint arXiv:2508.08228}, 2025.
 
 \bibitem[Macklin et~al.(2014)Macklin, M{\"u}ller, Chentanez, and
@@ -197,10 +198,11 @@ Andrew Witkin and Michael Kass.
   Graphics and Interactive Techniques}, 1988.
 
 \bibitem[Yang et~al.(2024)Yang, Sun, Weihs, VanderBilt, Herrasti, Han, Wu,
-  Haber, Krishna, Liu, Callison-Burch, Yatskar, and Kembhavi]{yang2024holodeck}
+  Haber, Krishna, Liu, Callison-Burch, Yatskar, Kembhavi, and
+  Clark]{yang2024holodeck}
 Yue Yang, Fan-Yun Sun, Luca Weihs, Eli VanderBilt, Alvaro Herrasti, Winson Han,
   Jiajun Wu, Nick Haber, Ranjay Krishna, Lingjie Liu, Chris Callison-Burch,
-  Mark Yatskar, and Aniruddha Kembhavi.
+  Mark Yatskar, Aniruddha Kembhavi, and Christopher Clark.
 \newblock Holodeck: Language guided generation of 3d embodied ai environments.
 \newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
   2024.
