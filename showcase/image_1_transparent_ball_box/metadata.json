@@ -1,0 +1,70 @@
+{
+  "name": "image 1 transparent ball box",
+  "kind": "animation",
+  "source_run": "runs/run_20260603_113929",
+  "source_code": "runs/run_20260603_113929/code/final_scene.py",
+  "prompt": "Create a small red ball that rolls from the left side of the floor to stop beside a blue box.",
+  "models": {
+    "planner": "openai/deepseek-v4-flash",
+    "coder": "openai/deepseek-v4-flash",
+    "refiner": "openai/deepseek-v4-flash",
+    "vision": "openai/deepseek-v4-flash",
+    "video": "openai/deepseek-v4-flash"
+  },
+  "selected_note": "Red ball moving beside a transparent blue wireframe box, matching the selected image.",
+  "validation_reports": [
+    {
+      "file": "manual_round_0_animation_deterministic.json",
+      "passed": true,
+      "summary": "Animation deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "manual_round_0_animation_video.json",
+      "passed": false,
+      "summary": "Video verifier model does not accept video input.",
+      "issues": [
+        {
+          "code": "VIDEO_INPUT_UNSUPPORTED",
+          "message": "Video verifier model does not accept video input: video LLM JSON call failed: litellm.BadRequestError: OpenAIException - Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `video_url`, expected `text` at line 1 column 2522213",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "file": "manual_round_0_scene_deterministic.json",
+      "passed": true,
+      "summary": "Scene deterministic validation passed.",
+      "issues": []
+    },
+    {
+      "file": "manual_round_0_scene_vision.json",
+      "passed": false,
+      "summary": "Vision verifier model does not accept image input.",
+      "issues": [
+        {
+          "code": "VISION_INPUT_UNSUPPORTED",
+          "message": "Vision verifier model does not accept image input: vision LLM JSON call failed: litellm.BadRequestError: OpenAIException - Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `image_url`, expected `text` at line 1 column 2938872",
+          "severity": "critical"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "animation.gif",
+    "frame_0115.png",
+    "frame_0116.png",
+    "frame_0117.png",
+    "frame_0118.png",
+    "frame_0119.png",
+    "frame_0120.png",
+    "ir.json",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "scene.jpg",
+    "scene.png",
+    "source.py"
+  ]
+}

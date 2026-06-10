@@ -1,0 +1,7 @@
+{
+  "planner": "openai/gpt-4.1",
+  "coder": "openai/deepseek-v4-flash",
+  "refiner": "openai/deepseek-v4-flash",
+  "vision": "dashscope/qwen-vl-max",
+  "video": "dashscope/qwen3.6-plus"
+}

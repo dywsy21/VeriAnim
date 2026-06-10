@@ -1,0 +1,33 @@
+{
+  "name": "presentation windmill v4",
+  "kind": "animation",
+  "source_run": "runs/presentation_20260603_seq/_promote_sources/windmill_v4",
+  "source_code": "runs/presentation_20260603_seq/_promote_sources/windmill_v4/code/final_scene.py",
+  "prompt": "Create a simple windmill with blades that spin one full turn.",
+  "models": {},
+  "selected_note": "Presentation windmill artifact v4 with spinning blades, promoted from the rendered sequence.",
+  "validation_reports": [],
+  "artifacts": [
+    "README.md",
+    "animation.gif",
+    "frame_0069.png",
+    "frame_0071.png",
+    "frame_0073.png",
+    "frame_0075.png",
+    "frame_0077.png",
+    "frame_0079.png",
+    "frame_0081.png",
+    "frame_0083.png",
+    "frame_0085.png",
+    "frame_0087.png",
+    "frame_0089.png",
+    "frame_0090.png",
+    "ir.json",
+    "metadata.json",
+    "models.json",
+    "prompt.txt",
+    "scene.jpg",
+    "scene.png",
+    "source.py"
+  ]
+}

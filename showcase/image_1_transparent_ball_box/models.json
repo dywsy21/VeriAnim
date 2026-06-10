@@ -1,0 +1,7 @@
+{
+  "planner": "openai/deepseek-v4-flash",
+  "coder": "openai/deepseek-v4-flash",
+  "refiner": "openai/deepseek-v4-flash",
+  "vision": "openai/deepseek-v4-flash",
+  "video": "openai/deepseek-v4-flash"
+}
