@@ -38,11 +38,67 @@ def main() -> None:
         from textual import on
         from textual.app import App, ComposeResult
         from textual.containers import Horizontal, Vertical
+        from textual.suggester import Suggester
         from textual.widgets import Footer, Header, Input, RichLog, Static
     except Exception as exc:
         raise SystemExit("Textual is not installed. Run `pip install -r requirements.txt`.") from exc
 
+    _AGENTS = ("planner", "coder", "refiner", "vision", "video")
+    _FIELDS = (
+        "model", "api_base", "api_key", "api_version", "provider",
+        "temperature", "max_tokens", "timeout", "stream", "supports_images",
+    )
+    _TOP_COMMANDS = (
+        "/animation", "/vision", "/video", "/models",
+        "/model ", "/set ", "/agent ",
+        "/help", "/clear", "/quit",
+    )
+
+    class CommandSuggester(Suggester):
+        """Tab-complete TUI slash commands, agent names, and field names."""
+
+        async def get_suggestion(self, value: str) -> str | None:  # type: ignore[override]
+            if not value.startswith("/"):
+                return None
+
+            parts = value.split()  # whitespace-split, no empty tokens
+            ends_space = value.endswith(" ")
+            nwords = len(parts)
+
+            # ── completing the command word itself ──────────────────────────
+            if nwords == 0 or (nwords == 1 and not ends_space):
+                word = parts[0].lower() if parts else "/"
+                for cmd in _TOP_COMMANDS:
+                    cmd_word = cmd.rstrip()
+                    if cmd_word.lower().startswith(word) and cmd_word.lower() != word:
+                        return cmd  # includes trailing space for multi-word commands
+                return None
+
+            cmd = parts[0].lower()
+
+            # ── completing agent name ───────────────────────────────────────
+            # applies to: /model <agent>  /set <agent>  /agent <name>
+            if cmd in ("/model", "/set", "/agent"):
+                if (nwords == 1 and ends_space) or (nwords == 2 and not ends_space):
+                    prefix = parts[1].lower() if nwords == 2 else ""
+                    for a in _AGENTS:
+                        if a.startswith(prefix) and a != prefix:
+                            return f"{parts[0]} {a}"
+                    return None
+
+            # ── completing field name for /set <agent> <field> ─────────────
+            if cmd == "/set":
+                if (nwords == 2 and ends_space) or (nwords == 3 and not ends_space):
+                    prefix = parts[2].lower() if nwords == 3 else ""
+                    for f in _FIELDS:
+                        if f.startswith(prefix) and f != prefix:
+                            return f"{parts[0]} {parts[1]} {f}"
+                    return None
+
+            return None
+
     class HarnessTUI(App[None]):
+        TITLE = "VeriAnim TUI"
         CSS = """
         Screen {
             background: #101318;
@@ -127,12 +183,17 @@ def main() -> None:
                     yield Static(id="status")
                     yield Static(id="pipeline")
                     yield RichLog(id="artifacts", wrap=True, markup=True, highlight=True)
-            yield Input(placeholder="Prompt or command: /set <agent> <field> <value>  /model <agent> <model>  /agent <name>  /help", id="prompt")
+            yield Input(
+                placeholder="Prompt or: /set <agent> <field> <value>  /model <agent> <model>  /agent <name>  /help",
+                id="prompt",
+                suggester=CommandSuggester(use_cache=False),
+            )
             yield Footer()
 
         def on_mount(self) -> None:
             self._refresh_status()
             self._log("[bold #8fb3ff]Ready.[/] Start with a scene prompt. Blender should have the VeriAnim addon server running.")
+            self.query_one("#prompt", Input).focus()
 
         def action_clear_log(self) -> None:
             self.query_one("#events", RichLog).clear()
@@ -254,6 +315,10 @@ def main() -> None:
                         self._refresh_status()
                     else:
                         self._log(f"[red]{err}[/]")
+                return True
+            # unknown /command — don't fall through to the prompt runner
+            if text.startswith("/"):
+                self._log(f"[yellow]Unknown command '{text.split()[0]}'. Type /help for available commands.[/]")
                 return True
             return False
 

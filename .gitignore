@@ -41,3 +41,6 @@ paper/figures/*
 !paper/figures/yellow_puck_sequence.jpg
 !paper/figures/gripper_sequence.jpg
 !paper/figures/parallel_gripper_run_first_frames.jpg
+dist
+*.egg-info
+*.pptx
