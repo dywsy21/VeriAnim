@@ -47,8 +47,45 @@ class GenerateShowroomTest(unittest.TestCase):
             html = (output_dir / "index.html").read_text(encoding="utf-8")
             self.assertIn('"primaryMedia": null', html)
 
+    def test_iteration_media_stays_with_one_showroom_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            showcase_dir = root / "showcase"
+            output_dir = root / "showroom"
+            run_media_dir = root / "runs" / "parallel_gripper_pick_place" / "rounds"
+            run_media_dir.mkdir(parents=True)
+            (run_media_dir / "round_01.gif").write_bytes(b"round one")
+            (run_media_dir / "round_02.gif").write_bytes(b"round two")
+            make_showcase_entry(
+                showcase_dir / "parallel_gripper_pick_place",
+                kind="animation",
+                media=("animation.gif",),
+                iteration_media=[
+                    {"label": "Round 01", "path": "runs/parallel_gripper_pick_place/rounds/round_01.gif"},
+                    {"label": "Round 02", "path": "runs/parallel_gripper_pick_place/rounds/round_02.gif"},
+                ],
+            )
 
-def make_showcase_entry(path: Path, *, kind: str, media: tuple[str, ...]) -> None:
+            result = generate_showroom(showcase_dir=showcase_dir, output_dir=output_dir)
+
+            self.assertEqual(len(result.entries), 1)
+            self.assertEqual(len(result.entries[0].iteration_media), 2)
+            self.assertFalse(result.warnings)
+            self.assertTrue((output_dir / "assets" / "parallel_gripper_pick_place" / "iterations" / "round_01.gif").exists())
+            self.assertTrue((output_dir / "assets" / "parallel_gripper_pick_place" / "iterations" / "round_02.gif").exists())
+
+            html = (output_dir / "index.html").read_text(encoding="utf-8")
+            self.assertIn('"iterationMedia": [{"label": "Round 01"', html)
+            self.assertIn("entry.iterationMedia.length} iterations", html)
+
+
+def make_showcase_entry(
+    path: Path,
+    *,
+    kind: str,
+    media: tuple[str, ...],
+    iteration_media: list[dict[str, str]] | None = None,
+) -> None:
     path.mkdir(parents=True)
     (path / "README.md").write_text("# Entry\n", encoding="utf-8")
     (path / "source.py").write_text("print('demo')\n", encoding="utf-8")
@@ -69,6 +106,7 @@ def make_showcase_entry(path: Path, *, kind: str, media: tuple[str, ...]) -> Non
                     {"file": "one.json", "passed": True, "summary": "Passed."},
                     {"file": "two.json", "passed": False, "summary": "Failed."},
                 ],
+                "iteration_media": iteration_media or [],
             }
         ),
         encoding="utf-8",

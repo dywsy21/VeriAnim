@@ -503,6 +503,31 @@ CUSTOM_CSS = r"""
   font-size: 0.9em;
 }
 
+.iteration-wall-slide h1 {
+  font-size: 0.56em;
+  margin-bottom: 0.14em;
+}
+
+.iteration-grid {
+  display: grid;
+  align-items: stretch;
+  gap: 0.14em;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  height: 850px;
+}
+
+.iteration-grid img.iteration-gif {
+  background: #f2f4f8;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: block;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  width: 100%;
+}
+
 .media-placeholder {
   align-items: center;
   background:

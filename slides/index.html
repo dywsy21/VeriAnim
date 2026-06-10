@@ -221,6 +221,31 @@
   font-size: 0.9em;
 }
 
+.iteration-wall-slide h1 {
+  font-size: 0.56em;
+  margin-bottom: 0.14em;
+}
+
+.iteration-grid {
+  display: grid;
+  align-items: stretch;
+  gap: 0.14em;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  height: 850px;
+}
+
+.iteration-grid img.iteration-gif {
+  background: #f2f4f8;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: block;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  width: 100%;
+}
+
 .media-placeholder {
   align-items: center;
   background:
@@ -584,6 +609,27 @@
 <p>这也是我们强调 bounded repair 和 deterministic evidence 的原因：不能只把失败报告丢回给模型。</p>
 </div>
 </section>
+<section class="iteration-wall-slide">
+<h1>parallel_gripper_pick_place：16 轮完整迭代过程</h1>
+<div class="iteration-grid">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean1/animation/round2_gripper_clean1/animation.gif" alt="Round 01" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean2/animation/round2_gripper_clean2/animation.gif" alt="Round 02" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean3/animation/round2_gripper_clean3/animation.gif" alt="Round 03" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean4/animation/round2_gripper_clean4/animation.gif" alt="Round 04" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean5/animation/round2_gripper_clean5/animation.gif" alt="Round 05" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean6/animation/round2_gripper_clean6/animation.gif" alt="Round 06" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean7/animation/round2_gripper_clean7/animation.gif" alt="Round 07" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean8/animation/round2_gripper_clean8/animation.gif" alt="Round 08" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean9/animation/round2_gripper_clean9/animation.gif" alt="Round 09" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean10/animation/round2_gripper_clean10/animation.gif" alt="Round 10" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean11/animation/round2_gripper_clean11/animation.gif" alt="Round 11" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean12/animation/round2_gripper_clean12/animation.gif" alt="Round 12" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean13/animation/round2_gripper_clean13/animation.gif" alt="Round 13" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean14/animation/round2_gripper_clean14/animation.gif" alt="Round 14" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean15/animation/round2_gripper_clean15/animation.gif" alt="Round 15" class="iteration-gif">
+<img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean16/animation/round2_gripper_clean16/animation.gif" alt="Round 16" class="iteration-gif">
+</div>
+</section>
 <section>
 <h1>Showcase：可验证动画样例</h1>
 <div class="columns">
@@ -693,6 +739,60 @@
 </div>
 <div class="metric">
 <p><strong>核心问题</strong> 合同、primitive、dense-frame audit、media verifier、bounded repair 分别带来多少可测收益？</p>
+</div>
+</section>
+<section>
+<h1>AnimBench：easy / medium 示例</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>Easy / rigid</strong></p>
+<p><code>Create a simple scene where a red ball slides from the left side of the table to the right side.</code></p>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>Easy / visibility</strong></p>
+<p><code>Create a simple scene where a red ball moves behind a thin screen and reappears on the other side.</code></p>
+</div>
+</div>
+</div>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>Medium / camera + rigid</strong></p>
+<p><code>Create an animation where the ball follows an S-shaped path around the blue box while the camera keeps both visible.</code></p>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>Medium / rigid</strong></p>
+<p><code>Create an animation where a simple gripper picks up the ball, moves it to the blue box, and releases it cleanly.</code></p>
+</div>
+</div>
+</div>
+<div class="callout">
+<p>Easy 隔离单一对象或关系；medium 开始组合两个事件或加入 camera requirement。</p>
+</div>
+</section>
+<section>
+<h1>AnimBench：hard / mixed 示例</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>Hard / camera + rigid</strong></p>
+<p><code>The parallel gripper lifts the orange box from the gray conveyor belt, carries it to the cart, releases it, and the inspection camera keeps the handoff visible.</code></p>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>Hard / deformable + rigid</strong></p>
+<p><code>The parallel gripper carries the orange box past a deforming banner, places it on the cart, and the camera shows both motions.</code></p>
+</div>
+</div>
+</div>
+<div class="warning">
+<p>由于时间原因，完整 300 条 benchmark 还没有全部跑完；当前展示的是 benchmark 设计、prompt 覆盖和 curated showcase audit。</p>
 </div>
 </section>
 <section>

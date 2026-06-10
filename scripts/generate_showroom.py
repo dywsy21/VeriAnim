@@ -22,6 +22,12 @@ COPY_SUFFIXES = {".gif", ".jpg", ".jpeg", ".mp4", ".png", ".webp"}
 
 
 @dataclass(slots=True)
+class IterationMedia:
+    label: str
+    media: str
+
+
+@dataclass(slots=True)
 class ShowroomEntry:
     slug: str
     title: str
@@ -38,6 +44,7 @@ class ShowroomEntry:
     blend_path: str | None
     readme_path: str | None
     assets: list[str]
+    iteration_media: list[IterationMedia]
 
 
 @dataclass(slots=True)
@@ -178,6 +185,16 @@ def build_entry(
     if not primary_media:
         warnings.append(f"{slug} has no media preview file.")
 
+    iteration_media = collect_iteration_media(
+        entry_dir=entry_dir,
+        metadata=metadata,
+        output_dir=output_dir,
+        copy_media=copy_media,
+        warnings=warnings,
+        slug=slug,
+    )
+    copied_assets.extend(item.media for item in iteration_media if item.media not in copied_assets)
+
     return ShowroomEntry(
         slug=slug,
         title=title,
@@ -194,7 +211,87 @@ def build_entry(
         blend_path=entry_link(entry_dir / "scene.blend", output_dir),
         readme_path=entry_link(entry_dir / "README.md", output_dir),
         assets=copied_assets,
+        iteration_media=iteration_media,
     )
+
+
+def collect_iteration_media(
+    *,
+    entry_dir: Path,
+    metadata: dict[str, Any],
+    output_dir: Path,
+    copy_media: bool,
+    warnings: list[str],
+    slug: str,
+) -> list[IterationMedia]:
+    raw_items = metadata.get("iteration_media")
+    if not isinstance(raw_items, list):
+        return []
+
+    items: list[IterationMedia] = []
+    used_names: set[str] = set()
+    for index, raw_item in enumerate(raw_items, start=1):
+        label, raw_path = parse_iteration_item(raw_item, index)
+        if not raw_path:
+            warnings.append(f"{slug} iteration {index} is missing a media path.")
+            continue
+        source = resolve_metadata_path(raw_path, entry_dir)
+        if not source or not source.exists() or not source.is_file():
+            warnings.append(f"{slug} iteration {index} media was not found: {raw_path}")
+            continue
+        if source.suffix.lower() not in COPY_SUFFIXES:
+            warnings.append(f"{slug} iteration {index} media has unsupported suffix: {source.name}")
+            continue
+
+        if copy_media:
+            dest_dir = output_dir / "assets" / slug / "iterations"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            target = dest_dir / unique_iteration_filename(label=label, source=source, used_names=used_names)
+            shutil.copy2(source, target)
+            media = target.relative_to(output_dir).as_posix()
+        else:
+            media = relative_from_output(source, output_dir)
+        items.append(IterationMedia(label=label, media=media))
+    return items
+
+
+def parse_iteration_item(raw_item: Any, index: int) -> tuple[str, str]:
+    default_label = f"Round {index:02d}"
+    if isinstance(raw_item, str):
+        return default_label, raw_item
+    if not isinstance(raw_item, dict):
+        return default_label, ""
+    label = raw_item.get("label")
+    path = raw_item.get("path")
+    clean_label = str(label).strip() if isinstance(label, str) and label.strip() else default_label
+    return clean_label, str(path).strip() if isinstance(path, str) else ""
+
+
+def resolve_metadata_path(raw_path: str, entry_dir: Path) -> Path | None:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+
+    local_path = (entry_dir / path).resolve()
+    if local_path.exists():
+        return local_path
+
+    repo_path = (entry_dir.parent.parent / path).resolve()
+    if repo_path.exists():
+        return repo_path
+
+    return local_path
+
+
+def unique_iteration_filename(*, label: str, source: Path, used_names: set[str]) -> str:
+    stem = "".join(char.lower() if char.isalnum() else "_" for char in label).strip("_") or source.stem
+    name = f"{stem}{source.suffix.lower()}"
+    counter = 2
+    while name in used_names:
+        name = f"{stem}_{counter}{source.suffix.lower()}"
+        counter += 1
+    used_names.add(name)
+    return name
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -345,6 +442,7 @@ def entry_payload(entry: ShowroomEntry) -> dict[str, Any]:
         "blendPath": entry.blend_path,
         "readmePath": entry.readme_path,
         "assets": entry.assets,
+        "iterationMedia": [{"label": item.label, "media": item.media} for item in entry.iteration_media],
     }
 
 
@@ -592,6 +690,11 @@ main {
   color: var(--warn);
 }
 
+.chip.iterations {
+  background: #dcefeb;
+  color: #1c634f;
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr;
@@ -697,6 +800,51 @@ dialog::backdrop {
   line-height: 1.5;
 }
 
+.iteration-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.iteration-section h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.iteration-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.iteration-item {
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f2ede3;
+}
+
+.iteration-item img,
+.iteration-item video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: #e7e1d5;
+}
+
+.iteration-item span {
+  display: block;
+  padding: 7px 8px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
 .model-list {
   display: grid;
   gap: 6px;
@@ -762,8 +910,27 @@ JS = """
       return kind === "animation" ? "Animation" : "Scene";
     }
 
+    function iterationMediaMarkup(item) {
+      const label = escapeHtml(item.label || "Iteration");
+      const media = escapeAttr(item.media);
+      if (item.media.endsWith(".mp4")) {
+        return `<figure class="iteration-item"><video src="${media}" muted loop autoplay playsinline controls preload="metadata"></video><span>${label}</span></figure>`;
+      }
+      return `<figure class="iteration-item"><img src="${media}" alt="${label}" loading="lazy"><span>${label}</span></figure>`;
+    }
+
+    function iterationSectionMarkup(entry) {
+      const items = entry.iterationMedia || [];
+      if (!items.length) return "";
+      return `<section class="iteration-section">
+        <h3>Iteration process</h3>
+        <div class="iteration-strip">${items.map(iterationMediaMarkup).join("")}</div>
+      </section>`;
+    }
+
     function cardMarkup(entry) {
       const failChip = entry.validationFailed ? `<span class="chip fail">${entry.validationFailed} failed</span>` : "";
+      const iterationChip = entry.iterationMedia?.length ? `<span class="chip iterations">${entry.iterationMedia.length} iterations</span>` : "";
       const readme = entry.readmePath ? `<a href="${escapeAttr(entry.readmePath)}">Readme</a>` : "";
       const source = entry.sourcePath ? `<a href="${escapeAttr(entry.sourcePath)}">Source</a>` : "";
       return `<article class="card" data-slug="${escapeAttr(entry.slug)}">
@@ -775,6 +942,7 @@ JS = """
             <span class="chip">${labelFor(entry.kind)}</span>
             <span class="chip">${entry.validationPassed} passed</span>
             ${failChip}
+            ${iterationChip}
           </div>
           <div class="actions">
             <button class="details" type="button" data-detail="${escapeAttr(entry.slug)}">Details</button>
@@ -793,6 +961,7 @@ JS = """
           entry.prompt,
           entry.note,
           entry.sourceRun,
+          (entry.iterationMedia || []).map((item) => item.label).join(" "),
           Object.values(entry.models || {}).join(" ")
         ].join(" ").toLowerCase();
         return matchesKind && (!query || haystack.includes(query));
@@ -815,7 +984,9 @@ JS = """
           <span class="chip">${labelFor(entry.kind)}</span>
           <span class="chip">${entry.validationPassed} validation passed</span>
           ${entry.validationFailed ? `<span class="chip fail">${entry.validationFailed} validation failed</span>` : ""}
+          ${entry.iterationMedia?.length ? `<span class="chip iterations">${entry.iterationMedia.length} iterations</span>` : ""}
         </div>
+        ${iterationSectionMarkup(entry)}
         <div class="detail-grid">
           <section>
             <h3>Prompt</h3>
