@@ -275,7 +275,38 @@ prompt -> SceneSpec IR + animation extension
 - Animation families：rigid、camera、visibility/state、deformable prototype、character/fluid profile。
 - Texture resolver：允许 Agent 联网搜索 texture。
 - Harness KV Cache Optimization：多轮 refine 情况下的 KV Cache 命中优化
+- Pip package：发布 harness CLI，用户可通过 `pip install verianim` 安装。
 - VeriAnim-AnimBench：300 条 prompt，easy / medium / hard 各 100。
+
+---
+
+# 发布方式与项目分工
+
+[columns]
+[column]
+:::{card}
+**如何给别人用**
+- Paper 摘要里同步给出 GitHub / showcase / pip package。
+- `pip install verianim` 安装 Python harness CLI。
+- Blender 仍需要本地 4.5.4 LTS + VeriAnim addon socket server。
+- 目标是让复现实验从“读代码”变成“安装 CLI + 启动 Blender + 运行 prompt”。
+:::
+[/column]
+
+[column]
+:::{card}
+**组内分工**
+- Wang Siyu：整体代码架构与实现、刚体动画 primitives、论文写作、项目协调。
+- Du Yuheng：`verianim_utils` animation primitives 实现。
+- Yang Tingyi：extended IR 与 additional animation family support 实现。
+- Tong Mingyang：刚体动画、KV-cache-friendly prompt 优化、论文写作、slides preparation。
+:::
+[/column]
+[/columns]
+
+:::{callout}
+这部分对应 paper 的工程贡献：不是只交一个 demo，而是交可安装、可运行、可验证、可复现的 animation harness。
+:::
 
 ---
 
