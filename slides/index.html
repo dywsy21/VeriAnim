@@ -666,8 +666,8 @@
 <div class="card">
 <p><strong>为什么需要</strong></p>
 <ul>
-<li>纯色材质很难表达木纹、石材、织物、草地、锈迹等自然表面。</li>
-<li>但材质不能变成代码生成里的隐式副作用，否则很难复现和审计。</li>
+<li>纯色材质很难表达木纹、石材、织物、草地、锈迹等自然表面</li>
+<li>但材质不能变成代码生成里的隐式副作用</li>
 <li>所以把材质搜索放在代码生成之前，作为 IR 的一部分记录下来。</li>
 </ul>
 </div>
@@ -677,7 +677,7 @@
 <p><strong>怎么做</strong></p>
 <ul>
 <li>Planner 在 <code>MaterialSpec</code> 里写入 <code>texture_policy</code>、<code>needs_texture</code> 和 <code>texture_query</code>。</li>
-<li>材质智能体搜索公开纹理页，下载候选图片。</li>
+<li>材质智能体搜索纹理素材网站，下载候选图片。</li>
 <li>视觉模型判断候选图是否真的适合该材质。</li>
 <li>通过审核后，把本地纹理路径写回 IR，代码生成器再加载到 Blender 材质节点。</li>
 </ul>
@@ -685,7 +685,7 @@
 </div>
 </div>
 <div class="callout">
-<p>如果搜索失败、候选不合适，或者用户明确要求纯色/无图片纹理，系统会回退到 base color 和 shader 参数，而不是强行使用错误贴图。</p>
+<p>如果搜索失败、候选不合适，或者用户明确要求纯色/无图片纹理，系统会 fallback 到 base color 和 shader 参数。</p>
 </div>
 </section>
 <section>
