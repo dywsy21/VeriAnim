@@ -1,1 +1,0 @@
-Create a bronze sculpture on a pedestal and animate the camera orbiting around it.
