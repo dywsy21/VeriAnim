@@ -503,6 +503,134 @@ CUSTOM_CSS = r"""
   font-size: 0.9em;
 }
 
+.iteration-wall-slide h1 {
+  font-size: 0.56em;
+  margin-bottom: 0.14em;
+}
+
+.iteration-grid {
+  counter-reset: iteration-step;
+  display: grid;
+  align-items: stretch;
+  gap: 0.2em;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  height: 850px;
+}
+
+.iteration-cell {
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.iteration-cell:nth-child(5) {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(6) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(7) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(8) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(13) {
+  grid-column: 4;
+  grid-row: 4;
+}
+
+.iteration-cell:nth-child(14) {
+  grid-column: 3;
+  grid-row: 4;
+}
+
+.iteration-cell:nth-child(15) {
+  grid-column: 2;
+  grid-row: 4;
+}
+
+.iteration-cell:nth-child(16) {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.iteration-cell::before {
+  counter-increment: iteration-step;
+  content: counter(iteration-step, decimal-leading-zero);
+  left: 0.38em;
+  top: 0.38em;
+  background: rgba(24, 34, 48, 0.82);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.36em;
+  font-weight: 820;
+  line-height: 1;
+  padding: 0.34em 0.52em;
+  position: absolute;
+  z-index: 2;
+}
+
+.iteration-cell::after {
+  align-items: center;
+  background: var(--blue);
+  border-radius: 999px;
+  color: #fff;
+  content: "→";
+  display: flex;
+  font-size: 0.42em;
+  font-weight: 900;
+  height: 1.3em;
+  justify-content: center;
+  line-height: 1;
+  position: absolute;
+  right: -0.72em;
+  top: calc(50% - 0.65em);
+  width: 1.3em;
+  z-index: 3;
+}
+
+.iteration-cell:nth-child(n+5):nth-child(-n+7)::after,
+.iteration-cell:nth-child(n+13):nth-child(-n+15)::after {
+  content: "←";
+  left: -0.72em;
+  right: auto;
+}
+
+.iteration-cell:nth-child(4)::after,
+.iteration-cell:nth-child(8)::after,
+.iteration-cell:nth-child(12)::after {
+  bottom: -0.72em;
+  content: "↓";
+  left: calc(50% - 0.65em);
+  right: auto;
+  top: auto;
+}
+
+.iteration-cell:nth-child(16)::after {
+  content: none;
+}
+
+.iteration-grid img.iteration-gif {
+  background: #f2f4f8;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: block;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  width: 100%;
+}
+
 .media-placeholder {
   align-items: center;
   background:
