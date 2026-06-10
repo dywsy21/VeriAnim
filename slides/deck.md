@@ -252,6 +252,35 @@ prompt -> SceneSpec IR + 动画扩展
 
 ---
 
+# 材质搜索
+
+[columns]
+[column]
+:::{card}
+**为什么需要**
+- 纯色材质很难表达木纹、石材、织物、草地、锈迹等自然表面
+- 但材质不能变成代码生成里的隐式副作用
+- 所以把材质搜索放在代码生成之前，作为 IR 的一部分记录下来。
+:::
+[/column]
+
+[column]
+:::{card}
+**怎么做**
+- Planner 在 `MaterialSpec` 里写入 `texture_policy`、`needs_texture` 和 `texture_query`。
+- 材质智能体搜索纹理素材网站，下载候选图片。
+- 视觉模型判断候选图是否真的适合该材质。
+- 通过审核后，把本地纹理路径写回 IR，代码生成器再加载到 Blender 材质节点。
+:::
+[/column]
+[/columns]
+
+:::{callout}
+如果搜索失败、候选不合适，或者用户明确要求纯色/无图片纹理，系统会 fallback 到 base color 和 shader 参数。
+:::
+
+---
+
 # 我们已经实现了什么
 
 - Blender 插件 socket 服务：执行脚本、检查场景、渲染截图和预览视频。

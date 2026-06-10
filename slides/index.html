@@ -660,6 +660,35 @@
 </div>
 </section>
 <section>
+<h1>材质搜索</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>为什么需要</strong></p>
+<ul>
+<li>纯色材质很难表达木纹、石材、织物、草地、锈迹等自然表面。</li>
+<li>但材质不能变成代码生成里的隐式副作用，否则很难复现和审计。</li>
+<li>所以把材质搜索放在代码生成之前，作为 IR 的一部分记录下来。</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>怎么做</strong></p>
+<ul>
+<li>Planner 在 <code>MaterialSpec</code> 里写入 <code>texture_policy</code>、<code>needs_texture</code> 和 <code>texture_query</code>。</li>
+<li>材质智能体搜索公开纹理页，下载候选图片。</li>
+<li>视觉模型判断候选图是否真的适合该材质。</li>
+<li>通过审核后，把本地纹理路径写回 IR，代码生成器再加载到 Blender 材质节点。</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="callout">
+<p>如果搜索失败、候选不合适，或者用户明确要求纯色/无图片纹理，系统会回退到 base color 和 shader 参数，而不是强行使用错误贴图。</p>
+</div>
+</section>
+<section>
 <h1>我们已经实现了什么</h1>
 <ul>
 <li>Blender 插件 socket 服务：执行脚本、检查场景、渲染截图和预览视频。</li>
@@ -672,31 +701,6 @@
 <li>pip 安装包：发布 harness CLI，用户可通过 <code>pip install verianim</code> 安装。</li>
 <li>VeriAnim-AnimBench：300 条 prompt，easy / medium / hard 各 100。</li>
 </ul>
-</section>
-<section>
-<h1>发布方式与项目分工</h1>
-<div class="columns">
-<div class="column">
-<div class="card">
-<p><strong>使用</strong></p>
-<ul>
-<li><code>pip install verianim</code> 安装 Python harness CLI。</li>
-<li>Blender 4.5.4 LTS + VeriAnim 插件 socket 服务。</li>
-</ul>
-</div>
-</div>
-<div class="column">
-<div class="card">
-<p><strong>组内分工</strong></p>
-<ul>
-<li>Wang Siyu：整体代码架构与实现、刚体动画 primitives、论文写作、项目协调。</li>
-<li>Du Yuheng：<code>verianim_utils</code> 动画 primitives 实现。</li>
-<li>Yang Tingyi：扩展 IR 与更多动画类型支持。</li>
-<li>Tong Mingyang：刚体动画、适配 KV Cache 的 prompt 优化、材质搜索、论文写作、slides 准备。</li>
-</ul>
-</div>
-</div>
-</div>
 </section>
 <section>
 <h1>遇到的问题</h1>
@@ -954,6 +958,31 @@
 <li>把“弱模型无法更正”的失败类型系统化，区分模型能力、证据质量和合同缺失。</li>
 <li>将 AnimBench 推广为多模态模型的基准测试之一，报告通过率、违规率、refine 轮数和验证器分歧。</li>
 </ul>
+</section>
+<section>
+<h1>发布方式与项目分工</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>使用</strong></p>
+<ul>
+<li><code>pip install verianim</code> 安装 Python harness CLI。</li>
+<li>Blender 4.5.4 LTS + VeriAnim 插件 socket 服务。</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>组内分工</strong></p>
+<ul>
+<li>Wang Siyu：整体代码架构与实现、刚体动画 primitives、论文写作、项目协调。</li>
+<li>Du Yuheng：<code>verianim_utils</code> 动画 primitives 实现。</li>
+<li>Yang Tingyi：扩展 IR 与更多动画类型支持。</li>
+<li>Tong Mingyang：刚体动画、适配 KV Cache 的 prompt 优化、材质搜索、论文写作、slides 准备。</li>
+</ul>
+</div>
+</div>
+</div>
 </section>
     </div>
   </div>
