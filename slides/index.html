@@ -422,25 +422,22 @@
     <div class="slides">
 <section class="title-slide">
 <div class="kicker">
-<p>Group 1 / Wang Siyu, Du Yuheng, Yang Tingyi, Tong Mingyang</p>
+<p>第 1 组 / Wang Siyu, Du Yuheng, Yang Tingyi, Tong Mingyang</p>
 </div>
 <h1>VeriAnim: Verifiable LLM 3D Animation Generation with Blender Programs</h1>
 <div class="subtitle">
-<p>从自然语言到自我迭代的 Blender 动画生成 Agent</p>
+<p>从自然语言到自动验证的 Blender 动画生成智能体</p>
 </div>
-<aside class="notes"><ul>
-<li>这页只讲一句话：我们不是直接让模型写关键帧，而是让动画先变成可检查、可修复的合同。</li>
-</ul></aside>
 </section>
 <section>
 <h1>需要解决的问题</h1>
 <div class="split-emphasis">
-<p>静态 3D 生成只需要“场景像不像”；动画还要回答“谁在什么时候动、接触和支撑是否保持、状态变化是否发生、镜头是否真的看见了”。</p>
+<p>静态 3D 生成需要解决场景的美观程度、静态的合理性；但动画还要解决哪个物体（含摄像机）在什么时候动、接触和支撑是否合理、状态变化是否发生、镜头视线是否不被遮挡。</p>
 </div>
 <ul>
-<li>直接生成 Blender keyframes 很容易只满足起点和终点的正确性。</li>
-<li>中间帧可能穿模、漏掉夹爪、把相机转到看不见动作的位置，或者把状态/形变做成只有最终帧正确。</li>
-<li>这些问题的原因在于：约束往往并不能显式地被用户需求所表达，它是进一步分析用户需求后得出的。</li>
+<li>直接生成 Blender 关键帧很容易只满足起点和终点的正确性。</li>
+<li>中间帧可能穿模、悬空、把相机转到看不见动作的位置，只有最终帧正确。</li>
+<li>这些问题的原因在于：此类约束往往并不能被用户语句所包含，它必须通过进一步分析用户需求后得出。</li>
 </ul>
 </section>
 <section>
@@ -450,9 +447,8 @@
 <div class="card">
 <p><strong>输入</strong></p>
 <ul>
-<li>一段自然语言 prompt</li>
-<li>目标是可执行、可编辑的 Blender 程序</li>
-<li>支持静态场景 + 动画</li>
+<li>一段自然语言 prompt 描述场景+动画</li>
+<li>目标是一个场景/动画</li>
 </ul>
 </div>
 </div>
@@ -461,7 +457,7 @@
 <p><strong>输出</strong></p>
 <ul>
 <li>Blender 可运行的 Python script</li>
-<li>scene graph / transform traces</li>
+<li>场景图 / 变换轨迹</li>
 <li>截图 / 预览视频</li>
 <li>自动验证报告 / 修正记录</li>
 </ul>
@@ -469,7 +465,7 @@
 </div>
 </div>
 <div class="callout">
-<p>显然不是“生成一个视频”，而是生成一个能被检查、定位问题、局部修复的动画描述程序。</p>
+<p>与 transformer-diffusion（Seedance 等模型）不同，目标不是“生成一个视频”，而是生成一个可检查、可修复的“动画描述程序”。</p>
 </div>
 </section>
 <section>
@@ -482,7 +478,7 @@
 <li>静态场景作为基础</li>
 <li>各个对象的 ID / 有自由度的独立部位 / 材质</li>
 <li>对象之间关系 / 摄像机 / 碰撞 proxy</li>
-<li>计划怎样验证？应该满足怎样的约束？</li>
+<li>计划怎样验证合理性？应该满足怎样的约束？</li>
 </ul>
 </div>
 </div>
@@ -490,48 +486,45 @@
 <div class="card">
 <p><strong>2. Animation Extension Contract</strong></p>
 <ul>
-<li>在静态基线上添加时间</li>
-<li>event windows / animation families</li>
-<li>verifier probes / capability profiles</li>
-<li>media artifacts / repair scope</li>
+<li>在静态基础上上添加时间</li>
+<li>事件窗口 / 动画类型</li>
+<li>验证探针 / 能力画像</li>
+<li>媒体证据 / 修复范围</li>
 </ul>
 </div>
 </div>
-</div>
-<div class="tag-row">
-<p><code>stable ids</code> <code>event windows</code> <code>probes</code> <code>audit trail</code></p>
 </div>
 </section>
 <section>
 <h1>系统流程</h1>
 <div class="pipeline">
 <div class="card">
-<p><strong>1. Plan</strong> prompt -&gt; SceneSpec IR + animation extension</p>
+<p><strong>1. Plan</strong> prompt -&gt; SceneSpec IR + 动画扩展</p>
 </div>
 <div class="card">
-<p><strong>2. Build static scene</strong> 生成对象、材质、灯光、相机，并先验证静态场景</p>
+<p><strong>2. 构建静态场景</strong> 生成对象、材质、灯光、相机，并先验证静态场景</p>
 </div>
 <div class="card">
-<p><strong>3. Add animation</strong> 引用 object ids，写 keyframes / helpers / media sampling</p>
+<p><strong>3. 添加动画</strong> 引用 object IDs，写关键帧 / 辅助函数 / 媒体采样</p>
 </div>
 <div class="card">
-<p><strong>4. Verify + repair</strong> 几何检查 + 视觉/视频检查 + bounded local repair</p>
+<p><strong>4. 验证与修复</strong> 几何检查 + 视觉/视频检查 + 有边界的局部修复</p>
 </div>
 </div>
 <div class="callout">
-<p>先构建静态场景，验证通过后，动画阶段引用静态场景中的物体加关键帧；这样在修复动画问题时确保避免改动物体模型本身。</p>
+<p>先构建静态场景，在静态验证通过后，动画阶段引用静态场景中的物体加关键帧；这样在修复动画问题时确保避免改动物体模型本身。</p>
 </div>
 </section>
 <section>
 <h1>SceneSpec IR 做什么</h1>
 <ul>
-<li>把 prompt 中的对象、部件、材质、空间关系、相机和证据计划显式化。</li>
-<li>每个对象有稳定 <code>verianim_id</code>，后续代码、采样、验证和修复都用同一套 id。</li>
-<li>空间关系不仅说“杯子在桌上”，还要说用什么方式检查 support / containment / attachment。</li>
-<li>碰撞 proxy 让几何验证可以在 Blender 执行后测量，而不是只相信模型描述。</li>
+<li>把 prompt 中的对象、部件、材质、空间关系、相机和评估计划显式化。</li>
+<li>每个对象有稳定 <code>verianim_id</code>，后续代码、采样、验证和修复都用同一套 ID。</li>
+<li>空间关系检查要求的描述比较详细，并不仅仅类似“杯子在桌上”，需要明确如何检查 支撑 / 包含 / 附着 关系。</li>
+<li>碰撞 proxy 让几何验证可以在 Blender 执行后通过基于规则的方法测量。</li>
 </ul>
 <div class="metric">
-<p><strong>直接收益</strong> 动画生成从“重写完整场景”变成“在已验证场景上添加可审计的时间事件”。</p>
+<p><strong>思想</strong> 动画生成并非直接由prompt得到场景。本项目是 prompt -&gt; IR -&gt; 动画约束 -&gt; 场景。使得场景可反复由约束进行修改。</p>
 </div>
 </section>
 <section>
@@ -539,41 +532,39 @@
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Families</strong></p>
+<p><strong>动画类型</strong></p>
 <ul>
-<li>rigid motion</li>
-<li>camera motion</li>
-<li>visibility/state change</li>
-<li>deformable prototype</li>
-<li>character/fluid profile</li>
-<li>mixed scenes</li>
+<li>刚体运动</li>
+<li>相机运动</li>
+<li>可见性改变</li>
+<li>变形</li>
 </ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Evidence</strong></p>
+<p><strong>验证证据</strong></p>
 <ul>
-<li>bbox / BVH / contact probes</li>
-<li>camera coverage reports</li>
-<li>screenshots and video</li>
-<li>deformation statistics</li>
+<li>bbox / BVH / 接触检测</li>
+<li>摄像机覆盖报告</li>
+<li>截图和视频</li>
+<li>变形统计</li>
 </ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Runtime honesty</strong></p>
+<p><strong>运行能力说明</strong></p>
 <ul>
-<li>supported execution</li>
-<li>degraded/profiled execution</li>
-<li>unsupported scope report</li>
+<li>完整支持的执行路径</li>
+<li>降级执行 / 能力画像</li>
+<li>暂不支持范围报告</li>
 </ul>
 </div>
 </div>
 </div>
 <div class="callout">
-<p>原则：每一种动画能力都必须说明它靠什么证据被验证。</p>
+<p>原则：每一种动画类型都必须说明它靠什么证据被验证。</p>
 </div>
 </section>
 <section>
@@ -581,20 +572,20 @@
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Camera events</strong></p>
+<p><strong>相机事件</strong></p>
 <ul>
-<li>把 camera 当成 animated subject</li>
+<li>把相机当成会运动的主体</li>
 <li><code>camera_move</code> / <code>camera_orbit</code></li>
-<li>检查 endpoint、覆盖率、目标可见性</li>
+<li>检查终点、覆盖率、目标可见性</li>
 </ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Visibility / state</strong></p>
+<p><strong>可见性 / 状态变化</strong></p>
 <ul>
 <li><code>appear</code> / <code>disappear</code></li>
-<li>显式 keyframe <code>hide_render</code> / alpha</li>
+<li>显式设置 <code>hide_render</code> / alpha 的关键帧</li>
 <li>关系检查切到对象真正可见的帧</li>
 </ul>
 </div>
@@ -603,85 +594,82 @@
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Deformable prototype</strong></p>
+<p><strong>变形原型</strong></p>
 <ul>
 <li>Blender 内可执行的 shape/scale 形变</li>
 <li>采样 bbox delta / displacement spread</li>
-<li>视频 verifier 判断形变是否可见</li>
+<li>视频验证器判断形变是否可见</li>
 </ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Character / fluid profiles</strong></p>
+<p><strong>角色 / 流体能力画像</strong></p>
 <ul>
-<li>skeleton / IK / mocap intent</li>
-<li>particle / volume / cache probes</li>
-<li>当前先报告 runtime scope，而不是伪装成刚体动画</li>
+<li>骨架 / IK / 动作捕捉意图</li>
+<li>粒子 / 体积 / 缓存探针</li>
+<li>当前先报告运行范围，而不是伪装成刚体动画</li>
 </ul>
 </div>
 </div>
 </div>
 <div class="callout">
-<p>刚体 primitive 是最成熟的一类，但不是整个系统的边界。</p>
+<p>刚体 primitive 是目前最成熟的一类，但不是整个系统的能力上限。</p>
 </div>
 </section>
 <section>
-<h1>目前最成熟：刚体 primitive</h1>
+<h1>目前最成熟的动画类型：刚体 primitive</h1>
 <ul>
-<li><strong>support motion</strong>：滑动、落到支撑面、沿支撑物移动。</li>
-<li><strong>paired interaction</strong>：推、携带、保持 driver-payload offset。</li>
-<li><strong>pick-place</strong>：approach, grasp, lift, transfer, lower, release。</li>
-<li><strong>articulation</strong>：门轴、转子、绕有意义的 pivot 转动。</li>
-<li><strong>composition</strong>：每个 frame window 只有一个 transform owner，避免互相抢控制权。</li>
+<li><strong>支撑运动</strong>：滑动、落到支撑面、沿支撑物移动。</li>
+<li><strong>成对交互</strong>：推、携带、保持驱动体和载荷的相对位移。</li>
+<li><strong>抓取-放置</strong>：接近、抓取、抬起、转移、放下、释放。</li>
+<li><strong>关节运动</strong>：门轴、转子、绕有意义的轴转动。</li>
+<li><strong>组合规则</strong>：每个帧窗口只有一个变换所有者，避免互相抢控制权。</li>
 </ul>
-<div class="warning">
-<p>这些 primitive 不是为了写“更漂亮”的 keyframes，而是为了让每段动作都有可验证的不变量。</p>
-</div>
 </section>
 <section>
 <h1>验证与修复</h1>
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Deterministic checks</strong></p>
+<p><strong>规则检查</strong></p>
 <ul>
-<li>support gap and overlap</li>
-<li>non-penetration</li>
-<li>containment</li>
-<li>transform ownership</li>
-<li>dense frame audit</li>
+<li>支撑间隙与重叠</li>
+<li>穿模</li>
+<li>包含关系</li>
+<li>变换所有权</li>
+<li>密集帧检查</li>
 </ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Media checks</strong></p>
+<p><strong>媒体检查</strong></p>
 <ul>
-<li>subject visibility</li>
-<li>camera framing</li>
-<li>temporal order</li>
-<li>apparent final state</li>
-<li>video verifier feedback</li>
+<li>主体可见性</li>
+<li>相机构图</li>
+<li>时间顺序</li>
+<li>可观察的最终状态</li>
+<li>视频验证器反馈</li>
 </ul>
 </div>
 </div>
 </div>
 <div class="metric">
-<p><strong>修复策略</strong> 用测量证据改局部 motion path：例如重新计算物体底部和支撑面顶部的高度，而不是要求模型整段重写。</p>
+<p><strong>修复策略</strong> 用审核意见修改局部运动路径：例如重新计算物体底部和支撑面顶部的高度，而不是要求模型整段重写。</p>
 </div>
 </section>
 <section>
 <h1>我们已经实现了什么</h1>
 <ul>
-<li>Blender addon socket server：执行脚本、检查场景、渲染截图和 preview video。</li>
-<li>Python harness：planner / coder / refiner / visual verifier / video verifier。</li>
-<li>IR parser and serializer：静态 SceneSpec + Animation Extension Contract。</li>
-<li>Deterministic validator：几何关系、transform traces、frame-window auditing、deformation statistics。</li>
-<li>Animation families：rigid、camera、visibility/state、deformable prototype、character/fluid profile。</li>
-<li>Texture resolver：允许 Agent 联网搜索 texture。</li>
-<li>Harness KV Cache Optimization：多轮 refine 情况下的 KV Cache 命中优化</li>
-<li>Pip package：发布 harness CLI，用户可通过 <code>pip install verianim</code> 安装。</li>
+<li>Blender 插件 socket 服务：执行脚本、检查场景、渲染截图和预览视频。</li>
+<li>Python 实验框架：规划器 / 代码生成器 / 修复器 / 视觉验证器 / 视频验证器。</li>
+<li>IR 解析与序列化：静态 SceneSpec + Animation Extension Contract。</li>
+<li>规则验证器：几何关系、变换轨迹、帧窗口审计、变形统计。</li>
+<li>动画类型：刚体、相机、可见性/状态、变形原型、角色/流体能力画像。</li>
+<li>材质解析器：允许智能体联网搜索纹理。</li>
+<li>KV Cache 优化：提升多轮 refine 时的上下文复用效率。</li>
+<li>pip 安装包：发布 harness CLI，用户可通过 <code>pip install verianim</code> 安装。</li>
 <li>VeriAnim-AnimBench：300 条 prompt，easy / medium / hard 各 100。</li>
 </ul>
 </section>
@@ -690,12 +678,10 @@
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>如何给别人用</strong></p>
+<p><strong>使用</strong></p>
 <ul>
-<li>Paper 摘要里同步给出 GitHub / showcase / pip package。</li>
 <li><code>pip install verianim</code> 安装 Python harness CLI。</li>
-<li>Blender 仍需要本地 4.5.4 LTS + VeriAnim addon socket server。</li>
-<li>目标是让复现实验从“读代码”变成“安装 CLI + 启动 Blender + 运行 prompt”。</li>
+<li>Blender 4.5.4 LTS + VeriAnim 插件 socket 服务。</li>
 </ul>
 </div>
 </div>
@@ -704,15 +690,12 @@
 <p><strong>组内分工</strong></p>
 <ul>
 <li>Wang Siyu：整体代码架构与实现、刚体动画 primitives、论文写作、项目协调。</li>
-<li>Du Yuheng：<code>verianim_utils</code> animation primitives 实现。</li>
-<li>Yang Tingyi：extended IR 与 additional animation family support 实现。</li>
-<li>Tong Mingyang：刚体动画、KV-cache-friendly prompt 优化、论文写作、slides preparation。</li>
+<li>Du Yuheng：<code>verianim_utils</code> 动画 primitives 实现。</li>
+<li>Yang Tingyi：扩展 IR 与更多动画类型支持。</li>
+<li>Tong Mingyang：刚体动画、适配 KV Cache 的 prompt 优化、材质搜索、论文写作、slides 准备。</li>
 </ul>
 </div>
 </div>
-</div>
-<div class="callout">
-<p>这部分对应 paper 的工程贡献：不是只交一个 demo，而是交可安装、可运行、可验证、可复现的 animation harness。</p>
 </div>
 </section>
 <section>
@@ -724,23 +707,20 @@
 <ul>
 <li>运动过程中间物体穿过另一物体</li>
 <li>使用 bbox 判定对凹形物体不够精确</li>
-<li>sparse samples 容易漏掉短暂接触错误</li>
+<li>稀疏采样容易漏掉短暂接触错误</li>
 </ul>
 </div>
 </div>
 <div class="column">
 <div class="warning">
-<p><strong>模型能力差导致难以自我更正</strong></p>
+<p><strong>如果模型能力差，则难以自我更正</strong></p>
 <ul>
-<li>反复 refinement 仍然改不到失败原因</li>
-<li>破坏那些好的、已有的东西</li>
-<li>会“解释”错误，而不是修复</li>
+<li>反复修正仍然改不到失败原因</li>
+<li>破坏那些没有错误的、已有的东西</li>
+<li>会尝试“解释”错误，而不是修复</li>
 </ul>
 </div>
 </div>
-</div>
-<div class="callout">
-<p>这也是我们强调 bounded repair 和 deterministic evidence 的原因：不能只把失败报告丢回给模型。</p>
 </div>
 </section>
 <section class="iteration-wall-slide">
@@ -797,7 +777,7 @@
 </div>
 </section>
 <section>
-<h1>Showcase：可验证动画样例</h1>
+<h1>展示样例</h1>
 <div class="columns">
 <div class="column">
 <div class="showcase-card">
@@ -805,8 +785,8 @@
 <p><strong>collision_two_cubes</strong></p>
 <ul>
 <li>Prompt: <code>A physical experiment: a moving square hits a stationary square. The same mass, no energy loss, no friction.</code></li>
-<li>Result: blue cube stops at contact; red cube departs rightward.</li>
-<li>Evidence: deterministic + scene vision + animation video all passed.</li>
+<li>结果：蓝色方块在接触处停止；红色方块向右离开。</li>
+<li>证据：规则验证 + 场景视觉验证 + 动画视频验证均通过。</li>
 </ul>
 </div>
 </div>
@@ -816,35 +796,45 @@
 <p><strong>marble_run_into_cup</strong></p>
 <ul>
 <li>Prompt: <code>marble rolls down a supported ramp and stops inside a blue catch cup.</code></li>
-<li>Result: ramp/support/cup stay fixed; marble motion and final containment are visible.</li>
-<li>Evidence: scene preservation + deterministic + animation video all passed.</li>
+<li>结果：斜坡、支撑物和杯子保持固定；弹珠运动和最终包含关系可见。</li>
+<li>证据：场景保持 + 规则验证 + 动画视频验证均通过。</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="showcase-card">
+<img src="https://api.qrserver.com/v1/create-qr-code/?size=360x360&amp;margin=16&amp;data=https%3A%2F%2Fwww.tmysam.top%2Fverianim%2Fshowroom" alt="VeriAnim showroom QR" class="showcase-gif">
+<p><strong>完整展示页</strong></p>
+<ul>
+<li>扫码查看更多 VeriAnim showcase。</li>
+<li>包含场景图片、动画预览、源 prompt 和验证结果。</li>
 </ul>
 </div>
 </div>
 </div>
 <div class="muted">
-<p>更多 showcase 请查看二维码。</p>
+<p>更多展示样例请查看二维码。</p>
 </div>
 </section>
 <section>
-<h1>Benchmark：refine 轮数作为大模型评测指标</h1>
+<h1>基准测试：refine 轮数作为大模型评测指标</h1>
 <div class="metric">
 <p><strong>观察</strong></p>
-<p>不同模型在可执行动画生成上的差异，经常体现在需要多少轮局部修复。Refine 轮数因此可以作为 AnimBench 的成本指标之一。</p>
+<p>注意到不同模型的能力在可执行动画生成上的差异，经常体现在需要多少轮局部修复。refine 轮数因此可以作为 AnimBench 的指标之一。</p>
 </div>
 <ul>
 <li><code>0 rounds</code>：一次生成就满足几何和媒体证据。</li>
 <li><code>1-2 rounds</code>：局部修复有效，说明合同和证据足够定位问题。</li>
-<li><code>many rounds / stop</code>：通常对应弱模型、欠约束 primitive、或 verifier 无法给出可操作证据。</li>
-<li>我们正在把 refine rounds 和 pass / violation 指标一起纳入 AnimBench 评测。</li>
+<li><code>many rounds / stop</code>：通常对应弱模型、约束不足的 primitive、或验证器无法给出可操作证据。</li>
+<li>我们正在把 refine 轮数和通过/问题数量指标一起纳入 AnimBench 评测。</li>
 </ul>
 </section>
 <section>
-<h1>Benchmark 设计：AnimBench 怎么测</h1>
+<h1>基准测试设计：AnimBench 怎么测</h1>
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Prompt 分层</strong></p>
+<p><strong>prompt 分层</strong></p>
 <ul>
 <li>300 条自然语言 prompt</li>
 <li>easy / medium / hard 各 100 条</li>
@@ -856,55 +846,49 @@
 </div>
 <div class="column">
 <div class="card">
-<p><strong>覆盖的动画 family</strong></p>
+<p><strong>覆盖的动画类型</strong></p>
 <ul>
-<li>support motion / carry</li>
-<li>pick-place / manipulation</li>
-<li>hinge / rotor articulation</li>
-<li>camera motion / visibility</li>
-<li>deformable and mixed scenes</li>
+<li>支撑运动 / 携带</li>
+<li>抓取放置 / 操作</li>
+<li>铰链 / 转子关节运动</li>
+<li>相机运动 / 可见性变化</li>
+<li>变形和混合场景</li>
 </ul>
 </div>
 </div>
-</div>
-<div class="callout">
-<p>每条记录不仅保存 prompt，还保存 animation family、required motions、verifier focus 和 difficulty rationale。</p>
-</div>
-<div class="tag-row">
-<p><code>validity</code> <code>temporal intent</code> <code>repair cost</code> <code>verifier disagreement</code></p>
 </div>
 </section>
 <section>
-<h1>Benchmark 设计：对比什么</h1>
+<h1>基准测试设计：对比什么</h1>
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>System variants</strong></p>
+<p><strong>系统变体</strong></p>
 <ul>
-<li>direct keyframes</li>
-<li>IR only</li>
-<li>extension contract without primitives</li>
-<li>primitives without repair</li>
-<li>full verifier-facing harness</li>
+<li>直接生成关键帧</li>
+<li>只使用 IR</li>
+<li>有动画扩展合同但没有 primitives</li>
+<li>有 primitives 但没有修复</li>
+<li>完整的验证器导向实验框架</li>
 </ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Metrics</strong></p>
+<p><strong>评测指标</strong></p>
 <ul>
-<li>deterministic pass rate</li>
-<li>support / penetration violation rate</li>
-<li>final relation success</li>
-<li>subject visibility</li>
-<li>video verifier pass rate</li>
-<li>refinement rounds and runtime cost</li>
+<li>规则验证通过率</li>
+<li>支撑 / 穿透违规率</li>
+<li>最终关系成功率</li>
+<li>主体可见性</li>
+<li>视频验证器通过率</li>
+<li>refine 轮数和运行成本</li>
 </ul>
 </div>
 </div>
 </div>
 <div class="metric">
-<p><strong>核心问题</strong> 合同、primitive、dense-frame audit、media verifier、bounded repair 分别带来多少可测收益？</p>
+<p><strong>核心问题</strong> 合同、primitive、密集帧审计、媒体验证器、有边界修复分别带来多少可测收益？</p>
 </div>
 </section>
 <section>
@@ -912,13 +896,13 @@
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Easy / rigid</strong></p>
+<p><strong>Easy / 刚体</strong></p>
 <p><code>Create a simple scene where a red ball slides from the left side of the table to the right side.</code></p>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Easy / visibility</strong></p>
+<p><strong>Easy / 可见性</strong></p>
 <p><code>Create a simple scene where a red ball moves behind a thin screen and reappears on the other side.</code></p>
 </div>
 </div>
@@ -926,19 +910,19 @@
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Medium / camera + rigid</strong></p>
+<p><strong>Medium / 相机 + 刚体</strong></p>
 <p><code>Create an animation where the ball follows an S-shaped path around the blue box while the camera keeps both visible.</code></p>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Medium / rigid</strong></p>
+<p><strong>Medium / 刚体</strong></p>
 <p><code>Create an animation where a simple gripper picks up the ball, moves it to the blue box, and releases it cleanly.</code></p>
 </div>
 </div>
 </div>
 <div class="callout">
-<p>Easy 隔离单一对象或关系；medium 开始组合两个事件或加入 camera requirement。</p>
+<p>easy 隔离单一对象或关系；medium 开始组合两个事件或加入相机要求。</p>
 </div>
 </section>
 <section>
@@ -946,29 +930,29 @@
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Hard / camera + rigid</strong></p>
+<p><strong>Hard / 相机 + 刚体</strong></p>
 <p><code>The parallel gripper lifts the orange box from the gray conveyor belt, carries it to the cart, releases it, and the inspection camera keeps the handoff visible.</code></p>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Hard / deformable + rigid</strong></p>
+<p><strong>Hard / 变形 + 刚体</strong></p>
 <p><code>The parallel gripper carries the orange box past a deforming banner, places it on the cart, and the camera shows both motions.</code></p>
 </div>
 </div>
 </div>
 <div class="warning">
-<p>由于时间原因，完整 300 条 benchmark 还没有全部跑完；当前展示的是 benchmark 设计、prompt 覆盖和 curated showcase audit。</p>
+<p>由于时间原因，完整 300 条 benchmark 还没有全部跑完；当前展示的是 benchmark 设计、prompt 覆盖和精选展示样例审计。</p>
 </div>
 </section>
 <section>
 <h1>仍存在的问题与下一步</h1>
 <ul>
 <li>更精细的 mesh/BVH 检查，减少 bbox 对穿模的误判和漏判。</li>
-<li>完整跑完 300 条 AnimBench，报告 pass rate、repair rounds、family breakdown。</li>
-<li>扩展 character / fluid runtime adapter，而不仅是 capability profile。</li>
+<li>完整跑完 300 条 AnimBench，报告通过率、修复轮数和动画类型拆分。</li>
+<li>扩展角色 / 流体运行适配器，而不仅是能力画像。</li>
 <li>把“弱模型无法更正”的失败类型系统化，区分模型能力、证据质量和合同缺失。</li>
-<li>正式跑完整 AnimBench，报告 pass rate、violation rate、refine rounds 和 verifier disagreement。</li>
+<li>将 AnimBench 推广为多模态模型的基准测试之一，报告通过率、违规率、refine 轮数和验证器分歧。</li>
 </ul>
 </section>
     </div>
