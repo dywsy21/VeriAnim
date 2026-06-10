@@ -1,9 +1,9 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=69,<77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "verianim-animation-harness"
+name = "verianim"
 version = "0.1.0"
 description = "Local Blender scene and animation generation harness for VeriAnim experiments"
 readme = "README.md"
@@ -27,6 +27,7 @@ slides = [
 ]
 
 [project.scripts]
+verianim = "harness.tui:main"
 verianim-harness = "harness.runner:main"
 verianim-tui = "harness.tui:main"
 

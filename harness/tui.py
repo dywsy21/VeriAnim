@@ -38,11 +38,67 @@ def main() -> None:
         from textual import on
         from textual.app import App, ComposeResult
         from textual.containers import Horizontal, Vertical
+        from textual.suggester import Suggester
         from textual.widgets import Footer, Header, Input, RichLog, Static
     except Exception as exc:
         raise SystemExit("Textual is not installed. Run `pip install -r requirements.txt`.") from exc
 
+    _AGENTS = ("planner", "coder", "refiner", "vision", "video")
+    _FIELDS = (
+        "model", "api_base", "api_key", "api_version", "provider",
+        "temperature", "max_tokens", "timeout", "stream", "supports_images",
+    )
+    _TOP_COMMANDS = (
+        "/animation", "/vision", "/video", "/models",
+        "/model ", "/set ", "/agent ",
+        "/help", "/clear", "/quit",
+    )
+
+    class CommandSuggester(Suggester):
+        """Tab-complete TUI slash commands, agent names, and field names."""
+
+        async def get_suggestion(self, value: str) -> str | None:  # type: ignore[override]
+            if not value.startswith("/"):
+                return None
+
+            parts = value.split()  # whitespace-split, no empty tokens
+            ends_space = value.endswith(" ")
+            nwords = len(parts)
+
+            # ── completing the command word itself ──────────────────────────
+            if nwords == 0 or (nwords == 1 and not ends_space):
+                word = parts[0].lower() if parts else "/"
+                for cmd in _TOP_COMMANDS:
+                    cmd_word = cmd.rstrip()
+                    if cmd_word.lower().startswith(word) and cmd_word.lower() != word:
+                        return cmd  # includes trailing space for multi-word commands
+                return None
+
+            cmd = parts[0].lower()
+
+            # ── completing agent name ───────────────────────────────────────
+            # applies to: /model <agent>  /set <agent>  /agent <name>
+            if cmd in ("/model", "/set", "/agent"):
+                if (nwords == 1 and ends_space) or (nwords == 2 and not ends_space):
+                    prefix = parts[1].lower() if nwords == 2 else ""
+                    for a in _AGENTS:
+                        if a.startswith(prefix) and a != prefix:
+                            return f"{parts[0]} {a}"
+                    return None
+
+            # ── completing field name for /set <agent> <field> ─────────────
+            if cmd == "/set":
+                if (nwords == 2 and ends_space) or (nwords == 3 and not ends_space):
+                    prefix = parts[2].lower() if nwords == 3 else ""
+                    for f in _FIELDS:
+                        if f.startswith(prefix) and f != prefix:
+                            return f"{parts[0]} {parts[1]} {f}"
+                    return None
+
+            return None
+
     class HarnessTUI(App[None]):
+        TITLE = "VeriAnim TUI"
         CSS = """
         Screen {
             background: #101318;
@@ -127,12 +183,17 @@ def main() -> None:
                     yield Static(id="status")
                     yield Static(id="pipeline")
                     yield RichLog(id="artifacts", wrap=True, markup=True, highlight=True)
-            yield Input(placeholder="Describe a scene. After generation, type changes like: make the cup blue. Commands: /animation, /vision, /video, /clear, /quit", id="prompt")
+            yield Input(
+                placeholder="Prompt or: /set <agent> <field> <value>  /model <agent> <model>  /agent <name>  /help",
+                id="prompt",
+                suggester=CommandSuggester(use_cache=False),
+            )
             yield Footer()
 
         def on_mount(self) -> None:
             self._refresh_status()
             self._log("[bold #8fb3ff]Ready.[/] Start with a scene prompt. Blender should have the VeriAnim addon server running.")
+            self.query_one("#prompt", Input).focus()
 
         def action_clear_log(self) -> None:
             self.query_one("#events", RichLog).clear()
@@ -182,7 +243,82 @@ def main() -> None:
                 self._refresh_status()
                 return True
             if command == "/help":
-                self._log("[bold]Commands[/]\n/animation toggle animation planning\n/vision toggle visual verifier\n/video toggle video verifier\n/clear clear event log\n/quit exit")
+                agents = "planner, coder, refiner, vision, video"
+                fields = "model, api_base, api_key, api_version, provider, temperature, max_tokens, timeout, stream, supports_images"
+                self._log(
+                    "[bold]Commands[/]\n"
+                    "/animation              toggle animation planning\n"
+                    "/vision                 toggle visual verifier\n"
+                    "/video                  toggle video verifier\n"
+                    f"/model <agent> <model>  shortcut to set model (agents: {agents})\n"
+                    f"/set <agent> <field> <value>\n"
+                    f"                        set any agent field (fields: {fields})\n"
+                    "                        use 'none' to clear optional fields\n"
+                    "/agent <name>           show all settings for one agent\n"
+                    "/models                 show model for each agent\n"
+                    "/clear                  clear event log\n"
+                    "/quit                   exit"
+                )
+                return True
+            if command == "/models":
+                for agent_name in ("planner", "coder", "refiner", "vision", "video"):
+                    cfg = self.config.get_agent_config(agent_name)
+                    if cfg:
+                        self._log(f"[bold]{agent_name:<8}[/] {cfg.model}")
+                return True
+            if text.lower().startswith("/agent "):
+                parts = text.split(None, 1)
+                agent_name = parts[1].strip().lower() if len(parts) > 1 else ""
+                cfg = self.config.get_agent_config(agent_name)
+                if cfg is None:
+                    self._log(f"[red]Unknown agent '{agent_name}'. Valid: planner, coder, refiner, vision, video[/]")
+                else:
+                    key_val = (
+                        f"  model          {cfg.model}\n"
+                        f"  api_base       {cfg.api_base or '-'}\n"
+                        f"  api_key        {'(set)' if cfg.api_key else '-'}\n"
+                        f"  api_version    {cfg.api_version or '-'}\n"
+                        f"  provider       {cfg.custom_llm_provider or '-'}\n"
+                        f"  temperature    {cfg.temperature}\n"
+                        f"  max_tokens     {cfg.max_tokens or '-'}\n"
+                        f"  timeout        {cfg.timeout_seconds}s\n"
+                        f"  stream         {cfg.stream}\n"
+                        f"  supports_images {cfg.supports_images}"
+                    )
+                    self._log(f"[bold]{agent_name}[/]\n{key_val}")
+                return True
+            if text.lower().startswith("/model "):
+                parts = text.split(None, 2)
+                if len(parts) < 3:
+                    self._log("[yellow]Usage: /model <agent> <model>  e.g. /model coder openai/gpt-4o[/]")
+                else:
+                    _, agent_name, model_str = parts
+                    agent_name = agent_name.lower()
+                    if self.config.set_agent_model(agent_name, model_str):
+                        self._log(f"[green]Agent [bold]{agent_name}[/] model → [bold]{model_str}[/].[/]")
+                        self._refresh_status()
+                    else:
+                        self._log(f"[red]Unknown agent '{agent_name}'. Valid: planner, coder, refiner, vision, video[/]")
+                return True
+            if text.lower().startswith("/set "):
+                parts = text.split(None, 3)
+                if len(parts) < 4:
+                    self._log("[yellow]Usage: /set <agent> <field> <value>  e.g. /set coder api_base http://localhost:4000[/]")
+                else:
+                    _, agent_name, field_name, value_str = parts
+                    agent_name = agent_name.lower()
+                    field_name = field_name.lower()
+                    ok, err = self.config.set_agent_field(agent_name, field_name, value_str)
+                    if ok:
+                        display_val = "(hidden)" if field_name == "api_key" else value_str
+                        self._log(f"[green]Agent [bold]{agent_name}[/] {field_name} → [bold]{display_val}[/].[/]")
+                        self._refresh_status()
+                    else:
+                        self._log(f"[red]{err}[/]")
+                return True
+            # unknown /command — don't fall through to the prompt runner
+            if text.startswith("/"):
+                self._log(f"[yellow]Unknown command '{text.split()[0]}'. Type /help for available commands.[/]")
                 return True
             return False
 
@@ -243,6 +379,12 @@ def main() -> None:
         def _refresh_status(self) -> None:
             busy = "[bold yellow]busy[/]" if self.state.busy else "[bold green]idle[/]"
             scene = "yes" if self.state.has_scene else "no"
+            model_lines = ""
+            for agent_name in ("planner", "coder", "refiner", "vision", "video"):
+                cfg = self.config.get_agent_config(agent_name)
+                if cfg:
+                    extra = f" [dim]{cfg.api_base}[/]" if cfg.api_base else ""
+                    model_lines += f"\n  {agent_name:<8} {cfg.model}{extra}"
             status = (
                 f"[bold]Status[/]\n"
                 f"state: {busy}\n"
@@ -250,7 +392,8 @@ def main() -> None:
                 f"animation planning: {self.state.include_animation}\n"
                 f"vision verifier: {not self.state.skip_vision}\n"
                 f"video verifier: {not self.state.skip_video}\n"
-                f"run dir: {self.state.run_dir or '-'}"
+                f"run dir: {self.state.run_dir or '-'}\n"
+                f"[bold]Models[/]{model_lines}"
             )
             self.query_one("#status", Static).update(status)
             lines = ["[bold]Pipeline[/]"]

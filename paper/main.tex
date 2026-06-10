@@ -134,7 +134,7 @@ Vision and video-language models provide semantic checks over rendered artifacts
 
 \section{Methodology}
 
-VeriAnim treats animation generation as a sequence of contracts rather than a single code-generation step. The pipeline first asks an LLM to describe and generate a static scene, executes that program in Blender, and repairs bounded scene failures before any motion is introduced. Only after this baseline is measured does the animation stage add event windows, family-specific helpers, media artifacts, and verifier probes. The same run then produces transform traces, screenshots, and preview videos, allowing deterministic checks and visual/video verifiers to diagnose failures against the same object ids and frame windows. Repair operates on those measured failures, so a bad support height changes the local placement or path rather than regenerating unrelated scene content.
+VeriAnim treats animation generation as a sequence of contracts: the pipeline first asks an LLM to describe and generate a static scene, executes that program in Blender, and repairs bounded scene failures before any motion is introduced. Only after this baseline is measured does the animation stage add event windows, family-specific helpers, media artifacts, and verifier probes. The same run then produces transform traces, screenshots, and preview videos, allowing deterministic checks and visual/video verifiers to diagnose failures against the same object ids and frame windows. Repair operates on those measured failures, so a changes remain local and accurate: bad support height changes the local placement or path rather than regenerating unrelated scene content.
 
 \subsection{Static Scene Contracts Anchor Animation}
 
@@ -315,7 +315,7 @@ hard & deformable, rigid & Create a detailed animation where the parallel grippe
 \end{tabular}
 \end{table}
 
-Due to time constraints, the complete 300-prompt benchmark has not yet been executed. This draft therefore reports the benchmark construction, the planned metrics and ablations, and the curated showcase audit below; aggregate pass rates, repair-round distributions, and family-level breakdowns remain the next evaluation step.
+\textbf{Due to time constraints, the complete 300-prompt benchmark has not yet been executed.} We therefore report the benchmark construction, the planned metrics and ablations, and the curated showcase audit below; aggregate pass rates, repair-round distributions, and family-level breakdowns remain the next evaluation step.
 
 \textbf{Showcase audit.}
 Before running the full benchmark, the curated \code{showcase/} set acts as a qualitative audit of implemented behavior. These examples exercise the same artifact trail: source prompts, generated Blender code, scene images, animation previews, validation reports, and exported \code{.blend} files. The current showcase covers static relation checks, single-support motion, repaired multi-support motion, composed rigid events, camera-orbit events, and deformable prototype events. Representative entries include table-top sliding and conveyor motion with deterministic, vision, and video checks passing; road-ramp-platform and table-ramp-platform examples where contact repair turns an initial deterministic failure into a passing animation; a bronze-sculpture camera orbit where repeated refinement fixes coverage and endpoint errors; a cloth-banner prototype where deformation statistics and video evidence pass; and composed scenes such as garage-door opening followed by car motion, marble-to-cup transfer, and cube collision with final validation reports passing.
@@ -401,10 +401,10 @@ LLM-generated 3D animation requires more than asking a model to write keyframes.
 
 \section*{Author Contributions}
 
-\textbf{Wang Siyu}: Overall code architecture and implementation, rigid-body animation primitives, paper writing, and project coordination.
-\textbf{Du Yuheng}: Implementation of \code{verianim\_utils} animation primitives.
-\textbf{Yang Tingyi}: Implementation of the extended IR and additional animation family support.
-\textbf{Tong Mingyang}: Rigid-body animation, KV-cache-friendly prompt optimization, paper writing, and slides preparation.
+\textbf{Wang Siyu}: Overall code architecture and implementation, rigid-body animation primitives, paper writing, and project coordination. \\
+\textbf{Du Yuheng}: Implementation of \code{verianim\_utils} animation primitives. \\
+\textbf{Yang Tingyi}: Implementation of the extended IR and additional animation family support. \\
+\textbf{Tong Mingyang}: Rigid-body animation, KV-cache-friendly prompt optimization, auto texture searching, paper writing, and slides preparation. \\
 
 \bibliography{references}
 \bibliographystyle{iclr2026_conference}
