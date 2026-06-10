@@ -127,7 +127,7 @@ def main() -> None:
                     yield Static(id="status")
                     yield Static(id="pipeline")
                     yield RichLog(id="artifacts", wrap=True, markup=True, highlight=True)
-            yield Input(placeholder="Describe a scene. After generation, type changes like: make the cup blue. Commands: /animation, /vision, /video, /clear, /quit", id="prompt")
+            yield Input(placeholder="Prompt or command: /set <agent> <field> <value>  /model <agent> <model>  /agent <name>  /help", id="prompt")
             yield Footer()
 
         def on_mount(self) -> None:
@@ -182,7 +182,78 @@ def main() -> None:
                 self._refresh_status()
                 return True
             if command == "/help":
-                self._log("[bold]Commands[/]\n/animation toggle animation planning\n/vision toggle visual verifier\n/video toggle video verifier\n/clear clear event log\n/quit exit")
+                agents = "planner, coder, refiner, vision, video"
+                fields = "model, api_base, api_key, api_version, provider, temperature, max_tokens, timeout, stream, supports_images"
+                self._log(
+                    "[bold]Commands[/]\n"
+                    "/animation              toggle animation planning\n"
+                    "/vision                 toggle visual verifier\n"
+                    "/video                  toggle video verifier\n"
+                    f"/model <agent> <model>  shortcut to set model (agents: {agents})\n"
+                    f"/set <agent> <field> <value>\n"
+                    f"                        set any agent field (fields: {fields})\n"
+                    "                        use 'none' to clear optional fields\n"
+                    "/agent <name>           show all settings for one agent\n"
+                    "/models                 show model for each agent\n"
+                    "/clear                  clear event log\n"
+                    "/quit                   exit"
+                )
+                return True
+            if command == "/models":
+                for agent_name in ("planner", "coder", "refiner", "vision", "video"):
+                    cfg = self.config.get_agent_config(agent_name)
+                    if cfg:
+                        self._log(f"[bold]{agent_name:<8}[/] {cfg.model}")
+                return True
+            if text.lower().startswith("/agent "):
+                parts = text.split(None, 1)
+                agent_name = parts[1].strip().lower() if len(parts) > 1 else ""
+                cfg = self.config.get_agent_config(agent_name)
+                if cfg is None:
+                    self._log(f"[red]Unknown agent '{agent_name}'. Valid: planner, coder, refiner, vision, video[/]")
+                else:
+                    key_val = (
+                        f"  model          {cfg.model}\n"
+                        f"  api_base       {cfg.api_base or '-'}\n"
+                        f"  api_key        {'(set)' if cfg.api_key else '-'}\n"
+                        f"  api_version    {cfg.api_version or '-'}\n"
+                        f"  provider       {cfg.custom_llm_provider or '-'}\n"
+                        f"  temperature    {cfg.temperature}\n"
+                        f"  max_tokens     {cfg.max_tokens or '-'}\n"
+                        f"  timeout        {cfg.timeout_seconds}s\n"
+                        f"  stream         {cfg.stream}\n"
+                        f"  supports_images {cfg.supports_images}"
+                    )
+                    self._log(f"[bold]{agent_name}[/]\n{key_val}")
+                return True
+            if text.lower().startswith("/model "):
+                parts = text.split(None, 2)
+                if len(parts) < 3:
+                    self._log("[yellow]Usage: /model <agent> <model>  e.g. /model coder openai/gpt-4o[/]")
+                else:
+                    _, agent_name, model_str = parts
+                    agent_name = agent_name.lower()
+                    if self.config.set_agent_model(agent_name, model_str):
+                        self._log(f"[green]Agent [bold]{agent_name}[/] model → [bold]{model_str}[/].[/]")
+                        self._refresh_status()
+                    else:
+                        self._log(f"[red]Unknown agent '{agent_name}'. Valid: planner, coder, refiner, vision, video[/]")
+                return True
+            if text.lower().startswith("/set "):
+                parts = text.split(None, 3)
+                if len(parts) < 4:
+                    self._log("[yellow]Usage: /set <agent> <field> <value>  e.g. /set coder api_base http://localhost:4000[/]")
+                else:
+                    _, agent_name, field_name, value_str = parts
+                    agent_name = agent_name.lower()
+                    field_name = field_name.lower()
+                    ok, err = self.config.set_agent_field(agent_name, field_name, value_str)
+                    if ok:
+                        display_val = "(hidden)" if field_name == "api_key" else value_str
+                        self._log(f"[green]Agent [bold]{agent_name}[/] {field_name} → [bold]{display_val}[/].[/]")
+                        self._refresh_status()
+                    else:
+                        self._log(f"[red]{err}[/]")
                 return True
             return False
 
@@ -243,6 +314,12 @@ def main() -> None:
         def _refresh_status(self) -> None:
             busy = "[bold yellow]busy[/]" if self.state.busy else "[bold green]idle[/]"
             scene = "yes" if self.state.has_scene else "no"
+            model_lines = ""
+            for agent_name in ("planner", "coder", "refiner", "vision", "video"):
+                cfg = self.config.get_agent_config(agent_name)
+                if cfg:
+                    extra = f" [dim]{cfg.api_base}[/]" if cfg.api_base else ""
+                    model_lines += f"\n  {agent_name:<8} {cfg.model}{extra}"
             status = (
                 f"[bold]Status[/]\n"
                 f"state: {busy}\n"
@@ -250,7 +327,8 @@ def main() -> None:
                 f"animation planning: {self.state.include_animation}\n"
                 f"vision verifier: {not self.state.skip_vision}\n"
                 f"video verifier: {not self.state.skip_video}\n"
-                f"run dir: {self.state.run_dir or '-'}"
+                f"run dir: {self.state.run_dir or '-'}\n"
+                f"[bold]Models[/]{model_lines}"
             )
             self.query_one("#status", Static).update(status)
             lines = ["[bold]Pipeline[/]"]

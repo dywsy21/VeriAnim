@@ -58,7 +58,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class AgentModelConfig:
     name: str
     model: str
@@ -73,7 +73,7 @@ class AgentModelConfig:
     supports_images: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class HarnessConfig:
     planner: AgentModelConfig
     coder: AgentModelConfig
@@ -99,6 +99,60 @@ class HarnessConfig:
     tui_initial_animation: bool
     tui_skip_vision: bool
     tui_skip_video: bool
+
+
+    def get_agent_config(self, name: str) -> AgentModelConfig | None:
+        """Return the AgentModelConfig for the given agent name, or None if unknown."""
+        return getattr(self, name, None) if name in ("planner", "coder", "refiner", "vision", "video") else None
+
+    def set_agent_model(self, name: str, model: str) -> bool:
+        """Update the model string for a named agent. Returns True if the agent was found."""
+        agent_cfg = self.get_agent_config(name)
+        if agent_cfg is None:
+            return False
+        agent_cfg.model = model
+        return True
+
+    def set_agent_field(self, agent: str, field: str, value_str: str) -> tuple[bool, str]:
+        """Set a field on an AgentModelConfig by friendly name.
+
+        Returns (success, error_message). On success, error_message is empty.
+        Pass 'none' or '-' as value_str to clear optional fields to None.
+        """
+        cfg = self.get_agent_config(agent)
+        if cfg is None:
+            valid = ", ".join(_AGENT_FIELDS)
+            return False, f"Unknown agent '{agent}'. Valid agents: planner, coder, refiner, vision, video."
+        if field not in _AGENT_FIELDS:
+            valid = ", ".join(_AGENT_FIELDS)
+            return False, f"Unknown field '{field}'. Valid fields: {valid}"
+        attr, kind = _AGENT_FIELDS[field]
+        null = value_str.lower() in {"none", "null", "-", ""}
+        try:
+            if kind is str:
+                parsed: object = value_str
+            elif kind == "optional_str":
+                parsed = None if null else value_str
+            elif kind is float:
+                parsed = float(value_str)
+            elif kind is int:
+                parsed = int(value_str)
+            elif kind == "optional_int":
+                parsed = None if null else int(value_str)
+            elif kind is bool:
+                if value_str.lower() in {"1", "true", "yes", "on"}:
+                    parsed = True
+                elif value_str.lower() in {"0", "false", "no", "off"}:
+                    parsed = False
+                else:
+                    return False, f"Boolean field '{field}' expects true/false/yes/no/1/0."
+            else:
+                parsed = value_str
+        except (ValueError, TypeError) as exc:
+            return False, f"Cannot parse '{value_str}' for field '{field}': {exc}"
+        setattr(cfg, attr, parsed)
+        return True, ""
+
 
     @classmethod
     def from_env(cls) -> "HarnessConfig":
@@ -134,6 +188,20 @@ class HarnessConfig:
             tui_skip_vision=_env_bool("VERIANIM_TUI_SKIP_VISION", False),
             tui_skip_video=_env_bool("VERIANIM_TUI_SKIP_VIDEO", False),
         )
+
+
+_AGENT_FIELDS: dict[str, tuple[str, object]] = {
+    "model":           ("model",                str),
+    "api_base":        ("api_base",             "optional_str"),
+    "api_key":         ("api_key",              "optional_str"),
+    "api_version":     ("api_version",          "optional_str"),
+    "provider":        ("custom_llm_provider",  "optional_str"),
+    "temperature":     ("temperature",          float),
+    "max_tokens":      ("max_tokens",           "optional_int"),
+    "timeout":         ("timeout_seconds",      int),
+    "stream":          ("stream",               bool),
+    "supports_images": ("supports_images",      bool),
+}
 
 
 def _agent_config(name: str, default_model: str, default_temperature: float, *, default_supports_images: bool = False) -> AgentModelConfig:
