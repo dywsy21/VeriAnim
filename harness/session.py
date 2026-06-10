@@ -531,6 +531,14 @@ class InteractiveHarnessSession:
                 self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
                 self._render_final_animation_gif()
                 return True
+            if self._animation_video_passed(reports):
+                self._emit(
+                    "pass",
+                    "Animation deterministic and video verification passed; rendering final animation preview",
+                )
+                self.store.write_text("code/final_scene.py", self._last_executed_code or self.code)
+                self._render_final_animation_gif()
+                return True
 
             if _has_unrecoverable_verifier_config_issue(reports):
                 self._emit("warn", "Verifier loop stopped because the configured verifier model cannot accept required media inputs")

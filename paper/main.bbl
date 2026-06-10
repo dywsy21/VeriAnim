@@ -1,26 +1,9 @@
-\begin{thebibliography}{26}
+\begin{thebibliography}{37}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
-
-\bibitem[Ahn et~al.(2022)Ahn, Brohan, Brown, Chebotar, Cortes, David, Finn, Fu,
-  Gopalakrishnan, Hausman, Herzog, Ho, Hsu, Ichter, Irpan, Jang, Ruano,
-  Jeffrey, Jesmonth, Joshi, Julian, Kalashnikov, Kuang, Lee, Levine, Lu, Luu,
-  Parada, Pastor, Quiambao, Rao, Rettinghouse, Reyes, Sermanet, Sievers, Tan,
-  Toshev, Vanhoucke, Xia, Xiao, Xu, Xu, Yan, and Zeng]{ahn2022can}
-Michael Ahn, Anthony Brohan, Noah Brown, Yevgen Chebotar, Omar Cortes, Byron
-  David, Chelsea Finn, Chuyuan Fu, Keerthana Gopalakrishnan, Karol Hausman,
-  Alexander Herzog, Daniel Ho, Jasmine Hsu, Brian Ichter, Alex Irpan, Eric
-  Jang, Rosario~Jauregui Ruano, Kyle Jeffrey, Sally Jesmonth, Nikhil Joshi,
-  Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Isabel Lee, Sergey Levine, Yao
-  Lu, Linda Luu, Carolina Parada, Peter Pastor, Jodilyn Quiambao, Kanishka Rao,
-  Jarek Rettinghouse, Diego Reyes, Pierre Sermanet, Nicolas Sievers, Clayton
-  Tan, Alexander Toshev, Vincent Vanhoucke, Fei Xia, Ted Xiao, Peng Xu, Sichun
-  Xu, Mengyuan Yan, and Andy Zeng.
-\newblock Do as i can, not as i say: Grounding language in robotic affordances.
-\newblock In \emph{Conference on Robot Learning}, 2022.
 
 \bibitem[Armeni et~al.(2019)Armeni, He, Gwak, Zamir, Fischer, Malik, and
   Savarese]{armeni2019scenegraph}
@@ -28,7 +11,7 @@ Iro Armeni, Zhi-Yang He, JunYoung Gwak, Amir~R. Zamir, Martin Fischer, Jitendra
   Malik, and Silvio Savarese.
 \newblock 3d scene graph: A structure for unified semantics, 3d space, and
   camera.
-\newblock In \emph{International Conference on Computer Vision}, 2019.
+\newblock In \emph{IEEE/CVF International Conference on Computer Vision}, 2019.
 
 \bibitem[Austin et~al.(2021)Austin, Odena, Nye, Bosma, Michalewski, Dohan,
   Jiang, Cai, Terry, Le, and Sutton]{austin2021program}
@@ -36,7 +19,7 @@ Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski,
   David Dohan, Ellen Jiang, Carrie Cai, Michael Terry, Quoc Le, and Charles
   Sutton.
 \newblock Program synthesis with large language models.
-\newblock In \emph{NeurIPS Workshop on MATH-AI}, 2021.
+\newblock \emph{arXiv preprint arXiv:2108.07732}, 2021.
 
 \bibitem[Avetisyan et~al.(2024)Avetisyan, Xie, Howard-Jenkins, Yang, Aroudj,
   Patra, Zhang, Frost, Holland, Orme, Engel, Miller, Newcombe, and
@@ -46,7 +29,9 @@ Armen Avetisyan, Christopher Xie, Henry Howard-Jenkins, Tsun-Yi Yang, Samir
   Jakob Engel, Edward Miller, Richard Newcombe, and Vasileios Balntas.
 \newblock Scenescript: Reconstructing scenes with an autoregressive structured
   language model.
-\newblock In \emph{European Conference on Computer Vision}, 2024.
+\newblock In \emph{European Conference on Computer Vision}, pp.\  247--263,
+  2024.
+\newblock \doi{10.1007/978-3-031-73030-6_14}.
 
 \bibitem[Blattmann et~al.(2023)Blattmann, Rombach, Ling, Dockhorn, Kim, Fidler,
   and Kreis]{blattmann2023align}
@@ -54,8 +39,14 @@ Andreas Blattmann, Robin Rombach, Huan Ling, Tim Dockhorn, Seung~Wook Kim,
   Sanja Fidler, and Karsten Kreis.
 \newblock Align your latents: High-resolution video synthesis with latent
   diffusion models.
-\newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
-  2023.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition}, 2023.
+
+\bibitem[{Blender Foundation}(2026)]{blender2026pythonapi}
+{Blender Foundation}.
+\newblock Blender python api documentation.
+\newblock \url{https://docs.blender.org/api/current/index.html}, 2026.
+\newblock Accessed 2026-06-10.
 
 \bibitem[Chen et~al.(2021)Chen, Tworek, Jun, Yuan, Pinto, Kaplan, Edwards,
   Burda, Joseph, Brockman, Ray, Puri, Krueger, Petrov, Khlaaf, Sastry, Mishkin,
@@ -84,14 +75,16 @@ Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de~Oliveira
 Erwin Coumans and Yunfei Bai.
 \newblock Pybullet, a python module for physics simulation for games, robotics
   and machine learning.
-\newblock In \emph{Game Developers Conference}, 2016.
+\newblock \url{https://pybullet.org/}, 2016.
+\newblock Software documentation and project page.
 
 \bibitem[Gao et~al.(2024)Gao, Liu, Chen, Geiger, and
   Sch{\"o}lkopf]{gao2024graphdreamer}
 Gege Gao, Weiyang Liu, Anpei Chen, Andreas Geiger, and Bernhard Sch{\"o}lkopf.
 \newblock Graphdreamer: Compositional 3d scene synthesis from scene graphs.
-\newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
-  2024.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition}, pp.\  21295--21304, 2024.
+\newblock \doi{10.1109/CVPR52733.2024.02012}.
 
 \bibitem[Ho et~al.(2022)Ho, Chan, Saharia, Whang, Gao, Gritsenko, Kingma,
   Poole, Norouzi, Fleet, and Salimans]{ho2022imagenvideo}
@@ -99,18 +92,52 @@ Jonathan Ho, William Chan, Chitwan Saharia, Jay Whang, Ruiqi Gao, Alexey
   Gritsenko, Diederik~P. Kingma, Ben Poole, Mohammad Norouzi, David~J. Fleet,
   and Tim Salimans.
 \newblock Imagen video: High definition video generation with diffusion models.
-\newblock In \emph{Advances in Neural Information Processing Systems}, 2022.
+\newblock \emph{arXiv preprint arXiv:2210.02303}, 2022.
 
-\bibitem[Huang et~al.(2022)Huang, Xia, Xiao, Chan, Liang, Florence, Zeng,
-  Tompson, Mordatch, Chebotar, Sermanet, Brown, Jackson, Luu, Levine, Hausman,
+\bibitem[H{\"o}llein et~al.(2023)H{\"o}llein, Cao, Owens, Johnson, and
+  Nie{\ss}ner]{hollein2023text2room}
+Lukas H{\"o}llein, Ang Cao, Andrew Owens, Justin Johnson, and Matthias
+  Nie{\ss}ner.
+\newblock Text2room: Extracting textured 3d meshes from 2d text-to-image
+  models.
+\newblock In \emph{IEEE/CVF International Conference on Computer Vision}, 2023.
+
+\bibitem[Huang et~al.(2023)Huang, Xia, Xiao, Chan, Liang, Florence, Zeng,
+  Tompson, Mordatch, Chebotar, Sermanet, Jackson, Brown, Luu, Levine, Hausman,
   and Ichter]{huang2022inner}
 Wenlong Huang, Fei Xia, Ted Xiao, Harris Chan, Jacky Liang, Pete Florence, Andy
-  Zeng, Jonathan Tompson, Igor Mordatch, Yevgen Chebotar, Pierre Sermanet, Noah
-  Brown, Michael Jackson, Linda Luu, Sergey Levine, Karol Hausman, and Brian
+  Zeng, Jonathan Tompson, Igor Mordatch, Yevgen Chebotar, Pierre Sermanet,
+  Tomas Jackson, Noah Brown, Linda Luu, Sergey Levine, Karol Hausman, and Brian
   Ichter.
 \newblock Inner monologue: Embodied reasoning through planning with language
   models.
-\newblock \emph{arXiv preprint arXiv:2207.05608}, 2022.
+\newblock In \emph{Conference on Robot Learning}, 2023.
+
+\bibitem[Ichter et~al.(2023)Ichter, Brohan, Chebotar, Finn, Hausman, Herzog,
+  Ho, Ibarz, Irpan, Jang, Julian, Kalashnikov, Levine, Lu, Parada, Rao,
+  Sermanet, Toshev, Vanhoucke, Xia, Xiao, Xu, Yan, Brown, Ahn, Cortes, Sievers,
+  Tan, Xu, Reyes, Rettinghouse, Quiambao, Pastor, Luu, Lee, Kuang, Jesmonth,
+  Joshi, Jeffrey, Ruano, Hsu, Gopalakrishnan, David, Zeng, and Fu]{ahn2022can}
+Brian Ichter, Anthony Brohan, Yevgen Chebotar, Chelsea Finn, Karol Hausman,
+  Alexander Herzog, Daniel Ho, Julian Ibarz, Alex Irpan, Eric Jang, Ryan
+  Julian, Dmitry Kalashnikov, Sergey Levine, Yao Lu, Carolina Parada, Kanishka
+  Rao, Pierre Sermanet, Alexander~T. Toshev, Vincent Vanhoucke, Fei Xia, Ted
+  Xiao, Peng Xu, Mengyuan Yan, Noah Brown, Michael Ahn, Omar Cortes, Nicolas
+  Sievers, Clayton Tan, Sichun Xu, Diego Reyes, Jarek Rettinghouse, Jornell
+  Quiambao, Peter Pastor, Linda Luu, Kuang-Huei Lee, Yuheng Kuang, Sally
+  Jesmonth, Nikhil~J. Joshi, Kyle Jeffrey, Rosario~Jauregui Ruano, Jasmine Hsu,
+  Keerthana Gopalakrishnan, Byron David, Andy Zeng, and Chuyuan~Kelly Fu.
+\newblock Do as i can, not as i say: Grounding language in robotic affordances.
+\newblock In \emph{Proceedings of The 6th Conference on Robot Learning}, volume
+  205 of \emph{Proceedings of Machine Learning Research}, pp.\  287--318. PMLR,
+  2023.
+
+\bibitem[Jimenez et~al.(2024)Jimenez, Yang, Wettig, Yao, Pei, Press, and
+  Narasimhan]{jimenez2024swebench}
+Carlos~E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir
+  Press, and Karthik~R. Narasimhan.
+\newblock {SWE}-bench: Can language models resolve real-world github issues?
+\newblock In \emph{International Conference on Learning Representations}, 2024.
 
 \bibitem[Jones et~al.(2020)Jones, Barton, Xu, Wang, Jiang, Guerrero, Mitra, and
   Ritchie]{jones2020shapeassembly}
@@ -119,35 +146,46 @@ R.~Kenny Jones, Theresa Barton, Xianghao Xu, Kai Wang, Ellen Jiang, Paul
 \newblock Shapeassembly: Learning to generate programs for 3d shape structure
   synthesis.
 \newblock \emph{ACM Transactions on Graphics}, 39\penalty0 (6), 2020.
+\newblock \doi{10.1145/3414685.3417812}.
 
-\bibitem[{Khronos Group}(2025)]{khronos2025collada}
+\bibitem[{Khronos Group}(2026)]{khronos2025collada}
 {Khronos Group}.
-\newblock {COLLADA}: Digital asset and fx exchange schema, 2025.
-\newblock Open standard specification.
+\newblock {COLLADA}: 3d asset exchange schema.
+\newblock \url{https://www.khronos.org/collada/}, 2026.
+\newblock Accessed 2026-06-10.
 
 \bibitem[Kovar et~al.(2002)Kovar, Gleicher, and Pighin]{kovar2002motiongraphs}
 Lucas Kovar, Michael Gleicher, and Fr{\'e}d{\'e}ric Pighin.
 \newblock Motion graphs.
-\newblock In \emph{Proceedings of ACM SIGGRAPH}, 2002.
+\newblock \emph{ACM Transactions on Graphics}, 21\penalty0 (3):\penalty0
+  473--482, 2002.
+\newblock \doi{10.1145/566654.566605}.
 
 \bibitem[LaValle(2006)]{lavalle2006planning}
 Steven~M. LaValle.
 \newblock \emph{Planning Algorithms}.
 \newblock Cambridge University Press, 2006.
+\newblock \doi{10.1017/CBO9780511546877}.
 
 \bibitem[Li et~al.(2023)Li, Li, Savarese, and Hoi]{li2023blip2}
-Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi.
+Junnan Li, Dongxu Li, Silvio Savarese, and Steven C.~H. Hoi.
 \newblock {BLIP-2}: Bootstrapping language-image pre-training with frozen image
   encoders and large language models.
-\newblock In \emph{International Conference on Machine Learning}, 2023.
+\newblock In \emph{International Conference on Machine Learning}, pp.\
+  19730--19742, 2023.
 
 \bibitem[Lin et~al.(2023)Lin, Gao, Tang, Takikawa, Zeng, Huang, Kreis, Fidler,
   Liu, and Lin]{lin2023magic3d}
 Chen-Hsuan Lin, Jun Gao, Luming Tang, Towaki Takikawa, Xiaohui Zeng, Xun Huang,
   Karsten Kreis, Sanja Fidler, Ming-Yu Liu, and Tsung-Yi Lin.
 \newblock Magic3d: High-resolution text-to-3d content creation.
-\newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
-  2023.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition}, 2023.
+
+\bibitem[Liu et~al.(2023)Liu, Li, Wu, and Lee]{liu2023llava}
+Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong~Jae Lee.
+\newblock Visual instruction tuning.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2023.
 
 \bibitem[Lu et~al.(2025)Lu, Chen, Dinh, Lang, Holtzman, and
   Hanocka]{lu2025verianim}
@@ -159,7 +197,19 @@ Sining Lu, Guan Chen, Nam~Anh Dinh, Itai Lang, Ari Holtzman, and Rana Hanocka.
   Kim]{macklin2014unified}
 Miles Macklin, Matthias M{\"u}ller, Nuttapong Chentanez, and Tae-Yong Kim.
 \newblock Unified particle physics for real-time applications.
-\newblock \emph{ACM Transactions on Graphics}, 33\penalty0 (4), 2014.
+\newblock \emph{ACM Transactions on Graphics}, 33\penalty0 (4):\penalty0 1--12,
+  2014.
+\newblock \doi{10.1145/2601097.2601152}.
+
+\bibitem[Madaan et~al.(2023)Madaan, Tandon, Gupta, Hallinan, Gao, Wiegreffe,
+  Alon, Dziri, Prabhumoye, Yang, Gupta, Majumder, Hermann, Welleck,
+  Yazdanbakhsh, and Clark]{madaan2023selfrefine}
+Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah
+  Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank
+  Gupta, Bodhisattwa~Prasad Majumder, Katherine Hermann, Sean Welleck, Amir
+  Yazdanbakhsh, and Peter Clark.
+\newblock Self-refine: Iterative refinement with self-feedback.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2023.
 
 \bibitem[Mo et~al.(2019)Mo, Guerrero, Yi, Su, Wonka, Mitra, and
   Guibas]{mo2019structurenet}
@@ -167,16 +217,27 @@ Kaichun Mo, Paul Guerrero, Li~Yi, Hao Su, Peter Wonka, Niloy~J. Mitra, and
   Leonidas~J. Guibas.
 \newblock Structurenet: Hierarchical graph networks for 3d shape generation.
 \newblock \emph{ACM Transactions on Graphics}, 38\penalty0 (6), 2019.
+\newblock \doi{10.1145/3355089.3356527}.
+
+\bibitem[M{\"u}ller et~al.(2007)M{\"u}ller, Heidelberger, Hennix, and
+  Ratcliff]{muller2007position}
+Matthias M{\"u}ller, Bruno Heidelberger, Marcus Hennix, and John Ratcliff.
+\newblock Position based dynamics.
+\newblock \emph{Journal of Visual Communication and Image Representation},
+  18\penalty0 (2):\penalty0 109--118, 2007.
+\newblock \doi{10.1016/j.jvcir.2007.01.005}.
 
 \bibitem[{OpenAI}(2023)]{openai2023gpt4v}
 {OpenAI}.
 \newblock {GPT-4V}(ision) system card.
-\newblock \emph{Technical report}, 2023.
+\newblock \url{https://cdn.openai.com/papers/GPTV_System_Card.pdf}, 2023.
+\newblock Technical report.
 
 \bibitem[{Pixar Animation Studios}(2016)]{pixar2016usd}
 {Pixar Animation Studios}.
-\newblock Universal scene description, 2016.
-\newblock Open-source scene description framework.
+\newblock Universal scene description.
+\newblock \url{https://openusd.org/dev/press_opensource_release.html}, 2016.
+\newblock Open-source release announcement.
 
 \bibitem[Poole et~al.(2023)Poole, Jain, Barron, and
   Mildenhall]{poole2022dreamfusion}
@@ -185,17 +246,44 @@ Ben Poole, Ajay Jain, Jonathan~T. Barron, and Ben Mildenhall.
 \newblock In \emph{International Conference on Learning Representations}, 2023.
 
 \bibitem[Schick et~al.(2023)Schick, Dwivedi-Yu, Dess{\`i}, Raileanu, Lomeli,
-  Hambro, Zettlemoyer, Cancedda, and Scialom]{schick2023toolformer}
+  Zettlemoyer, Cancedda, and Scialom]{schick2023toolformer}
 Timo Schick, Jane Dwivedi-Yu, Roberto Dess{\`i}, Roberta Raileanu, Maria
-  Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom.
+  Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom.
 \newblock Toolformer: Language models can teach themselves to use tools.
 \newblock In \emph{Advances in Neural Information Processing Systems}, 2023.
+
+\bibitem[Shi et~al.(2024)Shi, Wang, Ye, Mai, Li, and Yang]{shi2024mvdream}
+Yichun Shi, Peng Wang, Jianglong Ye, Long Mai, Kejie Li, and Xiao Yang.
+\newblock {MVDream}: Multi-view diffusion for 3d generation.
+\newblock In \emph{International Conference on Learning Representations}, 2024.
+
+\bibitem[Shinn et~al.(2023)Shinn, Cassano, Gopinath, Narasimhan, and
+  Yao]{shinn2023reflexion}
+Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu
+  Yao.
+\newblock Reflexion: Language agents with verbal reinforcement learning.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2023.
+
+\bibitem[Tang et~al.(2024)Tang, Ren, Zhou, Liu, and
+  Zeng]{tang2024dreamgaussian}
+Jiaxiang Tang, Jiawei Ren, Hang Zhou, Ziwei Liu, and Gang Zeng.
+\newblock Dreamgaussian: Generative gaussian splatting for efficient 3d content
+  creation.
+\newblock In \emph{International Conference on Learning Representations}, 2024.
+
+\bibitem[Tevet et~al.(2023)Tevet, Raab, Gordon, Shafir, Cohen-Or, and
+  Bermano]{tevet2023mdm}
+Guy Tevet, Sigal Raab, Brian Gordon, Yoni Shafir, Daniel Cohen-Or, and
+  Amit~Haim Bermano.
+\newblock Human motion diffusion model.
+\newblock In \emph{International Conference on Learning Representations}, 2023.
 
 \bibitem[Witkin \& Kass(1988)Witkin and Kass]{witkin1988spacetime}
 Andrew Witkin and Michael Kass.
 \newblock Spacetime constraints.
 \newblock In \emph{Proceedings of the 15th Annual Conference on Computer
-  Graphics and Interactive Techniques}, 1988.
+  Graphics and Interactive Techniques}, pp.\  159--168, 1988.
+\newblock \doi{10.1145/54852.378507}.
 
 \bibitem[Yang et~al.(2024)Yang, Sun, Weihs, VanderBilt, Herrasti, Han, Wu,
   Haber, Krishna, Liu, Callison-Burch, Yatskar, Kembhavi, and
@@ -204,14 +292,23 @@ Yue Yang, Fan-Yun Sun, Luca Weihs, Eli VanderBilt, Alvaro Herrasti, Winson Han,
   Jiajun Wu, Nick Haber, Ranjay Krishna, Lingjie Liu, Chris Callison-Burch,
   Mark Yatskar, Aniruddha Kembhavi, and Christopher Clark.
 \newblock Holodeck: Language guided generation of 3d embodied ai environments.
-\newblock In \emph{IEEE Conference on Computer Vision and Pattern Recognition},
-  2024.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition}, pp.\  16227--16237, 2024.
 
 \bibitem[Yao et~al.(2023)Yao, Zhao, Yu, Du, Shafran, Narasimhan, and
   Cao]{yao2023react}
 Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan,
   and Yuan Cao.
-\newblock React: Synergizing reasoning and acting in language models.
+\newblock {ReAct}: Synergizing reasoning and acting in language models.
 \newblock In \emph{International Conference on Learning Representations}, 2023.
+
+\bibitem[Zhang et~al.(2023)Zhang, Zhang, Cun, Huang, Zhang, Zhao, Lu, and
+  Shen]{zhang2023t2mgpt}
+Jianrong Zhang, Yangsong Zhang, Xiaodong Cun, Shaoli Huang, Yong Zhang, Hongwei
+  Zhao, Hongtao Lu, and Xi~Shen.
+\newblock {T2M-GPT}: Generating human motion from textual descriptions with
+  discrete representations.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition}, 2023.
 
 \end{thebibliography}
