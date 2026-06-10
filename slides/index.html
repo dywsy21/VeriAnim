@@ -681,8 +681,39 @@
 <li>Animation families：rigid、camera、visibility/state、deformable prototype、character/fluid profile。</li>
 <li>Texture resolver：允许 Agent 联网搜索 texture。</li>
 <li>Harness KV Cache Optimization：多轮 refine 情况下的 KV Cache 命中优化</li>
+<li>Pip package：发布 harness CLI，用户可通过 <code>pip install verianim</code> 安装。</li>
 <li>VeriAnim-AnimBench：300 条 prompt，easy / medium / hard 各 100。</li>
 </ul>
+</section>
+<section>
+<h1>发布方式与项目分工</h1>
+<div class="columns">
+<div class="column">
+<div class="card">
+<p><strong>如何给别人用</strong></p>
+<ul>
+<li>Paper 摘要里同步给出 GitHub / showcase / pip package。</li>
+<li><code>pip install verianim</code> 安装 Python harness CLI。</li>
+<li>Blender 仍需要本地 4.5.4 LTS + VeriAnim addon socket server。</li>
+<li>目标是让复现实验从“读代码”变成“安装 CLI + 启动 Blender + 运行 prompt”。</li>
+</ul>
+</div>
+</div>
+<div class="column">
+<div class="card">
+<p><strong>组内分工</strong></p>
+<ul>
+<li>Wang Siyu：整体代码架构与实现、刚体动画 primitives、论文写作、项目协调。</li>
+<li>Du Yuheng：<code>verianim_utils</code> animation primitives 实现。</li>
+<li>Yang Tingyi：extended IR 与 additional animation family support 实现。</li>
+<li>Tong Mingyang：刚体动画、KV-cache-friendly prompt 优化、论文写作、slides preparation。</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="callout">
+<p>这部分对应 paper 的工程贡献：不是只交一个 demo，而是交可安装、可运行、可验证、可复现的 animation harness。</p>
+</div>
 </section>
 <section>
 <h1>遇到的问题</h1>
