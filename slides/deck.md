@@ -312,22 +312,54 @@ prompt -> SceneSpec IR + animation extension
 # parallel_gripper_pick_place：16 轮完整迭代过程
 
 :::{iteration-grid}
+:::{iteration-cell}
 ![Round 01](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean1/animation/round2_gripper_clean1/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 02](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean2/animation/round2_gripper_clean2/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 03](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean3/animation/round2_gripper_clean3/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 04](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean4/animation/round2_gripper_clean4/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 05](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean5/animation/round2_gripper_clean5/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 06](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean6/animation/round2_gripper_clean6/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 07](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean7/animation/round2_gripper_clean7/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 08](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean8/animation/round2_gripper_clean8/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 09](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean9/animation/round2_gripper_clean9/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 10](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean10/animation/round2_gripper_clean10/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 11](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean11/animation/round2_gripper_clean11/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 12](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean12/animation/round2_gripper_clean12/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 13](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean13/animation/round2_gripper_clean13/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 14](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean14/animation/round2_gripper_clean14/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 15](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean15/animation/round2_gripper_clean15/animation.gif){.iteration-gif}
+:::
+:::{iteration-cell}
 ![Round 16](../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean16/animation/round2_gripper_clean16/animation.gif){.iteration-gif}
+:::
 :::
 
 ---

@@ -227,12 +227,115 @@
 }
 
 .iteration-grid {
+  counter-reset: iteration-step;
   display: grid;
   align-items: stretch;
-  gap: 0.14em;
+  gap: 0.2em;
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: repeat(4, minmax(0, 1fr));
   height: 850px;
+}
+
+.iteration-cell {
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.iteration-cell:nth-child(5) {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(6) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(7) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(8) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.iteration-cell:nth-child(13) {
+  grid-column: 4;
+  grid-row: 4;
+}
+
+.iteration-cell:nth-child(14) {
+  grid-column: 3;
+  grid-row: 4;
+}
+
+.iteration-cell:nth-child(15) {
+  grid-column: 2;
+  grid-row: 4;
+}
+
+.iteration-cell:nth-child(16) {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.iteration-cell::before {
+  counter-increment: iteration-step;
+  content: counter(iteration-step, decimal-leading-zero);
+  left: 0.38em;
+  top: 0.38em;
+  background: rgba(24, 34, 48, 0.82);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.36em;
+  font-weight: 820;
+  line-height: 1;
+  padding: 0.34em 0.52em;
+  position: absolute;
+  z-index: 2;
+}
+
+.iteration-cell::after {
+  align-items: center;
+  background: var(--blue);
+  border-radius: 999px;
+  color: #fff;
+  content: "→";
+  display: flex;
+  font-size: 0.42em;
+  font-weight: 900;
+  height: 1.3em;
+  justify-content: center;
+  line-height: 1;
+  position: absolute;
+  right: -0.72em;
+  top: calc(50% - 0.65em);
+  width: 1.3em;
+  z-index: 3;
+}
+
+.iteration-cell:nth-child(n+5):nth-child(-n+7)::after,
+.iteration-cell:nth-child(n+13):nth-child(-n+15)::after {
+  content: "←";
+  left: -0.72em;
+  right: auto;
+}
+
+.iteration-cell:nth-child(4)::after,
+.iteration-cell:nth-child(8)::after,
+.iteration-cell:nth-child(12)::after {
+  bottom: -0.72em;
+  content: "↓";
+  left: calc(50% - 0.65em);
+  right: auto;
+  top: auto;
+}
+
+.iteration-cell:nth-child(16)::after {
+  content: none;
 }
 
 .iteration-grid img.iteration-gif {
@@ -612,22 +715,54 @@
 <section class="iteration-wall-slide">
 <h1>parallel_gripper_pick_place：16 轮完整迭代过程</h1>
 <div class="iteration-grid">
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean1/animation/round2_gripper_clean1/animation.gif" alt="Round 01" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean2/animation/round2_gripper_clean2/animation.gif" alt="Round 02" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean3/animation/round2_gripper_clean3/animation.gif" alt="Round 03" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean4/animation/round2_gripper_clean4/animation.gif" alt="Round 04" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean5/animation/round2_gripper_clean5/animation.gif" alt="Round 05" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean6/animation/round2_gripper_clean6/animation.gif" alt="Round 06" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean7/animation/round2_gripper_clean7/animation.gif" alt="Round 07" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean8/animation/round2_gripper_clean8/animation.gif" alt="Round 08" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean9/animation/round2_gripper_clean9/animation.gif" alt="Round 09" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean10/animation/round2_gripper_clean10/animation.gif" alt="Round 10" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean11/animation/round2_gripper_clean11/animation.gif" alt="Round 11" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean12/animation/round2_gripper_clean12/animation.gif" alt="Round 12" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean13/animation/round2_gripper_clean13/animation.gif" alt="Round 13" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean14/animation/round2_gripper_clean14/animation.gif" alt="Round 14" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean15/animation/round2_gripper_clean15/animation.gif" alt="Round 15" class="iteration-gif">
+</div>
+<div class="iteration-cell">
 <img src="../runs/parallel_gripper_pick_place/fresh_qwen_verify_clean16/animation/round2_gripper_clean16/animation.gif" alt="Round 16" class="iteration-gif">
+</div>
 </div>
 </section>
 <section>
