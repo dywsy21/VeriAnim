@@ -349,7 +349,77 @@ prompt -> SceneSpec IR + animation extension
 - `0 rounds`：一次生成就满足几何和媒体证据。
 - `1-2 rounds`：局部修复有效，说明合同和证据足够定位问题。
 - `many rounds / stop`：通常对应弱模型、欠约束 primitive、或 verifier 无法给出可操作证据。
-- 我们正在把 refine rounds 纳入 AnimBench 评测。
+- 我们正在把 refine rounds 和 pass / violation 指标一起纳入 AnimBench 评测。
+
+---
+
+# Benchmark 设计：AnimBench 怎么测
+
+[columns]
+[column]
+:::{card}
+**Prompt 分层**
+- 300 条自然语言 prompt
+- easy / medium / hard 各 100 条
+- easy：单对象或单关系
+- medium：两个协调事件或镜头要求
+- hard：多物体组合、并行动作、family 混合
+:::
+[/column]
+
+[column]
+:::{card}
+**覆盖的动画 family**
+- support motion / carry
+- pick-place / manipulation
+- hinge / rotor articulation
+- camera motion / visibility
+- deformable and mixed scenes
+:::
+[/column]
+[/columns]
+
+:::{callout}
+每条记录不仅保存 prompt，还保存 animation family、required motions、verifier focus 和 difficulty rationale。
+:::
+
+:::{tag-row}
+`validity` `temporal intent` `repair cost` `verifier disagreement`
+:::
+
+---
+
+# Benchmark 设计：对比什么
+
+[columns]
+[column]
+:::{card}
+**System variants**
+- direct keyframes
+- IR only
+- extension contract without primitives
+- primitives without repair
+- full verifier-facing harness
+:::
+[/column]
+
+[column]
+:::{card}
+**Metrics**
+- deterministic pass rate
+- support / penetration violation rate
+- final relation success
+- subject visibility
+- video verifier pass rate
+- refinement rounds and runtime cost
+:::
+[/column]
+[/columns]
+
+:::{metric}
+**核心问题**
+合同、primitive、dense-frame audit、media verifier、bounded repair 分别带来多少可测收益？
+:::
 
 ---
 
@@ -429,4 +499,4 @@ Easy 隔离单一对象或关系；medium 开始组合两个事件或加入 came
 - 完整跑完 300 条 AnimBench，报告 pass rate、repair rounds、family breakdown。
 - 扩展 character / fluid runtime adapter，而不仅是 capability profile。
 - 把“弱模型无法更正”的失败类型系统化，区分模型能力、证据质量和合同缺失。
-- 用 refine rounds 作为 benchmark 指标，衡量模型能力和 repair loop 的定位质量。
+- 正式跑完整 AnimBench，报告 pass rate、violation rate、refine rounds 和 verifier disagreement。

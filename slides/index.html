@@ -624,61 +624,75 @@
 <li><code>0 rounds</code>：一次生成就满足几何和媒体证据。</li>
 <li><code>1-2 rounds</code>：局部修复有效，说明合同和证据足够定位问题。</li>
 <li><code>many rounds / stop</code>：通常对应弱模型、欠约束 primitive、或 verifier 无法给出可操作证据。</li>
-<li>我们正在把 refine rounds 纳入 AnimBench 评测。</li>
+<li>我们正在把 refine rounds 和 pass / violation 指标一起纳入 AnimBench 评测。</li>
 </ul>
 </section>
 <section>
-<h1>AnimBench：easy / medium 示例</h1>
+<h1>Benchmark 设计：AnimBench 怎么测</h1>
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Easy / rigid</strong></p>
-<p><code>Create a simple scene where a red ball slides from the left side of the table to the right side.</code></p>
+<p><strong>Prompt 分层</strong></p>
+<ul>
+<li>300 条自然语言 prompt</li>
+<li>easy / medium / hard 各 100 条</li>
+<li>easy：单对象或单关系</li>
+<li>medium：两个协调事件或镜头要求</li>
+<li>hard：多物体组合、并行动作、family 混合</li>
+</ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Easy / visibility</strong></p>
-<p><code>Create a simple scene where a red ball moves behind a thin screen and reappears on the other side.</code></p>
-</div>
-</div>
-</div>
-<div class="columns">
-<div class="column">
-<div class="card">
-<p><strong>Medium / camera + rigid</strong></p>
-<p><code>Create an animation where the ball follows an S-shaped path around the blue box while the camera keeps both visible.</code></p>
-</div>
-</div>
-<div class="column">
-<div class="card">
-<p><strong>Medium / rigid</strong></p>
-<p><code>Create an animation where a simple gripper picks up the ball, moves it to the blue box, and releases it cleanly.</code></p>
+<p><strong>覆盖的动画 family</strong></p>
+<ul>
+<li>support motion / carry</li>
+<li>pick-place / manipulation</li>
+<li>hinge / rotor articulation</li>
+<li>camera motion / visibility</li>
+<li>deformable and mixed scenes</li>
+</ul>
 </div>
 </div>
 </div>
 <div class="callout">
-<p>Easy 隔离单一对象或关系；medium 开始组合两个事件或加入 camera requirement。</p>
+<p>每条记录不仅保存 prompt，还保存 animation family、required motions、verifier focus 和 difficulty rationale。</p>
+</div>
+<div class="tag-row">
+<p><code>validity</code> <code>temporal intent</code> <code>repair cost</code> <code>verifier disagreement</code></p>
 </div>
 </section>
 <section>
-<h1>AnimBench：hard / mixed 示例</h1>
+<h1>Benchmark 设计：对比什么</h1>
 <div class="columns">
 <div class="column">
 <div class="card">
-<p><strong>Hard / camera + rigid</strong></p>
-<p><code>The parallel gripper lifts the orange box from the gray conveyor belt, carries it to the cart, releases it, and the inspection camera keeps the handoff visible.</code></p>
+<p><strong>System variants</strong></p>
+<ul>
+<li>direct keyframes</li>
+<li>IR only</li>
+<li>extension contract without primitives</li>
+<li>primitives without repair</li>
+<li>full verifier-facing harness</li>
+</ul>
 </div>
 </div>
 <div class="column">
 <div class="card">
-<p><strong>Hard / deformable + rigid</strong></p>
-<p><code>The parallel gripper carries the orange box past a deforming banner, places it on the cart, and the camera shows both motions.</code></p>
+<p><strong>Metrics</strong></p>
+<ul>
+<li>deterministic pass rate</li>
+<li>support / penetration violation rate</li>
+<li>final relation success</li>
+<li>subject visibility</li>
+<li>video verifier pass rate</li>
+<li>refinement rounds and runtime cost</li>
+</ul>
 </div>
 </div>
 </div>
-<div class="warning">
-<p>由于时间原因，完整 300 条 benchmark 还没有全部跑完；当前展示的是 benchmark 设计、prompt 覆盖和 curated showcase audit。</p>
+<div class="metric">
+<p><strong>核心问题</strong> 合同、primitive、dense-frame audit、media verifier、bounded repair 分别带来多少可测收益？</p>
 </div>
 </section>
 <section>
@@ -688,7 +702,7 @@
 <li>完整跑完 300 条 AnimBench，报告 pass rate、repair rounds、family breakdown。</li>
 <li>扩展 character / fluid runtime adapter，而不仅是 capability profile。</li>
 <li>把“弱模型无法更正”的失败类型系统化，区分模型能力、证据质量和合同缺失。</li>
-<li>用 refine rounds 作为 benchmark 指标，衡量模型能力和 repair loop 的定位质量。</li>
+<li>正式跑完整 AnimBench，报告 pass rate、violation rate、refine rounds 和 verifier disagreement。</li>
 </ul>
 </section>
     </div>
