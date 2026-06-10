@@ -31,29 +31,31 @@ Fudan University\\
 \begin{document}
 
 \maketitle
+\fancyhead{}
+\renewcommand{\headrulewidth}{0pt}
 
 \begin{abstract}
-LLM 3D animation generation should produce more than a rendered clip: it should produce an executable scene whose objects, motions, camera views, and failures can be inspected and repaired. Blender programs provide a practical target for this goal because object construction, keyframes, cameras, materials, and rendering all have programmable interfaces. Animation, however, introduces temporal obligations that static scene generation does not expose: object identities must persist, event windows must own their transforms, contacts must hold through interpolation, cameras must show the relevant motion, and unsupported dynamics must fail with clear scope. We present VeriAnim, a verifier-facing layer for LLM-generated Blender animations built around a static \code{SceneSpec} IR, an Animation Extension Contract, and VeriAnim-AnimBench. VeriAnim first generates and repairs a static scene, then extends that measured baseline with animation events, family-specific probes, media artifacts, deterministic checks, visual/video verification, and bounded repair. VeriAnim-AnimBench contributes 300 natural-language prompts across easy, medium, and hard animation tiers for evaluating scene complexity, temporal composition, verifier coverage, and repair cost.
+LLM 3D animation generation should produce more than a rendered clip: it should produce an executable scene whose objects, motions, camera views, and failures can be inspected and repaired. Blender programs provide a practical target for this goal because object construction, keyframes, cameras, materials, visibility, deformation proxies, and rendering all have programmable interfaces. Animation, however, introduces temporal obligations that static scene generation does not expose: object identities must persist, event windows must own their transforms, contacts must hold through interpolation, cameras must show the relevant motion, visibility changes must occur at requested frames, and non-rigid motion must expose evidence beyond a final pose. We present VeriAnim, a verifier-facing layer for LLM-generated Blender animations built around a static \code{SceneSpec} IR and an Animation Extension Contract. VeriAnim first generates and repairs a static scene, then extends that measured baseline with executable animation events, family-specific probes, media artifacts, deterministic checks, visual/video verification, and bounded repair. The current harness covers rigid object motion, camera motion, visibility and state transitions, deformable Blender prototypes with deformation statistics, and capability-profile contracts for runtime families such as character and fluid animation. We also present VeriAnim-AnimBench, which contributes 300 natural-language prompts across easy, medium, and hard animation tiers for evaluating scene complexity, temporal composition, verifier coverage, and repair cost. Code and showcase are available at \url{https://github.com/dywsy21/VeriAnim} and \url{https://www.tmysam.top/verianim/showroom/}.
 \end{abstract}
 
 \section{Introduction}
 
-Many 3D tasks become meaningful only after objects move. A robotics mockup needs the approach, contact, lift, transfer, and release of a gripper, an educational animation needs the order of a process, a game prototype needs timed interactions, and a synthetic-data scene needs controllable object and camera motion. The open source 3D modeling software, Blender, makes these requirements programmable: its Python API exposes object construction, materials, cameras, lights, keyframes, and render settings as executable program structure~\citep{blender2026pythonapi}.
+Many 3D tasks become meaningful only after objects move. A robotics mockup needs the approach, contact, lift, transfer, and release of a gripper; an educational animation needs the order of a process; a game prototype needs timed interactions; and a synthetic-data scene needs controllable object, camera, visibility, and deformation behavior. The open source 3D modeling software, Blender, makes these requirements programmable: its Python API exposes object construction, materials, cameras, lights, visibility flags, keyframes, mesh transforms, and render settings as executable program structure~\citep{blender2026pythonapi}.
 
 Recent LLM progress makes this programmable 3D medium a realistic target for natural-language generation. Modern language models generate code, call tools, observe failures, and refine outputs across programming tasks~\citep{chen2021evaluating,austin2021program,yao2023react,schick2023toolformer,madaan2023selfrefine,shinn2023reflexion}; coding agents extend this pattern by turning a request into an artifact, running it, and using runtime feedback to repair it. The question is therefore no longer whether an LLM can write some Blender Python, but whether it can generate an animation whose motion, camera evidence, and temporal relations survive execution. A prompt such as ``a gripper moves a box from a conveyor to a cart while the camera follows'' requires the model to build the scene, schedule events, maintain contact, preserve object identity, and render evidence that the requested motion actually happened.
 
-The main obstacle is that static 3D generation and 3D animation ask generated code to satisfy different contracts. Prior code-based 3D modeling shows that LLMs can generate static Blender programs with inspectable objects, materials, cameras, and layouts~\citep{lu2025verianim}. Static verification can inspect a finished scene: the objects exist, the relations hold, and the camera sees them. Animation verification must reason over frame windows, because success depends on how objects move between keyframes, which controller owns each transform, whether contact persists during interpolation, and whether the camera captures the relevant event. A direct keyframe script can reach the correct final pose while passing through a support surface, carrying an object without the gripper, or hiding the contact point in the rendered video.
+The main obstacle is that static 3D generation and 3D animation ask generated code to satisfy different contracts. Prior code-based 3D modeling shows that LLMs can generate static Blender programs with inspectable objects, materials, cameras, and layouts~\citep{lu2025verianim}. Static verification can inspect a finished scene: the objects exist, the relations hold, and the camera sees them. Animation verification must reason over frame windows, because success depends on how objects move between keyframes, which controller owns each transform, whether contact persists during interpolation, whether state changes occur when requested, whether deformation is visible, and whether the camera captures the relevant event. A direct keyframe script can reach the correct final pose while passing through a support surface, carrying an object without the gripper, hiding a status transition, cropping the subject during a camera orbit, or simulating cloth by merely moving a rigid plane.
 
-VeriAnim addresses this gap by making generated Blender animations verifier-facing from the start. It first builds a static scene through \code{SceneSpec}, a typed contract over objects, parts, materials, relations, cameras, proxies, and evidence; the harness executes, verifies, and repairs that static baseline before adding motion. The \emph{Animation Extension Contract} then attaches animation families, event windows, capability profiles, simulation-cache metadata, and verifier probes to the measured scene. During execution, the harness records Blender traces, screenshots, preview videos, deterministic reports, and visual/video verifier feedback, and it uses that measured evidence to repair only the local placement or motion window that failed.
+VeriAnim addresses this gap by making generated Blender animations verifier-facing from the start. It first builds a static scene through \code{SceneSpec}, a typed contract over objects, parts, materials, relations, cameras, proxies, and evidence; the harness executes, verifies, and repairs that static baseline before adding motion. The \emph{Animation Extension Contract} then attaches event windows, executable action classes, animation-family metadata, capability profiles, simulation-cache ownership, and verifier probes to the measured scene. During execution, the harness records Blender traces, screenshots, preview videos, deterministic reports, deformation statistics, and visual/video verifier feedback, and it uses that measured evidence to repair only the local placement, visibility transition, camera path, or motion window that failed.
 
 This paper makes four contributions:
 \begin{itemize}
     \item \textbf{Static and temporal IR contracts.} We define \code{SceneSpec} for static Blender scenes and an animation extension that organizes families, probes, capability profiles, event windows, and artifact ownership.
     \item \textbf{Verifier-facing Blender harness.} We use Blender code as a 3D medium and add staged static-to-animation generation, static and temporal repair, visual/video verification, and media diagnostics.
-    \item \textbf{Rigid primitive methodology.} We instantiate the contract with geometry-aware rigid primitives for support motion, paired interaction, pick-place manipulation, articulation, and temporal composition.
+    \item \textbf{Family-specific animation methodology.} We instantiate the contract with geometry-aware rigid primitives, camera and visibility events, deformable Blender prototypes, and capability-profile contracts for character and fluid families.
     \item \textbf{VeriAnim-AnimBench.} We release a 300-prompt benchmark with easy, medium, and hard tiers for measuring scene complexity, temporal composition, verifier coverage, and repair cost.
 \end{itemize}
-The current implementation supports static scene generation and repair, rigid and camera animation events, texture resolution, deterministic and media verifier loops, deformable Blender events, capability-profile reporting, and benchmark generation.
+The current implementation supports static scene generation and repair, rigid motion primitives, camera motion, visibility and state transitions, texture resolution, deterministic and media verifier loops, deformable Blender prototypes with deformation-statistics evidence, capability-profile reporting, and benchmark generation.
 
 \begin{figure}[t]
 \centering
@@ -178,9 +180,9 @@ The Animation Extension Contract is the temporal layer on top of \code{SceneSpec
 \node[header, fill=llblue!10] (event) at (-4.4,0.35) {Event Layer};
 \node[header, fill=llgreen!12] (evidence) at (0,0.35) {Evidence Layer};
 \node[header, fill=llpurple!12] (artifact) at (4.4,0.35) {Artifact Layer};
-\node[panel] (p1) at (-4.4,-1.5) {\textbf{Families}\\rigid, camera, visibility\\deformable, mixed};
-\node[panel] (p2) at (0,-1.5) {\textbf{Verifier probes}\\bbox and BVH\\vision and video\\joint, deformation, particle stats};
-\node[panel] (p4) at (4.4,-1.5) {\textbf{Artifacts and caches}\\scene graphs and traces\\frames and videos\\cache status and invalidation};
+\node[panel] (p1) at (-4.4,-1.5) {\textbf{Events and families}\\rigid, camera, visibility\\deformable, character\\fluid, mixed};
+\node[panel] (p2) at (0,-1.5) {\textbf{Verifier probes}\\bbox and BVH\\coverage and visibility\\joint, deformation, particle stats};
+\node[panel] (p4) at (4.4,-1.5) {\textbf{Artifacts and caches}\\scene graphs and traces\\frames and videos\\statistics and capability reports};
 \foreach \x in {event,evidence,artifact} \draw[arrow] (contract.south) -- (\x.north);
 \draw[arrow] (event) -- (p1);
 \draw[arrow] (evidence) -- (p2);
@@ -194,11 +196,11 @@ The Animation Extension Contract is the temporal layer on top of \code{SceneSpec
 \label{fig:extension-taxonomy}
 \end{figure}
 
-\textbf{Families define behavior scope.}
-The current IR recognizes rigid, camera, visibility, deformable, and mixed animation families. Rigid and camera events have executable Blender paths today, while deformable events use visible shape change and deformation statistics as their initial evidence. Requests outside the implemented runtime, such as full particle or fluid behavior, become scoped capability-profile reports instead of silently producing incomplete artifacts.
+\textbf{Events and families define behavior scope.}
+The executable event layer supports translation, rotation, scaling, path following, appearance, disappearance, camera movement, and camera orbit. The extension layer groups these events into broader animation families: rigid, deformable, character, fluid, and mixed. Rigid, camera, visibility, and deformable-prototype behavior have Blender execution paths today, while character and fluid specifications record skeleton, IK, mocap, particle, volume, and cache requirements as capability-profile contracts when a runtime adapter is not available.
 
 \textbf{Probes define acceptance evidence.}
-Each family names the evidence that can validate it. Rigid events use bounding boxes, BVH checks, or convex proxies; camera events use coverage and subject-visibility reports; deformable events combine deformation statistics with video evidence. Because these probes attach to the same event structure, the harness can compare deterministic and media judgments instead of treating them as separate review channels.
+Each event or family names the evidence that can validate it. Rigid events use bounding boxes, BVH checks, or convex proxies; camera events use coverage and subject-visibility reports; visibility events require explicit visible or hidden keyframes; deformable prototypes combine deformation statistics with video evidence; and character or fluid profiles reserve joint, particle, or volume probes for adapters that can execute them. Because these probes attach to the same event structure, the harness can compare deterministic and media judgments instead of treating them as separate review channels.
 
 \subsection{Staging Preserves the Static Scene Baseline}
 
@@ -261,6 +263,14 @@ composition rules & event windows, role tags, static checks & Prevent overlappin
 
 The taxonomy follows the structure of animation intent rather than a catalog of implementation failures. Natural-language prompts usually describe relations such as on, inside, holding, attached, following, and opening, and each relation implies a different invariant. Support motion owns vertical placement, carry motion owns a driver-payload offset, gripper manipulation owns a phase sequence, hinged motion owns an origin and axis, and composition owns transform ownership across time windows. Development traces helped calibrate tolerances and checks, but the primitive families come from these invariants.
 
+\subsection{General Animation Classes Reuse the Same Contract}
+
+The same contract structure covers non-rigid and camera-centered animation because each class can expose an event window, an observable state change, and family-appropriate evidence. Camera events treat the camera as the animated subject and the scene object as the target; the validator samples camera transforms, checks the requested endpoint, and asks the video verifier whether the target remains visible during the orbit or move. Visibility and state-change events use \code{appear} and \code{disappear} actions with explicit \code{hide\_viewport}, \code{hide\_render}, or alpha keyframes, and screenshot relation checks are evaluated at the frame where the object should actually be visible.
+
+Deformable prototypes use the contract to separate visible shape change from full physical cloth simulation. The current Blender path animates a deformable subject through scale or shape-changing keyframes, samples bounding-box change and descendant displacement over requested frames, and records a deformation-statistics report alongside the video verifier report. This design makes a cloth banner that ripples between two posts verifiable even when the run does not invoke an external cloth solver.
+
+Character and fluid requests use the same IR boundary, but their current implementation is a capability-profile layer rather than a full runtime. A character spec records skeleton intent, mocap source metadata, IK intent, joint constraints, and joint-limit probes; a fluid spec records visible fluid behavior, particle or volume statistics, cache ownership, and video probes. The harness therefore represents these requests without silently degrading them into ordinary rigid keyframes: an unsupported adapter produces a scoped report that names the missing runtime evidence.
+
 \subsection{Verification Combines Geometry and Media}
 
 Deterministic verification checks geometric predicates over sampled frames. Support predicates require footprint overlap and a small vertical gap, nonpenetration predicates measure overlap depth across collision-enabled pairs, carry-contact predicates distinguish intended proximity from embedding, and containment predicates check whether centers or bounding boxes remain inside a container proxy. Dense audit windows matter because a start/middle/end sample can miss an interpolation path that briefly passes through another object.
@@ -273,7 +283,7 @@ Repair uses the measured failure record to choose the smallest edit that can add
 
 \section{System Components}
 
-The implemented harness consists of a Blender addon server, Python runner, typed IR parser, texture resolver, visual verifier, video verifier, deterministic validator, and refinement loop. The addon exposes code execution, scene inspection, material inspection, camera coverage reports, screenshot rendering, animation sampling, and preview video rendering. Each run stores the artifacts needed to reproduce and inspect the generation path: IR snapshots, generated and refined scripts, verifier reports, media paths, selected textures, transform traces, and model configuration.
+The implemented harness consists of a Blender addon server, Python runner, typed IR parser, texture resolver, visual verifier, video verifier, deterministic validator, deformation-statistics collector, and refinement loop. The addon exposes code execution, scene inspection, material inspection, camera coverage reports, screenshot rendering, animation sampling, preview video rendering, and \code{.blend} export. Each run stores the artifacts needed to reproduce and inspect the generation path: IR snapshots, generated and refined scripts, verifier reports, media paths, selected textures, transform traces, deformation reports, capability-profile reports, and model configuration.
 
 Texture resolution is handled as an auditable preprocessing step rather than an implicit side effect of code generation. The planner marks materials with \code{texture\_policy}, \code{needs\_texture}, and \code{texture\_query}; a material agent searches public texture pages, downloads candidates, asks a vision model to approve surface suitability, and writes approved local paths back into the IR. When search or approval fails, the coder falls back to procedural colors and shader parameters. This keeps appearance assets visible in the artifact trail while keeping the animation claim focused on executable motion.
 
@@ -281,12 +291,34 @@ Prompt caching keeps refinement iterative without repeating the whole system des
 
 \section{Benchmark and Evaluation}
 
-VeriAnim-AnimBench evaluates whether the contract, primitive library, and repair loop improve executable animation generation. Executable code benchmarks show that LLM claims need task-level artifacts and pass/fail measurements~\citep{chen2021evaluating,jimenez2024swebench}; AnimBench applies that principle to Blender animation by keeping the prompt, generated code, Blender artifacts, verifier reports, and repair history together. Figure~\ref{fig:evaluation-plan} shows the main comparison: prompt families span rigid support motion, paired interaction, manipulation, articulation, camera motion, visibility/state changes, deformable events, and mixed scenes, while system variants remove one layer at a time.
+VeriAnim-AnimBench evaluates whether the contract, event helpers, family-specific evidence, and repair loop improve executable animation generation. Executable code benchmarks show that LLM claims need task-level artifacts and pass/fail measurements~\citep{chen2021evaluating,jimenez2024swebench}; AnimBench applies that principle to Blender animation by keeping the prompt, generated code, Blender artifacts, verifier reports, and repair history together. Figure~\ref{fig:evaluation-plan} shows the main comparison: prompt families span rigid support motion, paired interaction, manipulation, articulation, camera motion, visibility/state changes, deformable events, character or fluid capability profiles, and mixed scenes, while system variants remove one layer at a time.
 
-The benchmark contains 300 natural-language prompts stored in \code{benchmark/}: 100 easy, 100 medium, and 100 hard. Easy prompts isolate one object or one spatial relation, medium prompts combine two coordinated events or camera requirements, and hard prompts require multi-object composition, concurrent motion, or mixtures across animation families. Each record stores the prompt, animation families, required motions, verifier focus, and difficulty rationale, so benchmark runs can be analyzed by both prompt complexity and verifier type.
+The benchmark contains 300 natural-language prompts stored in \code{benchmark/}: 100 easy, 100 medium, and 100 hard. Easy prompts isolate one object or one spatial relation, medium prompts combine two coordinated events or camera requirements, and hard prompts require multi-object composition, concurrent motion, or mixtures across animation families. Each record stores the prompt, animation families, required motions, verifier focus, and difficulty rationale, so benchmark runs can be analyzed by prompt complexity, executable event class, and verifier type.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{2.5pt}
+\caption{Representative prompts from VeriAnim-AnimBench. The benchmark stores 100 prompts per tier; the examples show how difficulty increases from one dominant motion to multi-object, mixed-family composition.}
+\label{tab:animbench-prompts}
+\begin{tabular}{p{0.10\linewidth}p{0.19\linewidth}p{0.63\linewidth}}
+\toprule
+Tier & Families & Example prompt \\
+\midrule
+easy & rigid & Create a simple scene where a red ball slides from the left side of the table to the right side. \\
+easy & visibility & Create a simple scene where a red ball moves behind a thin screen and reappears on the other side. \\
+medium & camera, rigid & Create an animation where the ball follows an S-shaped path around the blue box while the camera keeps both visible. \\
+medium & rigid & Create an animation where a simple gripper picks up the ball, moves it to the blue box, and releases it cleanly. \\
+hard & camera, rigid & Create a detailed animation where the parallel gripper lifts the orange box from the gray conveyor belt, carries it to the cart, releases it, and the inspection camera keeps the handoff visible. \\
+hard & deformable, rigid & Create a detailed animation where the parallel gripper carries the orange box past a deforming banner near the gray conveyor belt, places it on the cart, and the inspection camera shows both motions. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Due to time constraints, the complete 300-prompt benchmark has not yet been executed. This draft therefore reports the benchmark construction, the planned metrics and ablations, and the curated showcase audit below; aggregate pass rates, repair-round distributions, and family-level breakdowns remain the next evaluation step.
 
 \textbf{Showcase audit.}
-Before running the full benchmark, the curated \code{showcase/} set acts as a qualitative audit of implemented behavior. These examples do not replace benchmark-scale statistics, but they exercise the same artifact trail: source prompts, generated Blender code, scene images, animation previews, validation reports, and exported \code{.blend} files. The current showcase covers static relation checks, single-support motion, repaired multi-support motion, and composed rigid events. Representative entries include table-top sliding and conveyor motion with deterministic, vision, and video checks passing; road-ramp-platform and table-ramp-platform examples where contact repair turns an initial deterministic failure into a passing animation; and composed scenes such as garage-door opening followed by car motion, marble-to-cup transfer, and cube collision with final validation reports passing.
+Before running the full benchmark, the curated \code{showcase/} set acts as a qualitative audit of implemented behavior. These examples exercise the same artifact trail: source prompts, generated Blender code, scene images, animation previews, validation reports, and exported \code{.blend} files. The current showcase covers static relation checks, single-support motion, repaired multi-support motion, composed rigid events, camera-orbit events, and deformable prototype events. Representative entries include table-top sliding and conveyor motion with deterministic, vision, and video checks passing; road-ramp-platform and table-ramp-platform examples where contact repair turns an initial deterministic failure into a passing animation; a bronze-sculpture camera orbit where repeated refinement fixes coverage and endpoint errors; a cloth-banner prototype where deformation statistics and video evidence pass; and composed scenes such as garage-door opening followed by car motion, marble-to-cup transfer, and cube collision with final validation reports passing.
 
 \begin{table}[t]
 \centering
@@ -302,6 +334,8 @@ Single-support motion & table slide, conveyor ride & Deterministic, vision, and 
 Repaired support sequence & car ramp-to-platform, puck down-ramp & Initial contact violations are repaired; post-repair deterministic and video reports pass. \\
 Composed rigid events & garage exit, marble run, cube collision & Final reports pass across scene preservation, deterministic animation, and video intent. \\
 Manual primitive replay & parallel gripper pick-place & Sampled frames exercise the gripper lifecycle and payload transfer contract. \\
+Camera motion & bronze sculpture orbit & Refinement fixes target cropping and endpoint mismatch; final deterministic and video reports pass. \\
+Deformable prototype & cloth banner ripple & Deformation statistics and video verification pass while posts remain static. \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -331,7 +365,9 @@ support + carry & weak & ids & probes & contacts & local fix \\
 pick-place & weak & events & probes & lifecycle & ownership \\
 hinge / rotor & axis & events & pivot & helpers & checks \\
 camera orbit & path & target & coverage & helper & media \\
+visibility/state & flag & event & visible frames & keyframes & media \\
 deformable & shape & event & stats & deformation & media \\
+character/fluid profile & text & intent & probes & capability & scope \\
 \bottomrule
 \end{tabular}
 }
@@ -340,21 +376,21 @@ deformable & shape & event & stats & deformation & media \\
 \end{figure}
 
 \textbf{Metrics.}
-The primary metrics measure both correctness and refinement cost: deterministic pass rate, support violation rate, penetration rate, final relation success, transform-ownership violations, subject visibility, video verifier pass rate, number of refinement rounds, and wall-clock execution cost. Deformable events add deformation-statistic pass rate, while capability-profile cases report missing joint, particle, or volume probes as unsupported scope.
+The primary metrics measure both correctness and refinement cost: deterministic pass rate, support violation rate, penetration rate, final relation success, transform-ownership violations, visibility-transition success, camera coverage, subject visibility, video verifier pass rate, number of refinement rounds, and wall-clock execution cost. Deformable events add deformation-statistic pass rate, while capability-profile cases report missing joint, particle, or volume probes as scoped runtime evidence rather than animation success.
 
 \textbf{Ablations.}
-The ablations remove one layer at a time to isolate the source of each gain. Removing the extension contract tests whether a flat animation spec gives the LLM enough structure; removing primitives tests whether model-authored keyframes satisfy the same event contracts; removing dense-frame audits tests whether sparse samples miss interpolation errors; and removing video verification tests whether deterministic geometry alone captures temporal intent and camera coverage.
+The ablations remove one layer at a time to isolate the source of each gain. Removing the extension contract tests whether a flat animation spec gives the LLM enough structure; removing primitives and event helpers tests whether model-authored keyframes satisfy the same event contracts; removing visibility-frame normalization tests whether appear/disappear relations are checked at the wrong time; removing dense-frame audits tests whether sparse samples miss interpolation errors; and removing video verification tests whether deterministic geometry alone captures temporal intent and camera coverage.
 
 \textbf{Independent audits.}
 The benchmark also includes independent audit hooks because several rigid primitives and deterministic checks share bounding-box assumptions. Human ratings judge visual plausibility and semantic success, mesh-level BVH checks audit rigid scenes, and deformation statistics validate shape change beyond video impressions. Disagreement among deterministic, media, and human judgments becomes a reported result for verifier design rather than an error to hide.
 
 \section{Limitations}
 
-VeriAnim provides a contract layer and a runnable Blender harness, but it does not replace a full physics simulator. The current rigid primitives are kinematic: they preserve support, contact, offsets, and frame-window ownership, but they do not model forces, friction, mass, torque, or collision response. Bounding boxes over-approximate concave objects and miss fine mesh intersections, so mesh-level audits remain important for rigid scenes. Deformable events currently use deformation statistics and video evidence in place of a full cloth solver, and character, mocap, IK, fluid, smoke, and particle requests become capability-profile reports when runtime probes are unavailable. Video verification helps judge temporal intent and visibility, while deterministic probes remain necessary for short contact violations and hidden geometry errors.
+VeriAnim provides a contract layer and a runnable Blender harness, but it does not replace a full physics simulator. The current rigid primitives are kinematic: they preserve support, contact, offsets, and frame-window ownership, but they do not model forces, friction, mass, torque, or collision response. Bounding boxes over-approximate concave objects and miss fine mesh intersections, so mesh-level audits remain important for rigid scenes. Camera, visibility, and deformable-prototype events are executable in Blender, but the deformable path currently measures visible shape change rather than solving full cloth or soft-body dynamics. Character, mocap, IK, fluid, smoke, and particle requests are represented through structured specs and probes; they become capability-profile reports when a runtime adapter cannot execute the requested behavior. Video verification helps judge temporal intent and visibility, while deterministic probes remain necessary for short contact violations, hidden geometry errors, visibility-timing mistakes, and deformation evidence.
 
 \section{Conclusion}
 
-LLM-generated 3D animation requires more than asking a model to write keyframes. VeriAnim turns the task into staged program synthesis: first establish a verified static scene, then add temporal events whose objects, frame windows, probes, media artifacts, and repair scope are explicit. The Animation Extension Contract makes this structure portable across animation families, while the current rigid-body primitives show how support, carry, pick-place, articulation, and composition can become geometry-aware Blender helpers. The result is an auditable path from natural-language animation requests to executable Blender programs, measured evidence, and bounded repair.
+LLM-generated 3D animation requires more than asking a model to write keyframes. VeriAnim turns the task into staged program synthesis: first establish a verified static scene, then add temporal events whose objects, frame windows, probes, media artifacts, and repair scope are explicit. The Animation Extension Contract makes this structure portable across rigid motion, camera motion, visibility and state changes, deformable prototypes, and profile-backed families such as character and fluid animation. The result is an auditable path from natural-language animation requests to executable Blender programs, measured evidence, and bounded repair.
 
 \bibliography{references}
 \bibliographystyle{iclr2026_conference}
